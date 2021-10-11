@@ -36,6 +36,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include <arpa/inet.h>
 
 #include "common.h"
@@ -45,7 +46,7 @@
 #define DELAY_TIMEOUT	100	// ms
 #define KATO_INTERVAL	500	// ms per spec
 
-#define NVME_VER ((1 << 16) | (2 << 8) | 1) /* NVMe 1.2.1 */
+#define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
 static int nvmf_discovery_genctr = 1;
 
@@ -57,7 +58,7 @@ struct host_conn {
 	int			 kato;
 };
 
-static int handle_property_set(struct nvme_command *cmd, int *csts)
+static int handle_property_set(struct nvme_command *cmd, struct endpoint *ep)
 {
 	int			 ret = 0;
 
@@ -65,31 +66,48 @@ static int handle_property_set(struct nvme_command *cmd, int *csts)
 	print_debug("nvme_fabrics_type_property_set %x = %llx",
 		   cmd->prop_set.offset, cmd->prop_set.value);
 #endif
-	if (cmd->prop_set.offset == NVME_REG_CC)
-		*csts = (cmd->prop_set.value == 0x460001) ? 1 : 8;
-	else
+	if (cmd->prop_set.offset == NVME_REG_CC) {
+		ep->cc = le64toh(cmd->prop_set.value);
+		if (ep->cc & NVME_CC_SHN_MASK)
+			ep->csts = NVME_CSTS_SHTS_CMPLT;
+		else {
+			if (ep->cc & NVME_CC_ENABLE)
+				ep->csts = NVME_CSTS_RDY;
+			else
+				ep->csts = NVME_CSTS_SHTS_CMPLT;
+		}
+	} else
 		ret = NVME_SC_INVALID_FIELD;
 
 	return ret;
 }
 
 static int handle_property_get(struct nvme_command *cmd,
-			       struct nvme_completion *resp, int csts)
+			       struct nvme_completion *resp,
+			       struct endpoint *ep)
 {
 	u64			 value;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_property_get %x", cmd->prop_get.offset);
-#endif
 	if (cmd->prop_get.offset == NVME_REG_CSTS)
-		value = csts;
+		value = ep->csts;
 	else if (cmd->prop_get.offset == NVME_REG_CAP)
 		value = 0x200f0003ffL;
+	else if (cmd->prop_get.offset == NVME_REG_CC)
+		value = ep->cc;
 	else if (cmd->prop_get.offset == NVME_REG_VS)
 		value = NVME_VER;
-	else
+	else {
+#ifdef DEBUG_COMMANDS
+		print_debug("nvme_fabrics_type_property_get %x: N/I",
+			    cmd->prop_get.offset);
+#endif
 		return NVME_SC_INVALID_FIELD;
+	}
 
+#ifdef DEBUG_COMMANDS
+	print_debug("nvme_fabrics_type_property_get %x: %llx",
+		    cmd->prop_get.offset, value);
+#endif
 	resp->result.U64 = htole64(value);
 
 	return 0;
@@ -245,7 +263,7 @@ static int format_disc_log(void *data, u64 data_len, struct host_iface *iface)
 	entry.adrfam = to_adrfam(iface->family);
 	entry.treq = 0;
 	entry.portid = 1;
-	entry.cntlid = NVME_CNTLID_DYNAMIC;
+	entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
 	entry.asqsz = 32;
 	entry.subtype = NVME_NQN_NVME;
 	memcpy(entry.trsvcid, iface->port, NVMF_TRSVCID_SIZE);
@@ -318,10 +336,10 @@ static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
-			ret = handle_property_set(cmd, &ep->csts);
+			ret = handle_property_set(cmd, ep);
 			break;
 		case nvme_fabrics_type_property_get:
-			ret = handle_property_get(cmd, resp, ep->csts);
+			ret = handle_property_get(cmd, resp, ep);
 			break;
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, addr, len);

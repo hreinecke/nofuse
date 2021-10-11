@@ -159,7 +159,8 @@ struct endpoint {
 	void			*data;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 state;
-	int			 csts;
+	u64			 csts;
+	u64			 cc;
 };
 
 struct ctrl_queue {
