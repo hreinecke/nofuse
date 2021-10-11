@@ -101,43 +101,8 @@ void dump(u8 *buf, int len)
 	}
 }
 
-static inline int post_cmd(struct endpoint *ep, struct nvme_command *cmd,
-			   int bytes)
-{
-	return ep->ops->post_msg(ep->ep, cmd, bytes);
-}
-
-static inline int send_cmd(struct endpoint *ep, struct nvme_command *cmd,
-			   int bytes)
-{
-	return ep->ops->send_msg(ep->ep, cmd, bytes);
-}
-
-static void prep_set_property(struct endpoint *ep, u32 reg, u64 val)
-{
-	struct nvme_command		*cmd = ep->cmd;
-
-	ep->ops->set_sgl(cmd, nvme_fabrics_command, 0, NULL);
-
-	cmd->prop_set.fctype	= nvme_fabrics_type_property_set;
-	cmd->prop_set.offset	= htole32(reg);
-	cmd->prop_set.value	= htole64(val);
-}
-
-static int post_set_property(struct endpoint *ep, u32 reg, u64 val)
-{
-	struct nvme_command	*cmd = ep->cmd;
-
-	prep_set_property(ep, reg, val);
-
-	return post_cmd(ep, cmd, sizeof(*cmd));
-}
-
 void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
-	if (shutdown && (ep->state == CONNECTED))
-		post_set_property(ep, NVME_REG_CC, NVME_CTRL_DISABLE);
-
 	if (ep->ep)
 		ep->ops->destroy_endpoint(ep->ep);
 

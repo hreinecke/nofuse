@@ -152,6 +152,8 @@ struct ops {
 	void (*reset_config)(void);
 };
 
+extern struct subsystem static_subsys;
+
 void shutdown_dem(void);
 
 void *interface_thread(void *arg);

@@ -47,6 +47,8 @@
 
 #define NVME_VER ((1 << 16) | (2 << 8) | 1) /* NVMe 1.2.1 */
 
+static int nvmf_discovery_genctr = 1;
+
 struct host_conn {
 	struct linked_list	 node;
 	struct endpoint		*ep;
@@ -185,18 +187,6 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
-			       u64 addr, u64 len)
-{
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_get_log_page");
-#endif
-
-	print_err("get_log_page: lid %02x not supported",
-		  cmd->get_log_page.lid);
-	return NVME_SC_BAD_ATTRIBUTES;
-}
-
 static int get_nsdev(void *data)
 {
 	struct nvmf_get_ns_devices_hdr *hdr = data;
@@ -232,40 +222,72 @@ u8 to_adrfam(char *str)
 	return 0;
 }
 
-static int get_xport(void *data)
+static int format_disc_log(void *data, u64 data_len, struct host_iface *iface)
 {
-	struct nvmf_get_transports_hdr *hdr = data;
-	struct nvmf_get_transports_entry *entry;
-	struct portid		*xport;
-	int			 cnt = 0;
+	struct nvmf_disc_rsp_page_hdr hdr;
+	struct nvmf_disc_rsp_page_entry entry;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_get_transports");
-#endif
-
-	entry = (struct nvmf_get_transports_entry *) &hdr->data;
-
-	list_for_each_entry(xport, interfaces, node) {
-		memset(entry, 0, sizeof(*entry));
-		entry->trtype = NVMF_TRTYPE_TCP;
-		entry->adrfam = to_adrfam(xport->family);
-		strcpy(entry->traddr, xport->address);
-		cnt++;
-		entry++;
+	hdr.genctr = nvmf_discovery_genctr;
+	hdr.recfmt = 0;
+	hdr.numrec = 1;
+	if (data_len < sizeof(hdr)) {
+		memcpy(data, &hdr, data_len);
+		return data_len;
 	}
+	memcpy(data, &hdr, sizeof(hdr));
 
-	hdr->num_entries = cnt;
-
-	return cnt * sizeof(*entry) + sizeof(*hdr) - 1;
+	data_len -= sizeof(hdr);
+	data += sizeof(hdr);
+	if (data_len > sizeof(entry))
+		data_len = sizeof(entry);
+	memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
+	entry.trtype = NVMF_TRTYPE_TCP;
+	entry.adrfam = to_adrfam(iface->family);
+	entry.treq = 0;
+	entry.portid = 1;
+	entry.cntlid = NVME_CNTLID_DYNAMIC;
+	entry.asqsz = 32;
+	entry.subtype = NVME_NQN_NVME;
+	memcpy(entry.trsvcid, iface->port, NVMF_TRSVCID_SIZE);
+	memcpy(entry.traddr, iface->address, NVMF_TRADDR_SIZE);
+	strncpy(entry.subnqn, static_subsys.nqn, NVMF_NQN_FIELD_LEN);
+	memcpy(data, &entry, data_len);
+	return sizeof(hdr) + data_len;
 }
 
-const char *adrfam_str(u8 fam)
+static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
+			       u64 addr, u64 len)
 {
-	if (fam == NVMF_ADDR_FAMILY_IP4)
-		return ADRFAM_STR_IPV4;
-	if (fam == NVMF_ADDR_FAMILY_IP6)
-		return ADRFAM_STR_IPV6;
-	return "unknown";
+	int ret = 0;
+
+#ifdef DEBUG_COMMANDS
+	print_debug("nvme_get_log_page opcode %02x lid %02x len %lu",
+		    cmd->get_log_page.opcode, cmd->get_log_page.lid,
+		    (unsigned long)len);
+#endif
+
+	switch (cmd->get_log_page.lid) {
+	case 0x02:
+		/* SMART Log */
+		memset(ep->data, 0, len);
+		break;
+	case 0x70:
+		/* Discovery log */
+		len = format_disc_log(ep->data, len, ep->iface);
+		break;
+	default:
+		print_err("get_log_page: lid %02x not supported",
+			  cmd->get_log_page.lid);
+		return NVME_SC_INVALID_FIELD;
+	}
+
+	ret = ep->ops->rma_write(ep->ep, ep->data, addr, len, cmd);
+	if (ret) {
+		print_errno("rma_write failed", ret);
+		ret = NVME_SC_WRITE_FAULT;
+	}
+
+	return ret;
 }
 
 static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
@@ -473,7 +495,7 @@ out:
 	return NULL;
 }
 
-static int add_host_to_queue(void *id, struct xp_ops *ops, struct host_queue *q)
+static int add_host_to_queue(void *id, struct host_iface *iface, struct host_queue *q)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -486,7 +508,8 @@ static int add_host_to_queue(void *id, struct xp_ops *ops, struct host_queue *q)
 
 	memset(ep, 0, sizeof(*ep));
 
-	ep->ops = ops;
+	ep->ops = iface->ops;
+	ep->iface = iface;
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {
@@ -547,7 +570,7 @@ void *interface_thread(void *arg)
 			break;
 
 		if (ret == 0)
-			add_host_to_queue(id, iface->ops, &q);
+			add_host_to_queue(id, iface, &q);
 		else if (ret != -EAGAIN)
 			print_errno("Host connection failed", ret);
 	}

@@ -21,6 +21,7 @@ struct linked_list			*interfaces = &interface_linked_list;
 static struct host_iface		 host_iface;
 
 static int				 nsdevs = 1;
+struct subsystem			 static_subsys;
 
 void shutdown_dem(void)
 {
@@ -168,6 +169,22 @@ static int open_namespace(char *filename)
 	return 0;
 }
 
+static void init_subsys(void)
+{
+	char uuid[UUID_LEN + 1];
+
+	gen_uuid(uuid);
+	sprintf(static_subsys.nqn, NVMF_UUID_FMT, uuid);
+}
+
+static void init_host_iface()
+{
+	strcpy(host_iface.type, "tcp");
+	strcpy(host_iface.family, "ipv4");
+	strcpy(host_iface.address, "127.0.0.1");
+	strcpy(host_iface.port, "4420");
+}
+
 static int init_dem(int argc, char *argv[])
 {
 	int			 opt;
@@ -181,10 +198,8 @@ static int init_dem(int argc, char *argv[])
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
 
-	strcpy(host_iface.type, "tcp");
-	strcpy(host_iface.family, "ipv4");
-	strcpy(host_iface.address, "127.0.0.1");
-	strcpy(host_iface.port, "4420");
+	init_subsys();
+	init_host_iface();
 
 #ifdef CONFIG_DEBUG
 	debug = 1;

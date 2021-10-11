@@ -152,9 +152,8 @@ struct qe {
 
 struct endpoint {
 	struct xp_ep		*ep;
-	struct xp_mr		*mr;
-	struct xp_mr		*data_mr;
 	struct xp_ops		*ops;
+	struct host_iface	*iface;
 	struct nvme_command	*cmd;
 	struct qe		*qe;
 	void			*data;

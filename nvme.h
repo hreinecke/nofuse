@@ -268,7 +268,7 @@ struct nvmf_disc_rsp_page_entry {
 	__u8			treq;
 	__le16			portid;
 	__le16			cntlid;
-	__le16			rsvd1;
+	__le16			asqsz;
 	__u8			rsvd2[22];
 	char			trsvcid[NVMF_TRSVCID_SIZE];
 	__u8			rsvd3[192];
@@ -283,6 +283,9 @@ struct nvmf_disc_rsp_page_entry {
 			__u8	rsvd[5];
 			__u16	pkey;
 		} rdma;
+		struct tcp {
+			__u8	sectype;
+		} tcp;
 	} tsas;
 };
 
