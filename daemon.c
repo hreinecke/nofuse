@@ -173,7 +173,7 @@ static void init_subsys(void)
 {
 	char uuid[UUID_LEN + 1];
 
-	gen_uuid(uuid);
+	sprintf(uuid, "62f37f51-0cc7-46d5-9865-4de22e81bd9d");
 	sprintf(static_subsys.nqn, NVMF_UUID_FMT, uuid);
 }
 

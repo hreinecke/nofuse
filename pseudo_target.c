@@ -49,11 +49,13 @@
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
 static int nvmf_discovery_genctr = 1;
+static int nvmf_ctrl_id = 1;
 
 struct host_conn {
 	struct linked_list	 node;
 	struct endpoint		*ep;
 	struct timeval		 timeval;
+	int			 ctrl_type;
 	int			 countdown;
 	int			 kato;
 };
@@ -119,7 +121,7 @@ static int handle_set_features(struct nvme_command *cmd, u32 *kato)
 	int			 ret;
 
 #ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_set_features");
+	print_debug("nvme_fabrics_type_set_features cdw10 %x", cdw10);
 #endif
 
 	if ((cdw10 & 0xff) == *kato) {
@@ -131,7 +133,7 @@ static int handle_set_features(struct nvme_command *cmd, u32 *kato)
 	return ret;
 }
 
-static int handle_connect(struct endpoint *ep, u64 addr, u64 len)
+static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 {
 	struct nvmf_connect_data *data = ep->data;
 	int			 ret;
@@ -149,15 +151,27 @@ static int handle_connect(struct endpoint *ep, u64 addr, u64 len)
 	print_info("host '%s' connected", data->hostnqn);
 	strncpy(ep->nqn, data->hostnqn, MAX_NQN_SIZE);
 
-	if (strcmp(data->subsysnqn, NVME_DISC_SUBSYS_NAME)) {
-		print_err("bad subsystem '%s', expecting '%s'",
-			  data->subsysnqn, NVME_DISC_SUBSYS_NAME);
+	if (!strcmp(data->subsysnqn, NVME_DISC_SUBSYS_NAME))
+		ep->ctrl_type = NVME_DISC_CTRL;
+	else if (!strcmp(data->subsysnqn, static_subsys.nqn))
+		ep->ctrl_type = NVME_IO_CTRL;
+	else {
+		print_err("bad subsystem '%s', expecting '%s' or '%s'",
+			  data->subsysnqn, NVME_DISC_SUBSYS_NAME,
+			  static_subsys.nqn);
 		ret = NVME_SC_CONNECT_INVALID_HOST;
 	}
 
-	if (data->cntlid != 0xffff) {
-		print_err("bad controller id %x, expecting %x",
-			  data->cntlid, 0xffff);
+	if (qid == 0) {
+		if (data->cntlid != 0xffff) {
+			print_err("bad controller id %x, expecting %x",
+				  data->cntlid, 0xffff);
+			ret = NVME_SC_CONNECT_INVALID_PARAM;
+		}
+		ep->cntlid = nvmf_ctrl_id++;
+	} else if (le16toh(data->cntlid) != ep->cntlid) {
+		print_err("bad controller id %x for queue %d, expecting %x",
+			  data->cntlid, qid, ep->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 out:
@@ -185,13 +199,17 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	strncpy((char *) id->fr, " ", sizeof(id->fr));
 
 	id->mdts = 0;
-	id->cntlid = 0;
+	id->cntlid = htole16(ep->cntlid);
 	id->ver = htole32(NVME_VER);
 	id->lpa = (1 << 2);
 	id->maxcmd = htole16(NVMF_DQ_DEPTH);
 	id->sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
+	id->kas = 10;
 
-	strcpy(id->subnqn, NVME_DISC_SUBSYS_NAME);
+	if (ep->ctrl_type == NVME_DISC_CTRL)
+		strcpy(id->subnqn, NVME_DISC_SUBSYS_NAME);
+	else
+		strcpy(id->subnqn, static_subsys.nqn);
 
 	if (len > sizeof(*id))
 		len = sizeof(*id);
@@ -342,7 +360,9 @@ static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
 			ret = handle_property_get(cmd, resp, ep);
 			break;
 		case nvme_fabrics_type_connect:
-			ret = handle_connect(ep, addr, len);
+			ret = handle_connect(ep, cmd->connect.qid, addr, len);
+			if (!ret)
+				resp->result.U16 = htole16(ep->cntlid);
 			break;
 		default:
 			print_err("unknown fctype %d", cmd->fabrics.fctype);

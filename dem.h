@@ -159,6 +159,8 @@ struct endpoint {
 	void			*data;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 state;
+	int			 cntlid;
+	int			 ctrl_type;
 	u64			 csts;
 	u64			 cc;
 };

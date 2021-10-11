@@ -185,6 +185,13 @@ enum {
 	NVME_NQN_DISC			= 1,
 	NVME_NQN_NVME			= 2,
 };
+
+enum {
+	NVME_IO_CTRL			= 1,
+	NVME_DISC_CTRL			= 2,
+	NVME_ADMIN_CTRL			= 3,
+};
+
 enum {
 	NVMF_ADDR_FAMILY_PCI		= 0,
 	NVMF_ADDR_FAMILY_IP4		= 1,
@@ -338,7 +345,13 @@ struct nvme_id_ctrl {
 	__le32			rtd3e;
 	__le32			oaes;
 	__le32			ctratt;
-	__u8			rsvd100[156];
+	__u8			rsvd100[11];
+	__u8			cntrltype;
+	__u8			rsvd112[16];
+	__le16			crdt1;
+	__le16			crtd2;
+	__le16			crdt3;
+	__u8			rsvd134[122];
 	__le16			oacs;
 	__u8			acl;
 	__u8			aerl;
