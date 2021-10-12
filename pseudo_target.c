@@ -74,21 +74,41 @@ static int handle_property_get(struct nvme_command *cmd,
 	return 0;
 }
 
-static int handle_set_features(struct nvme_command *cmd, u32 *kato)
+static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
+			       struct nvme_completion *resp)
 {
-	u32			 cdw10 = ntohl(cmd->common.cdw10[0]);
-	int			 ret;
+	u32 cdw10 = le32toh(cmd->common.cdw10[0]);
+	u32 cdw11 = le32toh(cmd->common.cdw10[1]);
+	int fid = (cdw10 & 0xff), ncqr, nsqr;
+	int ret = 0;
 
 #ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_set_features cdw10 %x", cdw10);
+	print_debug("nvme_fabrics_type_set_features cdw10 %x fid %x",
+		    cdw10, fid);
 #endif
 
-	if ((cdw10 & 0xff) == *kato) {
-		*kato = ntohl(cmd->common.cdw10[1]);
-		ret = 0;
-	} else
+	switch (fid) {
+	case NVME_FEAT_NUM_QUEUES:
+		ncqr = (cdw11 >> 16) & 0xffff;
+		nsqr = cdw11 & 0xffff;
+		if (ncqr < ep->ctrl->max_endpoints) {
+			ep->ctrl->max_endpoints = ncqr;
+		}
+		if (nsqr < ep->ctrl->max_endpoints) {
+			ep->ctrl->max_endpoints = nsqr;
+		}
+		resp->result.U32 = htole32(ep->ctrl->max_endpoints << 16 |
+					   ep->ctrl->max_endpoints);
+		break;
+	case NVME_FEAT_ASYNC_EVENT:
+		ep->ctrl->aen_mask = cdw11;
+		break;
+	case NVME_FEAT_KATO:
+		ep->ctrl->kato = cdw11 * (KATO_INTERVAL / DELAY_TIMEOUT);
+		break;
+	default:
 		ret = NVME_SC_FEATURE_NOT_CHANGEABLE;
-
+	}
 	return ret;
 }
 
@@ -146,6 +166,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 		memset(ctrl, 0, sizeof(*ctrl));
 		strncpy(ctrl->nqn, data->hostnqn, MAX_NQN_SIZE);
 		ctrl->kato = RETRY_COUNT;
+		ctrl->max_endpoints = NVMF_NUM_QUEUES;
 		ep->ctrl = ctrl;
 		ctrl->subsys = subsys;
 		if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
@@ -279,7 +300,7 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 		entry.adrfam = ep->iface->adrfam;
 		entry.treq = 0;
 		entry.portid = ep->iface->portid;
-		entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
+		entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
 		entry.asqsz = 32;
 		entry.subtype = subsys->type;
 		snprintf(trsvcid, NVMF_TRSVCID_SIZE + 1, "%d",
@@ -343,7 +364,6 @@ static int handle_request(struct endpoint *ep, void *buf, int length)
 	struct nvmf_connect_command	*c = &cmd->connect;
 	u64				 addr;
 	u32				 len;
-	u32				 kato = 0;
 	int				 ret;
 
 	addr	= c->dptr.ksgl.addr;
@@ -379,11 +399,9 @@ static int handle_request(struct endpoint *ep, void *buf, int length)
 	else if (cmd->common.opcode == nvme_admin_get_log_page)
 		ret = handle_get_log_page(ep, cmd, addr, len);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
-		ret = handle_set_features(cmd, &kato);
+		ret = handle_set_features(ep, cmd, resp);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
-		else
-			ep->ctrl->kato = kato * (KATO_INTERVAL / DELAY_TIMEOUT);
 	} else {
 		print_err("unknown nvme opcode %d", cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
@@ -424,8 +442,12 @@ static void *endpoint_thread(void *arg)
 			if (--ep->countdown > 0)
 				continue;
 
-		if (ret < 0)
+		if (ret < 0) {
+			print_err("endpoint '%s' qid %d error %d retry %d",
+				  ep->ctrl ? ep->ctrl->nqn : "<NULL>",
+				  ep->qid, ret, ep->countdown);
 			break;
+		}
 	}
 
 	disconnect_endpoint(ep, !stopped);

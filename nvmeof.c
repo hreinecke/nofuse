@@ -182,7 +182,6 @@ int run_pseudo_target(struct endpoint *ep, void *id)
 	ep->data = data;
 
 	ep->state = CONNECTED;
-	print_info("endpoint connected");
 	return 0;
 
 out_free_cmd:

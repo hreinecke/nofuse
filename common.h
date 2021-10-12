@@ -61,6 +61,7 @@ extern struct linked_list	*interfaces;
 #define NVMF_UUID_FMT		"nqn.2014-08.org.nvmexpress:uuid:%s"
 
 #define NVMF_DQ_DEPTH		2
+#define NVMF_NUM_QUEUES		8
 
 #define MAX_NQN_SIZE		256
 #define MAX_ALIAS_SIZE		64
@@ -105,6 +106,8 @@ struct ctrl_conn {
 	int			 cntlid;
 	int			 ctrl_type;
 	int			 kato;
+	int			 max_endpoints;
+	int			 aen_mask;
 	u64			 csts;
 	u64			 cc;
 };

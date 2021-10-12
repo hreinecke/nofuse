@@ -172,6 +172,7 @@ enum {
 };
 
 enum {
+	NVME_FEAT_NUM_QUEUES		= 0x07,
 	NVME_FEAT_ASYNC_EVENT		= 0x0B,
 	NVME_FEAT_KATO			= 0x0F,
 	NVME_LOG_DISC			= 0x70,

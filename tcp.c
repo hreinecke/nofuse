@@ -52,33 +52,6 @@ struct xp_qe {
 	union nvme_tcp_pdu	 pdu;
 };
 
-static int tcp_init_endpoint(struct xp_ep **_ep, int depth)
-{
-	struct xp_ep		*ep;
-	int			 sockfd;
-
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0) {
-		print_err("Error: Cannot create the socket");
-		return -errno;
-	}
-
-	ep = malloc(sizeof(*ep));
-	if (!ep) {
-		close(sockfd);
-		return -ENOMEM;
-	}
-
-	memset(ep, 0, sizeof(*ep));
-
-	*_ep = (struct xp_ep *) ep;
-
-	ep->sockfd = sockfd;
-	ep->depth = depth;
-
-	return 0;
-}
-
 static void tcp_destroy_endpoint(struct xp_ep *ep)
 {
 	struct xp_qe		*qe = ep->qe;
@@ -281,6 +254,7 @@ err:
 static void tcp_destroy_listener(struct xp_pep *pep)
 {
 	close(pep->listenfd);
+	pep->listenfd = -1;
 	free(pep->sock_addr);
 }
 
@@ -479,7 +453,6 @@ static void tcp_set_sgl(struct nvme_command *cmd, u8 opcode, int len,
 }
 
 static struct xp_ops tcp_ops = {
-	.init_endpoint		= tcp_init_endpoint,
 	.create_endpoint	= tcp_create_endpoint,
 	.destroy_endpoint	= tcp_destroy_endpoint,
 	.init_listener		= tcp_init_listener,
