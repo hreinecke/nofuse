@@ -388,9 +388,7 @@ static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
 	if (ret)
 		resp->status = (NVME_SC_DNR | ret) << 1;
 
-	ep->ops->send_rsp(ep->ep, resp, sizeof(*resp));
-
-	return ret;
+	return ep->ops->send_rsp(ep->ep, resp, sizeof(*resp));
 }
 
 #define HOST_QUEUE_MAX 3 /* min of 3 otherwise cannot tell if full */
