@@ -133,7 +133,6 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
 
-	print_info("host '%s' qid %d connected", data->hostnqn, qid);
 	ep->qid = qid;
 
 	list_for_each_entry(_subsys, &subsys_linked_list, node) {
@@ -187,6 +186,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 			  data->cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
+	print_info("ctrl %d qid %d connected", ep->ctrl->cntlid, ep->qid);
 out:
 	return ret;
 }
@@ -204,14 +204,16 @@ static int handle_identify_ctrl(struct endpoint *ep, u64 len)
 	id->cntlid = htole16(ep->ctrl->cntlid);
 	id->ver = htole32(NVME_VER);
 	id->lpa = (1 << 2);
-	id->maxcmd = htole16(NVMF_DQ_DEPTH);
 	id->sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id->kas = DELAY_TIMEOUT / 100; /* KAS is in units of 100 msecs */
 
-	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL)
+	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL) {
 		strcpy(id->subnqn, NVME_DISC_SUBSYS_NAME);
-	else
+		id->maxcmd = htole16(NVMF_DQ_DEPTH);
+	} else {
 		strcpy(id->subnqn, ep->ctrl->subsys->nqn);
+		id->maxcmd = htole16(256);
+	}
 
 	if (len > sizeof(*id))
 		len = sizeof(*id);
