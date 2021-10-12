@@ -373,61 +373,6 @@ static int validate_reply(struct nvme_tcp_icresp_pdu *reply, int len)
 	return 0;
 }
 
-static int tcp_client_connect(struct xp_ep *_ep, struct sockaddr *dst,
-			       void *data, int _len)
-{
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
-	struct nvme_tcp_icresp_pdu *reply;
-	struct nvme_tcp_icreq_pdu *conn;
-	int			 len, ret;
-	int			 opt = 1;
-
-	ret = setsockopt(ep->sockfd, IPPROTO_TCP, TCP_SYNCNT,
-			 (char *) &opt, sizeof(opt));
-	if (ret != 0) {
-		print_err("setsockopt TCP_SYNCNT returned %d", errno);
-		return -errno;
-	}
-
-	ret = setsockopt(ep->sockfd, IPPROTO_TCP,
-			TCP_NODELAY, (char *) &opt, sizeof(opt));
-	if (ret != 0) {
-		print_err("setsockopt TCP_NODELAY returned %d", errno);
-		return -errno;
-	}
-
-	ret = connect(ep->sockfd, (struct sockaddr *) dst, sizeof(*dst));
-	if (ret != 0)
-		return -errno;
-
-	conn = (struct nvme_tcp_icreq_pdu *) data;
-
-	len = write(ep->sockfd, conn, _len);
-	if (len < 0) {
-		print_err("write returned %d", errno);
-		return -errno;
-	}
-
-	if (posix_memalign((void **) &reply, PAGE_SIZE, sizeof(*reply)))
-		return -ENOMEM;
-
-	len = read(ep->sockfd, reply, sizeof(*reply));
-	if (len < 0) {
-		print_err("read returned %d", errno);
-		ret = -errno;
-		goto out;
-	}
-
-	ret = validate_reply(reply, len);
-	if (ret != -EINVAL) {
-		ep->state = CONNECTED;
-		ret = 0;
-	}
-out:
-	free(reply);
-	return ret;
-}
-
 static void tcp_destroy_listener(struct xp_pep *_pep)
 {
 	struct tcp_pep		*pep = (struct tcp_pep *) _pep;
@@ -553,40 +498,6 @@ static inline int tcp_handle_inline_data(struct tcp_ep *ep,
 	return ret;
 }
 
-static int tcp_send_msg(struct xp_ep *_ep, void *msg, int _len)
-{
-	struct nvme_command	*cmd = (struct nvme_command *)msg;
-	struct tcp_ep		*ep = (struct tcp_ep *)_ep;
-	struct nvme_tcp_cmd_capsule_pdu	 pdu;
-	int			 len;
-
-	UNUSED(_len);
-
-	pdu.c_hdr.pdu_type = NVME_TCP_CAPSULECMD;
-	pdu.c_hdr.flags = 0;
-	pdu.c_hdr.pdo = 0;
-	pdu.c_hdr.hlen = sizeof(struct nvme_tcp_cmd_capsule_pdu);
-	pdu.c_hdr.plen = sizeof(struct nvme_command) +
-			 sizeof(struct nvme_tcp_common_hdr);
-
-	memcpy(&(pdu.cmd), cmd, sizeof(struct nvme_command));
-
-	len = write(ep->sockfd, &pdu, sizeof(pdu));
-	if (len < 0) {
-		if (cmd->common.opcode != nvme_fabrics_command ||
-		    cmd->fabrics.fctype != nvme_fabrics_type_property_set ||
-		    cmd->prop_set.offset != htole32(NVME_REG_CC) ||
-		    cmd->prop_set.value != htole64(0x464001))
-			print_err("write command returned %d", errno);
-		return -errno;
-	} else if (len != sizeof(pdu)) {
-		print_err("write command short write (%d of %ld bytes)",
-			  len, sizeof(pdu));
-	}
-
-	return tcp_handle_inline_data(ep, cmd);
-}
-
 static int tcp_send_rsp(struct xp_ep *_ep, void *msg, int _len)
 {
 	struct nvme_completion  *comp = (struct nvme_completion *)msg;
@@ -645,31 +556,6 @@ static int tcp_poll_for_msg(struct xp_ep *_ep, void **_msg, int *bytes)
 	return 0;
 }
 
-static int tcp_build_connect_data(void **req, char *hostnqn)
-{
-	struct nvme_tcp_icreq_pdu *connect;
-	int			 bytes = sizeof(*connect);
-
-	UNUSED(hostnqn); // TBD check with hostnqn
-
-	if (posix_memalign((void **) &connect, PAGE_SIZE, bytes))
-		return -errno;
-
-	connect->c_hdr.pdu_type = NVME_TCP_ICREQ;
-	connect->c_hdr.hlen = sizeof(*connect);
-	connect->c_hdr.pdo = 0;
-	connect->c_hdr.plen = htole32(sizeof(*connect));
-
-	connect->pfv = htole16(NVME_TCP_CONNECT_FMT_1_0);
-	connect->maxr2t = 0;
-	connect->dgst = 0;
-	connect->hpda = 0;
-
-	*req = connect;
-
-	return bytes;
-}
-
 static void tcp_set_sgl(struct nvme_command *cmd, u8 opcode, int len,
 			void *data)
 {
@@ -702,14 +588,10 @@ static struct xp_ops tcp_ops = {
 	.wait_for_connection	= tcp_wait_for_connection,
 	.accept_connection	= tcp_accept_connection,
 	.reject_connection	= tcp_reject_connection,
-	.client_connect		= tcp_client_connect,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_rma_write,
-	.post_msg		= tcp_send_msg,
-	.send_msg		= tcp_send_msg,
 	.send_rsp		= tcp_send_rsp,
 	.poll_for_msg		= tcp_poll_for_msg,
-	.build_connect_data	= tcp_build_connect_data,
 	.set_sgl		= tcp_set_sgl,
 };
 

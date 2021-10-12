@@ -49,16 +49,11 @@ struct xp_ops {
 	int (*wait_for_connection)(struct xp_pep *pep, void **id);
 	int (*accept_connection)(struct xp_ep *ep);
 	int (*reject_connection)(struct xp_ep *ep, void *data, int len);
-	int (*client_connect)(struct xp_ep *ep, struct sockaddr *dst,
-			      void *data, int len);
 	int (*rma_read)(struct xp_ep *ep, void *buf, u64 addr, u64 len);
 	int (*rma_write)(struct xp_ep *ep, void *buf, u64 addr, u64 len,
 			 struct nvme_command *cmd);
-	int (*post_msg)(struct xp_ep *ep, void *msg, int len);
-	int (*send_msg)(struct xp_ep *ep, void *msg, int len);
 	int (*send_rsp)(struct xp_ep *ep, void *msg, int len);
 	int (*poll_for_msg)(struct xp_ep *ep, void **msg, int *bytes);
-	int (*build_connect_data)(void **req, char *hostnqn);
 	void (*set_sgl)(struct nvme_command *cmd, u8 opcode, int len,
 			void *data);
 };
