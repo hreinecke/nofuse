@@ -45,7 +45,11 @@ struct xp_ep {
 	__u64			 depth;
 };
 
-struct xp_pep;
+struct xp_pep {
+	struct sockaddr_in	*sock_addr;
+	int			 listenfd;
+	int			 sockfd;
+};
 
 struct xp_ops {
 	int (*init_endpoint)(struct xp_ep **ep, int depth);

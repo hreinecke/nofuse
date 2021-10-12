@@ -52,12 +52,6 @@ struct xp_qe {
 	union nvme_tcp_pdu	 pdu;
 };
 
-struct tcp_pep {
-	struct sockaddr_in	*sock_addr;
-	int			 listenfd;
-	int			 sockfd;
-};
-
 static int tcp_init_endpoint(struct xp_ep **_ep, int depth)
 {
 	struct xp_ep		*ep;
@@ -127,7 +121,7 @@ static int tcp_create_endpoint(struct xp_ep **_ep, void *id, int depth)
 
 static int tcp_init_listener(struct xp_pep **_pep, char *srvc)
 {
-	struct tcp_pep		*pep;
+	struct xp_pep		*pep;
 	struct sockaddr_in	 addr;
 	int			 listenfd;
 	int			 ret;
@@ -257,9 +251,8 @@ static int tcp_reject_connection(struct xp_ep *_ep, void *data, int len)
 	return 0;
 }
 
-static int tcp_wait_for_connection(struct xp_pep *_pep, void **_id)
+static int tcp_wait_for_connection(struct xp_pep *pep, void **_id)
 {
-	struct tcp_pep		*pep = (struct tcp_pep *) _pep;
 	int			 sockfd;
 	int			*id;
 	int			 ret;
@@ -295,51 +288,8 @@ err:
 	return ret;
 }
 
-static int validate_reply(struct nvme_tcp_icresp_pdu *reply, int len)
+static void tcp_destroy_listener(struct xp_pep *pep)
 {
-
-	if (reply->c_hdr.pdu_type != NVME_TCP_ICRESP) {
-		print_err("client connect bad type %d", reply->c_hdr.pdu_type);
-		return -EINVAL;
-	}
-
-	if (len != sizeof(struct nvme_tcp_icresp_pdu)) {
-		print_err("bad len %d", len);
-		return -EINVAL;
-	}
-
-	if (reply->c_hdr.plen != sizeof(struct nvme_tcp_icresp_pdu)) {
-		print_err("bad plen %d", reply->c_hdr.plen);
-		return -EINVAL;
-	}
-
-	if (reply->c_hdr.hlen != sizeof(struct nvme_tcp_icresp_pdu)) {
-		print_err("bad hlen %d", reply->c_hdr.hlen);
-		return -EINVAL;
-	}
-
-	if (reply->pfv != NVME_TCP_CONNECT_FMT_1_0) {
-		print_err("bad pfv %d", reply->pfv);
-		return -EINVAL;
-	}
-
-	if (reply->dgst != 0) {
-		print_err("unsupported digest %d", reply->dgst);
-		return -EINVAL;
-	}
-
-	if (reply->cpda != 0) {
-		print_err("unsupported cpda %d", reply->cpda);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static void tcp_destroy_listener(struct xp_pep *_pep)
-{
-	struct tcp_pep		*pep = (struct tcp_pep *) _pep;
-
 	close(pep->listenfd);
 	free(pep->sock_addr);
 }
