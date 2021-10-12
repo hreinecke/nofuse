@@ -125,9 +125,8 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 		}
 	}
 	if (!subsys) {
-		print_err("bad subsystem '%s', expecting '%s' or '%s'",
-			  data->subsysnqn, NVME_DISC_SUBSYS_NAME,
-			  static_subsys.nqn);
+		print_err("subsystem '%s' not found",
+			  data->subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
@@ -138,7 +137,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 		}
 	}
 	if (!ep->ctrl) {
-		print_info("Allocating new controller");
+		print_info("Allocating new controller '%s'", data->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
 			print_err("Out of memory allocating controller");
@@ -205,7 +204,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL)
 		strcpy(id->subnqn, NVME_DISC_SUBSYS_NAME);
 	else
-		strcpy(id->subnqn, static_subsys.nqn);
+		strcpy(id->subnqn, ep->ctrl->subsys->nqn);
 
 	if (len > sizeof(*id))
 		len = sizeof(*id);
@@ -245,7 +244,7 @@ static int get_nsdev(void *data)
 	return cnt * sizeof(*entry) + sizeof(*hdr) - 1;
 }
 
-static int format_disc_log(void *data, u64 data_len, struct host_iface *iface)
+static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 {
 	struct nvmf_disc_rsp_page_hdr hdr;
 	struct nvmf_disc_rsp_page_entry entry;
@@ -265,15 +264,15 @@ static int format_disc_log(void *data, u64 data_len, struct host_iface *iface)
 		data_len = sizeof(entry);
 	memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
 	entry.trtype = NVMF_TRTYPE_TCP;
-	entry.adrfam = iface->adrfam;
+	entry.adrfam = ep->iface->adrfam;
 	entry.treq = 0;
 	entry.portid = 1;
 	entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
 	entry.asqsz = 32;
 	entry.subtype = NVME_NQN_NVME;
-	memcpy(entry.trsvcid, iface->port, NVMF_TRSVCID_SIZE);
-	memcpy(entry.traddr, iface->address, NVMF_TRADDR_SIZE);
-	strncpy(entry.subnqn, static_subsys.nqn, NVMF_NQN_FIELD_LEN);
+	memcpy(entry.trsvcid, ep->iface->port, NVMF_TRSVCID_SIZE);
+	memcpy(entry.traddr, ep->iface->address, NVMF_TRADDR_SIZE);
+	strncpy(entry.subnqn, ep->ctrl->subsys->nqn, NVMF_NQN_FIELD_LEN);
 	memcpy(data, &entry, data_len);
 	return sizeof(hdr) + data_len;
 }
@@ -296,7 +295,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		break;
 	case 0x70:
 		/* Discovery log */
-		len = format_disc_log(ep->data, len, ep->iface);
+		len = format_disc_log(ep->data, len, ep);
 		break;
 	default:
 		print_err("get_log_page: lid %02x not supported",

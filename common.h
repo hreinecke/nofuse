@@ -151,7 +151,6 @@ struct target {
 	int			 kato_countdown;
 };
 
-extern struct subsystem static_subsys;
 extern struct linked_list subsys_linked_list;
 
 void disconnect_endpoint(struct endpoint *ep, int shutdown);

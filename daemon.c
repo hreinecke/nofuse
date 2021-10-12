@@ -21,7 +21,6 @@ struct linked_list			*interfaces = &interface_linked_list;
 static struct host_iface		 host_iface;
 
 static int				 nsdevs = 1;
-struct subsystem			 static_subsys;
 
 void shutdown_dem(void)
 {
