@@ -37,7 +37,14 @@
 
 #include <sys/socket.h>
 
-struct xp_ep;
+struct xp_ep {
+	struct sockaddr_in	*sock_addr;
+	struct tcp_qe		*qe;
+	int			 sockfd;
+	int			 state;
+	__u64			 depth;
+};
+
 struct xp_pep;
 
 struct xp_ops {

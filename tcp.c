@@ -52,21 +52,13 @@ struct tcp_qe {
 	union nvme_tcp_pdu	 pdu;
 };
 
-struct tcp_ep {
-	struct sockaddr_in	*sock_addr;
-	struct tcp_qe		*qe;
-	int			 sockfd;
-	int			 state;
-	__u64			 depth;
-};
-
 struct tcp_pep {
 	struct sockaddr_in	*sock_addr;
 	int			 listenfd;
 	int			 sockfd;
 };
 
-static int tcp_create_queue_recv_pool(struct tcp_ep *ep)
+static int tcp_create_queue_recv_pool(struct xp_ep *ep)
 {
 	struct tcp_qe		*qe;
 	u16			 i;
@@ -95,7 +87,7 @@ err1:
 
 static int tcp_init_endpoint(struct xp_ep **_ep, int depth)
 {
-	struct tcp_ep		*ep;
+	struct xp_ep		*ep;
 	int			 sockfd;
 
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -120,9 +112,8 @@ static int tcp_init_endpoint(struct xp_ep **_ep, int depth)
 	return 0;
 }
 
-static void tcp_destroy_endpoint(struct xp_ep *_ep)
+static void tcp_destroy_endpoint(struct xp_ep *ep)
 {
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	struct tcp_qe		*qe = ep->qe;
 	int			 i = ep->depth;
 
@@ -140,7 +131,7 @@ static void tcp_destroy_endpoint(struct xp_ep *_ep)
 
 static int tcp_create_endpoint(struct xp_ep **_ep, void *id, int depth)
 {
-	struct tcp_ep		*ep;
+	struct xp_ep		*ep;
 	int			 flags;
 
 	UNUSED(depth);
@@ -210,9 +201,8 @@ err:
 	return ret;
 }
 
-static int tcp_accept_connection(struct xp_ep *_ep)
+static int tcp_accept_connection(struct xp_ep *ep)
 {
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	struct nvme_tcp_icreq_pdu *init_req = NULL;
 	struct nvme_tcp_icresp_pdu *init_rep;
 	struct nvme_tcp_common_hdr *hdr;
@@ -381,9 +371,8 @@ static void tcp_destroy_listener(struct xp_pep *_pep)
 	free(pep->sock_addr);
 }
 
-static int tcp_rma_read(struct xp_ep *_ep, void *buf, u64 addr, u64 _len)
+static int tcp_rma_read(struct xp_ep *ep, void *buf, u64 addr, u64 _len)
 {
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	int			 len;
 
 	UNUSED(addr);
@@ -397,10 +386,9 @@ static int tcp_rma_read(struct xp_ep *_ep, void *buf, u64 addr, u64 _len)
 	return 0;
 }
 
-static int tcp_rma_write(struct xp_ep *_ep, void *buf, u64 addr, u64 _len,
+static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 addr, u64 _len,
 		struct nvme_command *cmd)
 {
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	struct nvme_tcp_data_pdu pdu;
 	int			 len;
 
@@ -474,7 +462,7 @@ static int tcp_inline_read(size_t sockfd, void *data, size_t _len)
 	return 0;
 }
 
-static inline int tcp_handle_inline_data(struct tcp_ep *ep,
+static inline int tcp_handle_inline_data(struct xp_ep *ep,
 					struct nvme_command *cmd)
 {
 	struct nvme_sgl_desc	*sg = &cmd->common.dptr.sgl;
@@ -498,10 +486,9 @@ static inline int tcp_handle_inline_data(struct tcp_ep *ep,
 	return ret;
 }
 
-static int tcp_send_rsp(struct xp_ep *_ep, void *msg, int _len)
+static int tcp_send_rsp(struct xp_ep *ep, void *msg, int _len)
 {
 	struct nvme_completion  *comp = (struct nvme_completion *)msg;
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	struct nvme_tcp_resp_capsule_pdu pdu;
 	int			 len;
 
@@ -525,9 +512,8 @@ static int tcp_send_rsp(struct xp_ep *_ep, void *msg, int _len)
 	return 0;
 }
 
-static int tcp_poll_for_msg(struct xp_ep *_ep, void **_msg, int *bytes)
+static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 {
-	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	struct nvme_tcp_common_hdr hdr;
 	void			*msg;
 	int			 msg_len;
