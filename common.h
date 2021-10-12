@@ -149,9 +149,4 @@ void *interface_thread(void *arg);
 int start_pseudo_target(struct host_iface *iface);
 int run_pseudo_target(struct endpoint *ep, void *id);
 
-int enumerate_devices(void);
-int enumerate_interfaces(void);
-void free_devices(void);
-void free_interfaces(void);
-
 #endif
