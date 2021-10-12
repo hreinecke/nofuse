@@ -106,9 +106,6 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 	if (ep->ep)
 		ep->ops->destroy_endpoint(ep->ep);
 
-	if (ep->qe)
-		free(ep->qe);
-
 	if (ep->cmd)
 		free(ep->cmd);
 

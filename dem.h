@@ -145,16 +145,11 @@ struct host_iface;
 struct portid;
 struct subsystem;
 
-struct qe {
-	u8			*buf;
-};
-
 struct endpoint {
 	struct xp_ep		*ep;
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct nvme_command	*cmd;
-	struct qe		*qe;
 	void			*data;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 state;
