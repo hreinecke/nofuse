@@ -109,12 +109,6 @@ struct ctrl_conn {
 	u64			 cc;
 };
 
-struct host {
-	struct linked_list	 node;
-	struct subsystem	*subsystem;
-	char			 nqn[MAX_NQN_SIZE + 1];
-};
-
 struct nsdev {
 	struct linked_list	 node;
 	int			 devid;
@@ -128,6 +122,7 @@ struct host_iface {
 	char			 port[9];
 	int			 port_num;
 	int			 adrfam;
+	int			 portid;
 	struct endpoint		 ep;
 	struct xp_pep		*listener;
 	struct xp_ops		*ops;
@@ -139,16 +134,6 @@ struct subsystem {
 	struct linked_list	 ctrl_list;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 type;
-};
-
-struct target {
-	struct host_iface	*iface;
-	char			 alias[MAX_ALIAS_SIZE + 1];
-	int			 mgmt_mode;
-	int			 refresh;
-	int			 log_page_retry_count;
-	int			 refresh_countdown;
-	int			 kato_countdown;
 };
 
 extern struct linked_list subsys_linked_list;

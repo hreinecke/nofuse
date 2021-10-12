@@ -276,7 +276,7 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 		entry.trtype = NVMF_TRTYPE_TCP;
 		entry.adrfam = ep->iface->adrfam;
 		entry.treq = 0;
-		entry.portid = 1;
+		entry.portid = ep->iface->portid;
 		entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
 		entry.asqsz = 32;
 		entry.subtype = subsys->type;

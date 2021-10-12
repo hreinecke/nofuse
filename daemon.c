@@ -175,6 +175,7 @@ static int init_subsys(void)
 static void init_host_iface()
 {
 	host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
+	host_iface.portid = 1;
 	strcpy(host_iface.address, "127.0.0.1");
 	strcpy(host_iface.port, "8009");
 }
