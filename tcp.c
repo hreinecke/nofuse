@@ -485,14 +485,6 @@ static int tcp_rma_write(struct xp_ep *_ep, void *buf, u64 addr, u64 _len,
 	return 0;
 }
 
-static int tcp_repost_recv(struct xp_ep *_ep, struct xp_qe *_qe)
-{
-	UNUSED(_ep);
-	UNUSED(_qe);
-
-	return 0;
-}
-
 static int tcp_inline_write(size_t sockfd, void *data, size_t _len)
 {
 	int			 len;
@@ -716,7 +708,6 @@ static struct xp_ops tcp_ops = {
 	.client_connect		= tcp_client_connect,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_rma_write,
-	.repost_recv		= tcp_repost_recv,
 	.post_msg		= tcp_send_msg,
 	.send_msg		= tcp_send_msg,
 	.send_rsp		= tcp_send_rsp,

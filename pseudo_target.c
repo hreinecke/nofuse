@@ -389,7 +389,6 @@ static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
 		resp->status = (NVME_SC_DNR | ret) << 1;
 
 	ep->ops->send_rsp(ep->ep, resp, sizeof(*resp));
-	ep->ops->repost_recv(ep->ep, qe->qe);
 
 	return ret;
 }
