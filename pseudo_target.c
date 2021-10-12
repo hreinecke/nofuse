@@ -270,6 +270,8 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 	data_len -= sizeof(hdr);
 	data += sizeof(hdr);
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
+		char trsvcid[NVMF_TRSVCID_SIZE + 1];
+
 		if (subsys->type != NVME_NQN_NVME)
 			continue;
 		memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
@@ -280,7 +282,9 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 		entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
 		entry.asqsz = 32;
 		entry.subtype = subsys->type;
-		memcpy(entry.trsvcid, ep->iface->port, NVMF_TRSVCID_SIZE);
+		snprintf(trsvcid, NVMF_TRSVCID_SIZE + 1, "%d",
+			 ep->iface->port_num);
+		memcpy(entry.trsvcid, trsvcid, NVMF_TRSVCID_SIZE);
 		memcpy(entry.traddr, ep->iface->address, NVMF_TRADDR_SIZE);
 		strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
 		if (data_len < sizeof(entry)) {

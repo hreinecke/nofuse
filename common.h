@@ -119,7 +119,6 @@ struct nsdev {
 struct host_iface {
 	char			 address[41];
 	unsigned char		 addr[sizeof(struct in6_addr)];
-	char			 port[9];
 	int			 port_num;
 	int			 adrfam;
 	int			 portid;

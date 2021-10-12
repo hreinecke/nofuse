@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
@@ -105,14 +106,6 @@ static int validate_host_iface(void)
 		goto out;
 	}
 
-	if (host_iface.port)
-		host_iface.port_num = atoi(host_iface.port);
-
-	if (!host_iface.port_num) {
-		print_info("Invalid trsvcid");
-		goto out;
-	}
-
 	ret = 1;
 out:
 	return ret;
@@ -171,13 +164,14 @@ static void init_host_iface()
 	host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
 	host_iface.portid = 1;
 	strcpy(host_iface.address, "127.0.0.1");
-	strcpy(host_iface.port, "8009");
+	host_iface.port_num = 8009;
 }
 
 static int init_args(int argc, char *argv[])
 {
-	int			 opt;
-	int			 run_as_daemon;
+	int opt;
+	int run_as_daemon;
+	char *eptr;
 #ifdef CONFIG_DEBUG
 	const char		*opt_list = "?qdu:r:c:t:f:a:s:n:";
 #else
@@ -232,8 +226,13 @@ static int init_args(int argc, char *argv[])
 				sizeof(host_iface.address));
 			break;
 		case 's':
-			strncpy(host_iface.port, optarg,
-				sizeof(host_iface.port));
+			errno = 0;
+			host_iface.port_num = strtoul(optarg, &eptr, 10);
+			if (errno || host_iface.port_num > LONG_MAX) {
+				print_err("Invalid port number '%s'",
+					  optarg);
+				return 1;
+			}
 			break;
 		case 'n':
 			if (open_namespace(optarg) < 0)

@@ -119,7 +119,7 @@ static int tcp_create_endpoint(struct xp_ep **_ep, void *id, int depth)
 	return 0;
 }
 
-static int tcp_init_listener(struct xp_pep **_pep, char *srvc)
+static int tcp_init_listener(struct xp_pep **_pep, int port)
 {
 	struct xp_pep		*pep;
 	struct sockaddr_in	 addr;
@@ -129,7 +129,7 @@ static int tcp_init_listener(struct xp_pep **_pep, char *srvc)
 	memset(&addr, 0, sizeof(addr));
 
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(atoi(srvc));
+	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	listenfd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);
