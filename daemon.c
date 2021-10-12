@@ -8,7 +8,6 @@
 
 #include "common.h"
 #include "ops.h"
-#include "dem.h"
 
 static LINKED_LIST(device_linked_list);
 static LINKED_LIST(interface_linked_list);
@@ -83,13 +82,8 @@ static void show_help(char *app)
 #else
 	const char		*arg_list = "{-d} {-S}";
 #endif
-#if defined(CONFIG_CONFIGFS) && defined(CONFIG_SPDK)
-	const char		*alt_list = "{-m <method>}";
-#else
-	const char		*alt_list = "";
-#endif
 
-	print_info("Usage: %s %s %s", app, arg_list, alt_list);
+	print_info("Usage: %s %s", app, arg_list);
 
 #ifdef CONFIG_DEBUG
 	print_info("  -q - quiet mode, no debug prints");
@@ -171,15 +165,12 @@ static int open_namespace(char *filename)
 
 static void init_subsys(void)
 {
-	char uuid[UUID_LEN + 1];
-
-	sprintf(uuid, "62f37f51-0cc7-46d5-9865-4de22e81bd9d");
-	sprintf(static_subsys.nqn, NVMF_UUID_FMT, uuid);
+	sprintf(static_subsys.nqn, NVMF_UUID_FMT,
+		"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
 }
 
 static void init_host_iface()
 {
-	strcpy(host_iface.type, "tcp");
 	strcpy(host_iface.family, "ipv4");
 	strcpy(host_iface.address, "127.0.0.1");
 	strcpy(host_iface.port, "4420");
@@ -226,18 +217,17 @@ static int init_dem(int argc, char *argv[])
 			run_as_daemon = 0;
 			break;
 #endif
-		case 't':
-			strncpy(host_iface.type, optarg, CONFIG_TYPE_SIZE);
-			break;
 		case 'f':
-			strncpy(host_iface.family, optarg, CONFIG_FAMILY_SIZE);
+			strncpy(host_iface.family, optarg,
+				sizeof(host_iface.family));
 			break;
 		case 'a':
 			strncpy(host_iface.address, optarg,
-				CONFIG_ADDRESS_SIZE);
+				sizeof(host_iface.address));
 			break;
 		case 's':
-			strncpy(host_iface.port, optarg, CONFIG_PORT_SIZE);
+			strncpy(host_iface.port, optarg,
+				sizeof(host_iface.port));
 			break;
 		case 'n':
 			if (open_namespace(optarg) < 0)

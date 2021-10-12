@@ -143,4 +143,25 @@ static inline int list_empty(const struct linked_list *list)
 #define __round_mask(x, y) ((__typeof__(x))((y) - 1))
 #define round_up(x, y) ((((x) - 1) | __round_mask(x, y)) + 1)
 
+static inline int msec_delta(struct timeval t0)
+{
+	struct timeval		t1;
+
+	gettimeofday(&t1, NULL);
+
+	return (t1.tv_sec - t0.tv_sec) * 1000 +
+		(t1.tv_usec - t0.tv_usec) / 1000;
+}
+
+static inline u32 get_unaligned_le24(const u8 *p)
+{
+	return (u32) p[0] | (u32) p[1] << 8 | (u32) p[2] << 16;
+}
+
+static inline u32 get_unaligned_le32(const u8 *p)
+{
+	return (u32) p[0] | (u32) p[1] << 8 |
+		(u32) p[2] << 16 | (u32) p[3] << 24;
+}
+
 #endif

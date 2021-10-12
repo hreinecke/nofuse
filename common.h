@@ -53,11 +53,19 @@
 
 #include "nvme.h"
 #include "utils.h"
-#include "dem.h"
 
 extern int			 debug;
 extern struct linked_list	*devices;
 extern struct linked_list	*interfaces;
+
+#define NVMF_UUID_FMT		"nqn.2014-08.org.nvmexpress:uuid:%s"
+
+#define NVMF_DQ_DEPTH		2
+
+#define MAX_NQN_SIZE		256
+#define MAX_ALIAS_SIZE		64
+
+#define PAGE_SIZE		4096
 
 #define ADRFAM_STR_IPV4 "ipv4"
 #define ADRFAM_STR_IPV6 "ipv6"
@@ -70,9 +78,23 @@ extern struct linked_list	*interfaces;
 #define IPV6_OFFSET		8
 #define IPV6_DELIM		":"
 
-#define FC_LEN			8
-#define FC_OFFSET		4
-#define FC_DELIM		":"
+enum { DISCONNECTED, CONNECTED };
+
+extern int			 stopped;
+
+struct endpoint {
+	struct xp_ep		*ep;
+	struct xp_ops		*ops;
+	struct host_iface	*iface;
+	struct nvme_command	*cmd;
+	void			*data;
+	char			 nqn[MAX_NQN_SIZE + 1];
+	int			 state;
+	int			 cntlid;
+	int			 ctrl_type;
+	u64			 csts;
+	u64			 cc;
+};
 
 struct host {
 	struct linked_list	 node;
@@ -88,32 +110,15 @@ struct nsdev {
 };
 
 struct host_iface {
-	char			 type[CONFIG_TYPE_SIZE + 1];
-	char			 family[CONFIG_FAMILY_SIZE + 1];
-	char			 address[CONFIG_ADDRESS_SIZE + 1];
+	char			 family[4];
+	char			 address[41];
 	unsigned char		 addr[sizeof(struct in6_addr)];
-	char			 port[CONFIG_PORT_SIZE + 1];
+	char			 port[9];
 	int			 port_num;
 	int			 adrfam;
 	struct endpoint		 ep;
 	struct xp_pep		*listener;
 	struct xp_ops		*ops;
-};
-
-struct portid {
-	struct linked_list	 node;
-	int			 portid;
-	char			 type[CONFIG_TYPE_SIZE + 1];
-	char			 family[CONFIG_FAMILY_SIZE + 1];
-	char			 address[CONFIG_ADDRESS_SIZE + 1];
-	char			 port[CONFIG_PORT_SIZE + 1];
-	int			 port_num;
-	int			 addr[ADDR_LEN];
-};
-
-struct _portid {
-	struct linked_list	 node;
-	struct portid		*portid;
 };
 
 struct subsystem {
@@ -134,25 +139,9 @@ struct target {
 	int			 kato_countdown;
 };
 
-struct ops {
-	int (*delete_subsys)(char *subsys);
-	int (*create_subsys)(char *subsys, int allowany);
-	int (*create_ns)(char *subsys, int nsid, int devid, int devnsid);
-	int (*delete_ns)(char *subsys, int nsid);
-	int (*create_host)(char *host);
-	int (*delete_host)(char *host);
-	int (*create_portid)(int portid, char *fam, char *typ, int req,
-			     char *addr, int svcid);
-	int (*delete_portid)(int portid);
-	int (*link_host_to_subsys)(char *subsys, char *host);
-	int (*unlink_host_from_subsys)(char *subsys, char *host);
-	int (*link_port_to_subsys)(char *subsys, int portid);
-	int (*unlink_port_from_subsys)(char *subsys, int portid);
-	int (*enumerate_devices)(void);
-	void (*reset_config)(void);
-};
-
 extern struct subsystem static_subsys;
+
+void disconnect_endpoint(struct endpoint *ep, int shutdown);
 
 void shutdown_dem(void);
 
