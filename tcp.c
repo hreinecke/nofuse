@@ -376,7 +376,7 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 	struct pollfd fds;
 	struct timespec tmo;
 
-	tmo.tv_sec = 5;
+	tmo.tv_sec = 2; /* 2 seconds per default */
 	fds.fd = ep->sockfd;
 	fds.events = POLLIN | POLLERR;
 

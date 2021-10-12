@@ -12,13 +12,11 @@
 
 LINKED_LIST(subsys_linked_list);
 static LINKED_LIST(device_linked_list);
-static LINKED_LIST(interface_linked_list);
 
 int					 stopped;
 int					 debug;
 static int				 signalled;
 struct linked_list			*devices = &device_linked_list;
-struct linked_list			*interfaces = &interface_linked_list;
 static struct host_iface		 host_iface;
 
 static int				 nsdevs = 1;
@@ -63,21 +61,12 @@ static int daemonize(void)
 
 static void show_help(char *app)
 {
-#ifdef CONFIG_DEBUG
-	const char		*arg_list = "{-q} {-d}";
-#else
 	const char		*arg_list = "{-d} {-S}";
-#endif
 
 	print_info("Usage: %s %s", app, arg_list);
 
-#ifdef CONFIG_DEBUG
-	print_info("  -q - quiet mode, no debug prints");
-	print_info("  -d - run as a daemon process (default is standalone)");
-#else
 	print_info("  -d - enable debug prints in log files");
 	print_info("  -S - run as a standalone process (default is daemon)");
-#endif
 	print_info("  In-Band (NVMe-oF) interface:");
 	print_info("  -f - address family [ ipv4, ipv6 ]");
 	print_info("  -a - transport address (e.g. 192.168.1.1)");
@@ -172,11 +161,7 @@ static int init_args(int argc, char *argv[])
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-#ifdef CONFIG_DEBUG
-	const char		*opt_list = "?qdu:r:c:t:f:a:s:n:";
-#else
 	const char		*opt_list = "?dSu:r:c:t:f:a:s:n:";
-#endif
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
@@ -185,31 +170,17 @@ static int init_args(int argc, char *argv[])
 		return 1;
 	init_host_iface();
 
-#ifdef CONFIG_DEBUG
-	debug = 1;
-	run_as_daemon = 0;
-#else
 	debug = 0;
 	run_as_daemon = 1;
-#endif
 
 	while ((opt = getopt(argc, argv, opt_list)) != -1) {
 		switch (opt) {
-#ifdef CONFIG_DEBUG
-		case 'q':
-			debug = 0;
-			break;
-		case 'd':
-			run_as_daemon = 1;
-			break;
-#else
 		case 'd':
 			debug = 1;
 			break;
 		case 'S':
 			run_as_daemon = 0;
 			break;
-#endif
 		case 'f':
 			if (!strcmp(optarg, "ipv4"))
 				host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;

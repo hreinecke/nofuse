@@ -1,37 +1,3 @@
-/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
-/*
- * NVMe over Fabrics Distributed Endpoint Management (NVMe-oF DEM).
- * Copyright (c) 2017-2019 Intel Corporation, Inc. All rights reserved.
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the
- * BSD license below:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *	- Redistributions of source code must retain the above
- *	  copyright notice, this list of conditions and the following
- *	  disclaimer.
- *
- *	- Redistributions in binary form must reproduce the above
- *	  copyright notice, this list of conditions and the following
- *	  disclaimer in the documentation and/or other materials
- *	  provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
@@ -67,6 +33,8 @@ extern struct linked_list	*interfaces;
 #define MAX_ALIAS_SIZE		64
 
 #define PAGE_SIZE		4096
+
+#define DELAY_TIMEOUT	2000	/* 2 secs */
 
 #define ADRFAM_STR_IPV4 "ipv4"
 #define ADRFAM_STR_IPV6 "ipv6"
@@ -140,10 +108,7 @@ struct subsystem {
 
 extern struct linked_list subsys_linked_list;
 
-void disconnect_endpoint(struct endpoint *ep, int shutdown);
-
+int handle_request(struct endpoint *ep, void *buf, int length);
 int run_host_interface(struct host_iface *iface);
-int start_pseudo_target(struct host_iface *iface);
-int run_pseudo_target(struct endpoint *ep, void *id);
 
 #endif
