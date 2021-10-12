@@ -39,7 +39,6 @@
 
 struct xp_ep;
 struct xp_pep;
-struct xp_qe;
 
 struct xp_ops {
 	int (*init_endpoint)(struct xp_ep **ep, int depth);
@@ -55,12 +54,10 @@ struct xp_ops {
 	int (*rma_read)(struct xp_ep *ep, void *buf, u64 addr, u64 len);
 	int (*rma_write)(struct xp_ep *ep, void *buf, u64 addr, u64 len,
 			 struct nvme_command *cmd);
-	int (*repost_recv)(struct xp_ep *ep, struct xp_qe *qe);
 	int (*post_msg)(struct xp_ep *ep, void *msg, int len);
 	int (*send_msg)(struct xp_ep *ep, void *msg, int len);
 	int (*send_rsp)(struct xp_ep *ep, void *msg, int len);
-	int (*poll_for_msg)(struct xp_ep *ep, struct xp_qe **qe, void **msg,
-			    int *bytes);
+	int (*poll_for_msg)(struct xp_ep *ep, void **msg, int *bytes);
 	int (*build_connect_data)(void **req, char *hostnqn);
 	void (*set_sgl)(struct nvme_command *cmd, u8 opcode, int len,
 			void *data);

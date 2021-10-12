@@ -7,7 +7,7 @@ all: nofuse
 nofuse: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lpthread
 
-%.o: %.c common.h utils.h
+%.o: %.c common.h utils.h ops.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 tcp.o: tcp.c common.h utils.h tcp.h

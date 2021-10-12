@@ -326,8 +326,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
-			  int length)
+static int handle_request(struct host_conn *host, void *buf, int length)
 {
 	struct endpoint			*ep = host->ep;
 	struct nvme_command		*cmd = (struct nvme_command *) buf;
@@ -345,11 +344,7 @@ static int handle_request(struct host_conn *host, struct qe *qe, void *buf,
 
 	resp->command_id = c->command_id;
 
-#if DEBUG_REQUEST
-	dump(qe->buf, length);
-#else
 	UNUSED(length);
-#endif
 
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
@@ -449,7 +444,6 @@ static void *host_thread(void *arg)
 {
 	struct host_queue	*q = arg;
 	struct endpoint		*ep = NULL;
-	struct qe		 qe;
 	struct timeval		 timeval;
 	struct linked_list	 host_list;
 	struct host_conn	*next;
@@ -485,9 +479,9 @@ static void *host_thread(void *arg)
 		list_for_each_entry_safe(host, next, &host_list, node) {
 			ep = host->ep;
 loop:
-			ret = ep->ops->poll_for_msg(ep->ep, &qe.qe, &buf, &len);
+			ret = ep->ops->poll_for_msg(ep->ep, &buf, &len);
 			if (!ret) {
-				ret = handle_request(host, &qe, buf, len);
+				ret = handle_request(host, buf, len);
 				if (!ret) {
 					host->countdown	= host->kato;
 					host->timeval	= timeval;

@@ -146,7 +146,6 @@ struct portid;
 struct subsystem;
 
 struct qe {
-	struct xp_qe		*qe;
 	u8			*buf;
 };
 

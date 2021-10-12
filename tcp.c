@@ -614,16 +614,13 @@ static int tcp_send_rsp(struct xp_ep *_ep, void *msg, int _len)
 	return 0;
 }
 
-static int tcp_poll_for_msg(struct xp_ep *_ep, struct xp_qe **_qe,
-			    void **_msg, int *bytes)
+static int tcp_poll_for_msg(struct xp_ep *_ep, void **_msg, int *bytes)
 {
 	struct tcp_ep		*ep = (struct tcp_ep *) _ep;
 	struct nvme_tcp_common_hdr hdr;
 	void			*msg;
 	int			 msg_len;
 	int			 len;
-
-	UNUSED(_qe);
 
 	len = read(ep->sockfd, &hdr, sizeof(hdr));
 	if (len != sizeof(hdr)) {
