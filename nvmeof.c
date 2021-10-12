@@ -240,7 +240,9 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u64 len)
 
 	id->nsze = ns->size / ns->blksize;
 	id->ncap = id->nsze;
-
+	id->nlbaf = 1;
+	id->flbas = 0;
+	id->lbaf[0].ds = 12;
 	if (len > sizeof(*id))
 		len = sizeof(*id);
 
