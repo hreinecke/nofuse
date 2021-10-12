@@ -106,16 +106,6 @@ static int validate_host_iface(void)
 	if (!host_iface.ep.ops)
 		goto out;
 
-	if (strcmp(host_iface.family, ADRFAM_STR_IPV4) == 0)
-		host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
-	else if (strcmp(host_iface.family, ADRFAM_STR_IPV6) == 0)
-		host_iface.adrfam = NVMF_ADDR_FAMILY_IP6;
-
-	if (!host_iface.adrfam) {
-		print_info("Invalid adrfam");
-		goto out;
-	}
-
 	switch (host_iface.adrfam) {
 	case NVMF_ADDR_FAMILY_IP4:
 		ret = inet_pton(AF_INET, host_iface.address, host_iface.addr);
@@ -171,7 +161,7 @@ static void init_subsys(void)
 
 static void init_host_iface()
 {
-	strcpy(host_iface.family, "ipv4");
+	host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
 	strcpy(host_iface.address, "127.0.0.1");
 	strcpy(host_iface.port, "4420");
 }
@@ -218,8 +208,15 @@ static int init_dem(int argc, char *argv[])
 			break;
 #endif
 		case 'f':
-			strncpy(host_iface.family, optarg,
-				sizeof(host_iface.family));
+			if (!strcmp(optarg, "ipv4"))
+				host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
+			else if (!strcmp(optarg, "ipv6"))
+				host_iface.adrfam = NVMF_ADDR_FAMILY_IP6;
+			else {
+				print_err("Invalid address family '%s'\n",
+					  optarg);
+				return 1;
+			}
 			break;
 		case 'a':
 			strncpy(host_iface.address, optarg,

@@ -110,7 +110,6 @@ struct nsdev {
 };
 
 struct host_iface {
-	char			 family[4];
 	char			 address[41];
 	unsigned char		 addr[sizeof(struct in6_addr)];
 	char			 port[9];

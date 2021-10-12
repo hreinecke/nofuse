@@ -249,15 +249,6 @@ static int get_nsdev(void *data)
 	return cnt * sizeof(*entry) + sizeof(*hdr) - 1;
 }
 
-u8 to_adrfam(char *str)
-{
-	if (strcmp(str, ADRFAM_STR_IPV4) == 0)
-		return NVMF_ADDR_FAMILY_IP4;
-	if (strcmp(str, ADRFAM_STR_IPV6) == 0)
-		return NVMF_ADDR_FAMILY_IP6;
-	return 0;
-}
-
 static int format_disc_log(void *data, u64 data_len, struct host_iface *iface)
 {
 	struct nvmf_disc_rsp_page_hdr hdr;
@@ -278,7 +269,7 @@ static int format_disc_log(void *data, u64 data_len, struct host_iface *iface)
 		data_len = sizeof(entry);
 	memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
 	entry.trtype = NVMF_TRTYPE_TCP;
-	entry.adrfam = to_adrfam(iface->family);
+	entry.adrfam = iface->adrfam;
 	entry.treq = 0;
 	entry.portid = 1;
 	entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);

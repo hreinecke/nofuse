@@ -117,12 +117,16 @@ int start_pseudo_target(struct host_iface *iface)
 	struct sockaddr		 dest;
 	int			 ret;
 
-	if (strcmp(iface->family, "ipv4") == 0)
+	switch (iface->adrfam) {
+	case NVMF_ADDR_FAMILY_IP4:
 		ret = inet_pton(AF_INET, iface->address, &dest);
-	else if (strcmp(iface->family, "ipv6") == 0)
+		break;
+	case NVMF_ADDR_FAMILY_IP6:
 		ret = inet_pton(AF_INET6, iface->address, &dest);
-	else
+		break;
+	default:
 		return -EINVAL;
+	}
 
 	if (!ret)
 		return -EINVAL;
