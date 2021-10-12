@@ -246,12 +246,21 @@ static int get_nsdev(void *data)
 
 static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 {
+	struct subsystem *subsys;
 	struct nvmf_disc_rsp_page_hdr hdr;
 	struct nvmf_disc_rsp_page_entry entry;
+	u64 log_len = data_len;
 
 	hdr.genctr = nvmf_discovery_genctr;
 	hdr.recfmt = 0;
-	hdr.numrec = 1;
+	hdr.numrec = 0;
+	list_for_each_entry(subsys, &subsys_linked_list, node) {
+		if (subsys->type == NVME_NQN_DISC)
+			continue;
+		hdr.numrec++;
+	}
+	print_info("Found %llu subsystems", hdr.numrec);
+
 	if (data_len < sizeof(hdr)) {
 		memcpy(data, &hdr, data_len);
 		return data_len;
@@ -260,21 +269,32 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 
 	data_len -= sizeof(hdr);
 	data += sizeof(hdr);
-	if (data_len > sizeof(entry))
-		data_len = sizeof(entry);
-	memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
-	entry.trtype = NVMF_TRTYPE_TCP;
-	entry.adrfam = ep->iface->adrfam;
-	entry.treq = 0;
-	entry.portid = 1;
-	entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
-	entry.asqsz = 32;
-	entry.subtype = NVME_NQN_NVME;
-	memcpy(entry.trsvcid, ep->iface->port, NVMF_TRSVCID_SIZE);
-	memcpy(entry.traddr, ep->iface->address, NVMF_TRADDR_SIZE);
-	strncpy(entry.subnqn, ep->ctrl->subsys->nqn, NVMF_NQN_FIELD_LEN);
-	memcpy(data, &entry, data_len);
-	return sizeof(hdr) + data_len;
+	list_for_each_entry(subsys, &subsys_linked_list, node) {
+		if (subsys->type != NVME_NQN_NVME)
+			continue;
+		memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
+		entry.trtype = NVMF_TRTYPE_TCP;
+		entry.adrfam = ep->iface->adrfam;
+		entry.treq = 0;
+		entry.portid = 1;
+		entry.cntlid = htonl(NVME_CNTLID_DYNAMIC);
+		entry.asqsz = 32;
+		entry.subtype = subsys->type;
+		memcpy(entry.trsvcid, ep->iface->port, NVMF_TRSVCID_SIZE);
+		memcpy(entry.traddr, ep->iface->address, NVMF_TRADDR_SIZE);
+		strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
+		if (data_len < sizeof(entry)) {
+			memcpy(data, &entry, data_len);
+			data_len = 0;
+			break;
+		}
+		memcpy(data, &entry, sizeof(entry));
+		data += sizeof(entry);
+		data_len -= sizeof(entry);
+	}
+	print_info("Returning %llu entries len %llu", hdr.numrec,
+		   log_len - data_len);
+	return log_len - data_len;
 }
 
 static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,

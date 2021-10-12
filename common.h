@@ -138,7 +138,7 @@ struct subsystem {
 	struct linked_list	 host_list;
 	struct linked_list	 ctrl_list;
 	char			 nqn[MAX_NQN_SIZE + 1];
-	int			 allowany;
+	int			 type;
 };
 
 struct target {
