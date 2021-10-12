@@ -47,7 +47,7 @@
 #define TCP_SYNCNT		7
 #define TCP_NODELAY		1
 
-struct tcp_qe {
+struct xp_qe {
 	void			*buf;
 	union nvme_tcp_pdu	 pdu;
 };
@@ -57,33 +57,6 @@ struct tcp_pep {
 	int			 listenfd;
 	int			 sockfd;
 };
-
-static int tcp_create_queue_recv_pool(struct xp_ep *ep)
-{
-	struct tcp_qe		*qe;
-	u16			 i;
-
-	qe = calloc(sizeof(struct tcp_qe), ep->depth);
-	if (!qe)
-		goto err1;
-
-	for (i = 0; i < ep->depth; i++) {
-		qe[i].buf = malloc(PAGE_SIZE);
-		if (!qe[i].buf)
-			goto err2;
-	}
-
-	ep->qe = qe;
-
-	return 0;
-err2:
-	while (i > 0)
-		free(qe[--i].buf);
-
-	free(qe);
-err1:
-	return -ENOMEM;
-}
 
 static int tcp_init_endpoint(struct xp_ep **_ep, int depth)
 {
@@ -114,7 +87,7 @@ static int tcp_init_endpoint(struct xp_ep **_ep, int depth)
 
 static void tcp_destroy_endpoint(struct xp_ep *ep)
 {
-	struct tcp_qe		*qe = ep->qe;
+	struct xp_qe		*qe = ep->qe;
 	int			 i = ep->depth;
 
 	if (qe) {

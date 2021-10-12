@@ -39,7 +39,7 @@
 
 struct xp_ep {
 	struct sockaddr_in	*sock_addr;
-	struct tcp_qe		*qe;
+	struct xp_qe		*qe;
 	int			 sockfd;
 	int			 state;
 	__u64			 depth;
