@@ -34,15 +34,6 @@ static void signal_handler(int sig_num)
 	shutdown_dem();
 }
 
-static void wait_for_signalled_shutdown(void)
-{
-	while (!stopped)
-		usleep(100);
-
-	if (signalled)
-		printf("\n");
-}
-
 static int daemonize(void)
 {
 	pid_t			 pid, sid;
@@ -166,7 +157,7 @@ static void init_host_iface()
 	strcpy(host_iface.port, "4420");
 }
 
-static int init_dem(int argc, char *argv[])
+static int init_args(int argc, char *argv[])
 {
 	int			 opt;
 	int			 run_as_daemon;
@@ -256,43 +247,6 @@ help:
 	return 0;
 }
 
-static void cleanup_inb_thread(pthread_t *listen_thread)
-{
-	pthread_kill(*listen_thread, SIGTERM);
-
-	/* wait for threads to cleanup before exiting so they can properly
-	 * cleanup.
-	 */
-
-	usleep(100);
-
-	/* even thought the threads are finished, need to call join
-	 * otherwize, it will not release its memory and valgrind indicates
-	 * a leak
-	 */
-
-	pthread_join(*listen_thread, NULL);
-}
-
-static int init_inb_thread(pthread_t *listen_thread)
-{
-	pthread_attr_t		 pthread_attr;
-	int			 ret;
-
-	pthread_attr_init(&pthread_attr);
-
-	ret = pthread_create(listen_thread, &pthread_attr, interface_thread,
-			     &host_iface);
-	if (ret) {
-		print_err("failed to start thread for Endpoint Manager");
-		print_errno("pthread_create failed", ret);
-	}
-
-	pthread_attr_destroy(&pthread_attr);
-
-	return ret;
-}
-
 void free_devices(void)
 {
 	struct linked_list	*p;
@@ -310,13 +264,12 @@ void free_devices(void)
 
 int main(int argc, char *argv[])
 {
-	pthread_t		 inb_pthread;
-	int			 ret = 1;
+	int ret = 1;
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
-	if (init_dem(argc, argv))
+	if (init_args(argc, argv))
 		goto out1;
 
 	signalled = stopped = 0;
@@ -326,14 +279,7 @@ int main(int argc, char *argv[])
 		goto out3;
 	}
 
-	if (init_inb_thread(&inb_pthread))
-		goto out3;
-
-	wait_for_signalled_shutdown();
-
-	ret = 0;
-
-	cleanup_inb_thread(&inb_pthread);
+	ret = run_host_interface(&host_iface);
 
 out3:
 	free_devices();

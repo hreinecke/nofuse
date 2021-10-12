@@ -550,9 +550,8 @@ out:
 	return ret;
 }
 
-void *interface_thread(void *arg)
+int run_host_interface(struct host_iface *iface)
 {
-	struct host_iface	*iface = arg;
 	struct xp_pep		*listener;
 	void			*id;
 	struct host_queue	 q;
@@ -563,7 +562,7 @@ void *interface_thread(void *arg)
 	ret = start_pseudo_target(iface);
 	if (ret) {
 		print_err("failed to start pseudo target");
-		goto out1;
+		return ret;
 	}
 
 	listener = iface->listener;
@@ -578,7 +577,8 @@ void *interface_thread(void *arg)
 	if (ret) {
 		print_err("failed to start host thread");
 		print_errno("pthread_create failed", ret);
-		goto out2;
+		pthread_attr_destroy(&pthread_attr);
+		goto out;
 	}
 
 	pthread_attr_destroy(&pthread_attr);
@@ -596,10 +596,8 @@ void *interface_thread(void *arg)
 	}
 
 	pthread_join(pthread, NULL);
-out2:
+out:
 	iface->ops->destroy_listener(listener);
-out1:
-	pthread_exit(NULL);
 
-	return NULL;
+	return ret;
 }
