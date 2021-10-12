@@ -16,9 +16,10 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <uuid/uuid.h>
 
-#include "nvme.h"
 #include "utils.h"
+#include "nvme.h"
 
 extern int			 debug;
 extern struct linked_list	*devices;
@@ -85,6 +86,9 @@ struct nsdev {
 	int			 devid;
 	int			 nsid;
 	int			 fd;
+	off_t			 size;
+	unsigned int		 blksize;
+	uuid_t			 uuid;
 };
 
 struct host_iface {

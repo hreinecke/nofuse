@@ -109,13 +109,29 @@ static int open_namespace(char *filename)
 		errno = ENOMEM;
 		return -1;
 	}
-	ns->fd = open(filename, O_RDWR | O_EXCL);
-	if (ns->fd < 0) {
-		perror("open");
-		free(ns);
-		return -1;
+	if (filename) {
+		struct stat st;
+
+		ns->fd = open(filename, O_RDWR | O_EXCL);
+		if (ns->fd < 0) {
+			perror("open");
+			free(ns);
+			return -1;
+		}
+		if (fstat(ns->fd, &st) < 0) {
+			perror("fstat");
+			close(ns->fd);
+			free(ns);
+			return -1;
+		}
+		ns->size = st.st_size;
+		ns->blksize = st.st_blksize;
+	} else {
+		ns->size = (off_t)128 * 1024 * 1024 * 1024; /* 128 MB */
+		ns->blksize = 4096;
 	}
 	ns->nsid = nsdevs++;
+	uuid_generate(ns->uuid);
 	list_add(&ns->node, devices);
 	return 0;
 }

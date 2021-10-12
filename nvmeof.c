@@ -9,6 +9,9 @@
 #include "ops.h"
 #include "nvme.h"
 
+#define NVME_DISC_CTRL 1
+#define NVME_IO_CTRL   2
+
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
 static int nvmf_discovery_genctr = 1;
@@ -25,12 +28,12 @@ static int handle_property_set(struct nvme_command *cmd, struct endpoint *ep)
 	if (cmd->prop_set.offset == NVME_REG_CC) {
 		ep->ctrl->cc = le64toh(cmd->prop_set.value);
 		if (ep->ctrl->cc & NVME_CC_SHN_MASK)
-			ep->ctrl->csts = NVME_CSTS_SHTS_CMPLT;
+			ep->ctrl->csts = NVME_CSTS_SHST_CMPLT;
 		else {
 			if (ep->ctrl->cc & NVME_CC_ENABLE)
 				ep->ctrl->csts = NVME_CSTS_RDY;
 			else
-				ep->ctrl->csts = NVME_CSTS_SHTS_CMPLT;
+				ep->ctrl->csts = NVME_CSTS_SHST_CMPLT;
 		}
 	} else
 		ret = NVME_SC_INVALID_FIELD;
@@ -64,7 +67,7 @@ static int handle_property_get(struct nvme_command *cmd,
 	print_debug("nvme_fabrics_type_property_get %x: %llx",
 		    cmd->prop_get.offset, value);
 #endif
-	resp->result.U64 = htole64(value);
+	resp->result.u64 = htole64(value);
 
 	return 0;
 }
@@ -72,8 +75,8 @@ static int handle_property_get(struct nvme_command *cmd,
 static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 			       struct nvme_completion *resp)
 {
-	u32 cdw10 = le32toh(cmd->common.cdw10[0]);
-	u32 cdw11 = le32toh(cmd->common.cdw10[1]);
+	u32 cdw10 = le32toh(cmd->common.cdw10);
+	u32 cdw11 = le32toh(cmd->common.cdw11);
 	int fid = (cdw10 & 0xff), ncqr, nsqr;
 	int ret = 0;
 
@@ -92,7 +95,7 @@ static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 		if (nsqr < ep->ctrl->max_endpoints) {
 			ep->ctrl->max_endpoints = nsqr;
 		}
-		resp->result.U32 = htole32(ep->ctrl->max_endpoints << 16 |
+		resp->result.u32 = htole32(ep->ctrl->max_endpoints << 16 |
 					   ep->ctrl->max_endpoints);
 		break;
 	case NVME_FEAT_ASYNC_EVENT:
@@ -216,6 +219,32 @@ static int handle_identify_ctrl(struct endpoint *ep, u64 len)
 	return len;
 }
 
+static int handle_identify_ns(struct endpoint *ep, u32 nsid, u64 len)
+{
+	struct nsdev *ns = NULL, *_ns;
+	struct nvme_id_ns *id = ep->data;
+
+	memset(id, 0, len);
+	list_for_each_entry(_ns, devices, node) {
+		if (_ns->nsid == nsid) {
+			ns = _ns;
+			break;
+		}
+	}
+	if (!ns)
+		return -ENODEV;
+
+	memset(id, 0, sizeof(*id));
+
+	id->nsze = ns->size / ns->blksize;
+	id->ncap = id->nsze;
+
+	if (len > sizeof(*id))
+		len = sizeof(*id);
+
+	return len;
+}
+
 static int handle_identify_active_ns(struct endpoint *ep, u64 len)
 {
 	struct nsdev *ns;
@@ -225,19 +254,47 @@ static int handle_identify_active_ns(struct endpoint *ep, u64 len)
 	memset(ns_list, 0, len);
 	list_for_each_entry(ns, devices, node) {
 		u16 nsid = htole16(ns->nsid);
-		if (len < 4)
+		if (len < 2)
 			break;
-		memcpy(ns_list, &nsid, 4);
-		ns_list += 4;
-		len -= 4;
+		memcpy(ns_list, &nsid, 2);
+		ns_list += 2;
+		len -= 2;
 	}
 	return id_len;
+}
+
+static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u64 len)
+{
+	struct nsdev *ns = NULL, *_ns;
+	u8 *desc_list = ep->data;
+	int desc_len = len;
+
+	memset(desc_list, 0, len);
+	list_for_each_entry(_ns, devices, node) {
+		if (_ns->nsid == nsid) {
+			ns = _ns;
+			break;
+		}
+	}
+	if (ns) {
+		desc_list[0] = 3;
+		desc_list[1] = 0x10;
+		memcpy(&desc_list[2], ns->uuid, 0x10);
+		desc_list += 0x12;
+		len -= 0x12;
+		desc_list[0] = 4;
+		desc_list[1] = 1;
+		desc_list[2] = 0;
+		len -= 3;
+	}
+	return desc_len;
 }
 
 static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 			   u64 addr, u64 len)
 {
-	int cns = htole32(cmd->identify.cns);
+	int cns = cmd->identify.cns;
+	int nsid = le32toh(cmd->identify.nsid);
 	int ret, id_len;
 
 #ifdef DEBUG_COMMANDS
@@ -245,11 +302,17 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 #endif
 
 	switch (cns) {
+	case NVME_ID_CNS_NS:
+		id_len = handle_identify_ns(ep, nsid, len);
+		break;
 	case NVME_ID_CNS_CTRL:
 		id_len = handle_identify_ctrl(ep, len);
 		break;
-	case NVME_ID_CNS_ACTIVE_NS:
+	case NVME_ID_CNS_NS_ACTIVE_LIST:
 		id_len = handle_identify_active_ns(ep, len);
+		break;
+	case NVME_ID_CNS_NS_DESC_LIST:
+		id_len = handle_identify_ns_desc_list(ep, nsid, len);
 		break;
 	default:
 		print_err("unexpected identify command cns %u", cns);
@@ -386,7 +449,7 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, cmd->connect.qid, addr, len);
 			if (!ret)
-				resp->result.U16 = htole16(ep->ctrl->cntlid);
+				resp->result.u16 = htole16(ep->ctrl->cntlid);
 			break;
 		default:
 			print_err("unknown fctype %d", cmd->fabrics.fctype);

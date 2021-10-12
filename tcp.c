@@ -1,12 +1,16 @@
 #define _GNU_SOURCE
-#include "common.h"
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <poll.h>
 
+#include "common.h"
 #include "tcp.h"
 #include "ops.h"
+
+#define NVME_OPCODE_MASK 0x3
+#define NVME_OPCODE_H2C  0x1
+#define NVME_OPCODE_C2H  0x2
 
 #define BACKLOG			16
 #define RESOLVE_TIMEOUT		5000
@@ -113,9 +117,9 @@ static int tcp_accept_connection(struct xp_ep *ep)
 {
 	struct nvme_tcp_icreq_pdu *init_req = NULL;
 	struct nvme_tcp_icresp_pdu *init_rep;
-	struct nvme_tcp_common_hdr *hdr;
-	unsigned int		 digest = 0;
-	int			 ret, len;
+	struct nvme_tcp_hdr *hdr;
+	unsigned int digest = 0;
+	int ret, len;
 
 	if (!ep)
 		return -EINVAL;
@@ -133,7 +137,7 @@ static int tcp_accept_connection(struct xp_ep *ep)
 		goto err1;
 	}
 
-	if (hdr->pdu_type == 0) {
+	if (hdr->type == 0) {
 		if (posix_memalign((void **) &init_req, PAGE_SIZE,
 					sizeof(*init_req))) {
 			ret = -ENOMEM;
@@ -157,15 +161,15 @@ static int tcp_accept_connection(struct xp_ep *ep)
 		goto err2;
 	}
 
-	init_rep->c_hdr.pdu_type = NVME_TCP_ICRESP;
-	init_rep->c_hdr.hlen = sizeof(*init_rep);
-	init_rep->c_hdr.pdo = 0;
-	init_rep->c_hdr.plen = htole32(sizeof(*init_rep));
-	init_rep->pfv = htole16(NVME_TCP_PDU_FORMAT_VER);
-	init_rep->maxh2c = 0xffff;
+	init_rep->hdr.type = nvme_tcp_icresp;
+	init_rep->hdr.hlen = sizeof(*init_rep);
+	init_rep->hdr.pdo = 0;
+	init_rep->hdr.plen = htole32(sizeof(*init_rep));
+	init_rep->pfv = htole16(NVME_TCP_PFV_1_0);
+	init_rep->maxdata = 0xffff;
 	init_rep->cpda = 0;
 	digest = 0;
-	init_rep->dgst = htole16(digest);
+	init_rep->digest = htole16(digest);
 
 	ret = write(ep->sockfd, init_rep, sizeof(*init_rep));
 	if (ret < 0)
@@ -249,14 +253,14 @@ static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 addr, u64 _len,
 
 	UNUSED(addr);
 
-	pdu.c_hdr.pdu_type = NVME_TCP_C2HDATA;
-	pdu.c_hdr.flags = 0;
-	pdu.c_hdr.pdo = 0;
-	pdu.c_hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
-	pdu.c_hdr.plen = sizeof(struct nvme_tcp_data_pdu) + _len;
+	pdu.hdr.type = nvme_tcp_c2h_data;
+	pdu.hdr.flags = 0;
+	pdu.hdr.pdo = 0;
+	pdu.hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
+	pdu.hdr.plen = sizeof(struct nvme_tcp_data_pdu) + _len;
 	pdu.data_offset = 0;
 	pdu.data_length = _len;
-	pdu.cccid = cmd->common.command_id;
+	pdu.command_id = cmd->common.command_id;
 
 	len = write(ep->sockfd, &pdu, sizeof(pdu));
 	if (len < 0) {
@@ -343,18 +347,18 @@ static inline int tcp_handle_inline_data(struct xp_ep *ep,
 
 static int tcp_send_rsp(struct xp_ep *ep, void *msg, int _len)
 {
-	struct nvme_completion  *comp = (struct nvme_completion *)msg;
-	struct nvme_tcp_resp_capsule_pdu pdu;
-	int			 len;
+	struct nvme_completion *comp = (struct nvme_completion *)msg;
+	struct nvme_tcp_rsp_pdu pdu;
+	int len;
 
 	UNUSED(msg);
 	UNUSED(_len);
 
-	pdu.c_hdr.pdu_type = NVME_TCP_CAPSULERESP;
-	pdu.c_hdr.flags = 0;
-	pdu.c_hdr.pdo = 0;
-	pdu.c_hdr.hlen = sizeof(struct nvme_tcp_resp_capsule_pdu);
-	pdu.c_hdr.plen = sizeof(struct nvme_tcp_resp_capsule_pdu);
+	pdu.hdr.type = nvme_tcp_rsp;
+	pdu.hdr.flags = 0;
+	pdu.hdr.pdo = 0;
+	pdu.hdr.hlen = sizeof(struct nvme_tcp_rsp_pdu);
+	pdu.hdr.plen = sizeof(struct nvme_tcp_rsp_pdu);
 
 	memcpy(&(pdu.cqe), comp, sizeof(struct nvme_completion));
 
@@ -369,9 +373,9 @@ static int tcp_send_rsp(struct xp_ep *ep, void *msg, int _len)
 
 static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 {
-	struct nvme_tcp_common_hdr hdr;
-	void			*msg;
-	int			 msg_len;
+	struct nvme_tcp_hdr hdr;
+	void *msg;
+	int msg_len;
 	int ret, len;
 	struct pollfd fds;
 	struct timespec tmo;
