@@ -387,7 +387,7 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 	ret = ppoll(&fds, 1, &tmo, NULL);
 	if (ret <= 0) {
 		if (ret == 0)
-			return -EAGAIN;
+			return -ETIMEDOUT;
 		return -errno;
 	}
 	len = read(ep->sockfd, &hdr, sizeof(hdr));

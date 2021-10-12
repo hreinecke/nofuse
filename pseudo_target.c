@@ -129,6 +129,8 @@ static void *endpoint_thread(void *arg)
 				   ep->qid, ret);
 		}
 
+		if (ret == -ETIMEDOUT)
+			continue;
 		if (ret == -EAGAIN)
 			if (--ep->countdown > 0)
 				continue;
