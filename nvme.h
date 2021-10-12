@@ -140,7 +140,14 @@ enum {
 };
 
 enum {
+	NVME_ID_CNS_NS			= 0,
 	NVME_ID_CNS_CTRL		= 1,
+	NVME_ID_CNS_ACTIVE_NS		= 2,
+	NVME_ID_CNS_NS_DESC_LIST	= 3,
+	NVME_ID_CNS_NS_CSI		= 5,
+	NVME_ID_CNS_CTRL_CSI		= 6,
+	NVME_ID_CNS_ACTIVE_NS_CSI	= 7,
+	NVME_ID_CNS_NS_CSS		= 8,
 };
 
 enum {

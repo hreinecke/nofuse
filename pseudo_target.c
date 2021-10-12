@@ -130,8 +130,8 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 	}
 
 	if (ep->ctrl) {
-		print_err("ctrl '%s' qid %d already connected",
-			  ep->ctrl->nqn, ep->qid);
+		print_err("ctrl %d qid %d already connected",
+			  ep->ctrl->cntlid, ep->qid);
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
 
@@ -194,20 +194,9 @@ out:
 	return ret;
 }
 
-static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
-			   u64 addr, u64 len)
+static int handle_identify_ctrl(struct endpoint *ep, u64 len)
 {
-	struct nvme_id_ctrl	*id = ep->data;
-	int			 ret;
-
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_identify");
-#endif
-
-	if (htole32(cmd->identify.cns) != NVME_ID_CNS_CTRL) {
-		print_err("unexpected identify command");
-		return NVME_SC_BAD_ATTRIBUTES;
-	}
+	struct nvme_id_ctrl *id = ep->data;
 
 	memset(id, 0, sizeof(*id));
 
@@ -230,39 +219,56 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	if (len > sizeof(*id))
 		len = sizeof(*id);
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, addr, len, cmd);
+	return len;
+}
+
+static int handle_identify_active_ns(struct endpoint *ep, u64 len)
+{
+	struct nsdev *ns;
+	u8 *ns_list = ep->data;
+	int id_len = len;
+
+	memset(ns_list, 0, len);
+	list_for_each_entry(ns, devices, node) {
+		u16 nsid = htole16(ns->nsid);
+		if (len < 4)
+			break;
+		memcpy(ns_list, &nsid, 4);
+		ns_list += 4;
+		len -= 4;
+	}
+	return id_len;
+}
+
+static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
+			   u64 addr, u64 len)
+{
+	int cns = htole32(cmd->identify.cns);
+	int ret, id_len;
+
+#ifdef DEBUG_COMMANDS
+	print_debug("nvme_fabrics_identify cns %d", cns);
+#endif
+
+	switch (cns) {
+	case NVME_ID_CNS_CTRL:
+		id_len = handle_identify_ctrl(ep, len);
+		break;
+	case NVME_ID_CNS_ACTIVE_NS:
+		id_len = handle_identify_active_ns(ep, len);
+		break;
+	default:
+		print_err("unexpected identify command cns %u", cns);
+		return NVME_SC_BAD_ATTRIBUTES;
+	}
+
+	ret = ep->ops->rma_write(ep->ep, ep->data, addr, id_len, cmd);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
 
 	return ret;
-}
-
-static int get_nsdev(void *data)
-{
-	struct nvmf_get_ns_devices_hdr *hdr = data;
-	struct nvmf_get_ns_devices_entry *entry;
-	struct nsdev		*dev;
-	int			 cnt = 0;
-
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_get_ns_devices");
-#endif
-
-	entry = (struct nvmf_get_ns_devices_entry *) &hdr->data;
-
-	list_for_each_entry(dev, devices, node) {
-		memset(entry, 0, sizeof(*entry));
-		entry->devid = dev->devid;
-		entry->nsid = dev->nsid;
-		cnt++;
-		entry++;
-	}
-
-	hdr->num_entries = cnt;
-
-	return cnt * sizeof(*entry) + sizeof(*hdr) - 1;
 }
 
 static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
@@ -433,8 +439,8 @@ static void *endpoint_thread(void *arg)
 				ep->timeval	= timeval;
 				continue;
 			}
-			print_info("endpoint '%s' qid %d returned %d\n",
-				   ep->ctrl ? ep->ctrl->nqn : "<NULL>",
+			print_info("ctrl %d qid %d returned %d\n",
+				   ep->ctrl ? ep->ctrl->cntlid : -1,
 				   ep->qid, ret);
 		}
 
@@ -443,8 +449,8 @@ static void *endpoint_thread(void *arg)
 				continue;
 
 		if (ret < 0) {
-			print_err("endpoint '%s' qid %d error %d retry %d",
-				  ep->ctrl ? ep->ctrl->nqn : "<NULL>",
+			print_err("ctrl %d qid %d error %d retry %d",
+				  ep->ctrl ? ep->ctrl->cntlid : -1,
 				  ep->qid, ret, ep->countdown);
 			break;
 		}
@@ -452,8 +458,8 @@ static void *endpoint_thread(void *arg)
 
 	disconnect_endpoint(ep, !stopped);
 
-	print_info("host '%s' qid %d %s",
-		   ep->ctrl ? ep->ctrl->nqn : "<NULL>", ep->qid,
+	print_info("ctrl %d qid %d %s",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
