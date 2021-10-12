@@ -241,16 +241,6 @@ err1:
 	return ret;
 }
 
-static int tcp_reject_connection(struct xp_ep *_ep, void *data, int len)
-{
-	// TBD Verify if there is a reject command for tcp
-	UNUSED(_ep);
-	UNUSED(data);
-	UNUSED(len);
-
-	return 0;
-}
-
 static int tcp_wait_for_connection(struct xp_pep *pep, void **_id)
 {
 	int			 sockfd;
@@ -496,7 +486,6 @@ static struct xp_ops tcp_ops = {
 	.destroy_listener	= tcp_destroy_listener,
 	.wait_for_connection	= tcp_wait_for_connection,
 	.accept_connection	= tcp_accept_connection,
-	.reject_connection	= tcp_reject_connection,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_rma_write,
 	.send_rsp		= tcp_send_rsp,

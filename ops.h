@@ -59,7 +59,6 @@ struct xp_ops {
 	void (*destroy_listener)(struct xp_pep *pep);
 	int (*wait_for_connection)(struct xp_pep *pep, void **id);
 	int (*accept_connection)(struct xp_ep *ep);
-	int (*reject_connection)(struct xp_ep *ep, void *data, int len);
 	int (*rma_read)(struct xp_ep *ep, void *buf, u64 addr, u64 len);
 	int (*rma_write)(struct xp_ep *ep, void *buf, u64 addr, u64 len,
 			 struct nvme_command *cmd);
