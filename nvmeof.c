@@ -153,12 +153,16 @@ int run_pseudo_target(struct endpoint *ep, void *id)
 	int			 ret;
 
 	ret = ep->ops->create_endpoint(&ep->ep, id, NVMF_DQ_DEPTH);
-	if (ret)
+	if (ret) {
+		print_errno("Failed to create endpoint", ret);
 		return ret;
+	}
 
 	ret = ep->ops->accept_connection(ep->ep);
-	if (ret)
+	if (ret) {
+		print_errno("accept() failed for endpoint", ret);
 		goto out_destroy;
+	}
 
 	if (posix_memalign(&cmd, PAGE_SIZE, PAGE_SIZE)) {
 		ret = -errno;
@@ -178,12 +182,13 @@ int run_pseudo_target(struct endpoint *ep, void *id)
 	ep->data = data;
 
 	ep->state = CONNECTED;
-
+	print_info("endpoint connected");
 	return 0;
 
 out_free_cmd:
 	free(cmd);
 out_destroy:
 	ep->ops->destroy_endpoint(ep->ep);
+	ep->ep = NULL;
 	return ret;
 }

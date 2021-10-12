@@ -83,15 +83,28 @@ enum { DISCONNECTED, CONNECTED };
 extern int			 stopped;
 
 struct endpoint {
+	struct linked_list	 node;
+	pthread_t		 pthread;
 	struct xp_ep		*ep;
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
+	struct ctrl_conn	*ctrl;
 	struct nvme_command	*cmd;
 	void			*data;
-	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 state;
+	int			 qid;
+	int			 countdown;
+	struct timeval		 timeval;
+};
+
+struct ctrl_conn {
+	struct linked_list	 node;
+	struct linked_list	 ep_list;
+	struct subsystem	*subsys;
+	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 cntlid;
 	int			 ctrl_type;
+	int			 kato;
 	u64			 csts;
 	u64			 cc;
 };
@@ -123,7 +136,7 @@ struct host_iface {
 struct subsystem {
 	struct linked_list	 node;
 	struct linked_list	 host_list;
-	struct linked_list	 portid_list;
+	struct linked_list	 ctrl_list;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 allowany;
 };
@@ -139,6 +152,7 @@ struct target {
 };
 
 extern struct subsystem static_subsys;
+extern struct linked_list subsys_linked_list;
 
 void disconnect_endpoint(struct endpoint *ep, int shutdown);
 

@@ -9,6 +9,7 @@
 #include "common.h"
 #include "ops.h"
 
+LINKED_LIST(subsys_linked_list);
 static LINKED_LIST(device_linked_list);
 static LINKED_LIST(interface_linked_list);
 
@@ -144,17 +145,37 @@ static int open_namespace(char *filename)
 	return 0;
 }
 
-static void init_subsys(void)
+static int init_subsys(void)
 {
-	sprintf(static_subsys.nqn, NVMF_UUID_FMT,
+	struct subsystem *subsys;
+
+	subsys = malloc(sizeof(*subsys));
+	if (!subsys)
+		return -ENOMEM;
+	sprintf(subsys->nqn, "%s", NVME_DISC_SUBSYS_NAME);
+	INIT_LINKED_LIST(&subsys->ctrl_list);
+	list_add(&subsys->node, &subsys_linked_list);
+
+	subsys = malloc(sizeof(*subsys));
+	if (!subsys) {
+		list_for_each_entry(subsys, &subsys_linked_list, node) {
+			list_del(&subsys->node);
+			free(subsys);
+		}
+		return -ENOMEM;
+	}
+	sprintf(subsys->nqn, NVMF_UUID_FMT,
 		"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
+	INIT_LINKED_LIST(&subsys->ctrl_list);
+	list_add(&subsys->node, &subsys_linked_list);
+	return 0;
 }
 
 static void init_host_iface()
 {
 	host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
 	strcpy(host_iface.address, "127.0.0.1");
-	strcpy(host_iface.port, "4420");
+	strcpy(host_iface.port, "8009");
 }
 
 static int init_args(int argc, char *argv[])
@@ -170,7 +191,8 @@ static int init_args(int argc, char *argv[])
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
 
-	init_subsys();
+	if (init_subsys())
+		return 1;
 	init_host_iface();
 
 #ifdef CONFIG_DEBUG
@@ -269,20 +291,14 @@ int main(int argc, char *argv[])
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
-	if (init_args(argc, argv))
-		goto out1;
+	ret = init_args(argc, argv);
+	if (ret)
+		return ret;
 
 	signalled = stopped = 0;
 
-	if (list_empty(devices)) {
-		print_info("no nvme devices found");
-		goto out3;
-	}
-
 	ret = run_host_interface(&host_iface);
 
-out3:
 	free_devices();
-out1:
 	return ret;
 }

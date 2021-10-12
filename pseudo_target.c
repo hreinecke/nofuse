@@ -17,14 +17,7 @@
 static int nvmf_discovery_genctr = 1;
 static int nvmf_ctrl_id = 1;
 
-struct ctrl_conn {
-	struct linked_list	 node;
-	struct endpoint		*ep;
-	struct timeval		 timeval;
-	int			 ctrl_type;
-	int			 countdown;
-	int			 kato;
-};
+static LINKED_LIST(endpoint_linked_list);
 
 static int handle_property_set(struct nvme_command *cmd, struct endpoint *ep)
 {
@@ -35,14 +28,14 @@ static int handle_property_set(struct nvme_command *cmd, struct endpoint *ep)
 		   cmd->prop_set.offset, cmd->prop_set.value);
 #endif
 	if (cmd->prop_set.offset == NVME_REG_CC) {
-		ep->cc = le64toh(cmd->prop_set.value);
-		if (ep->cc & NVME_CC_SHN_MASK)
-			ep->csts = NVME_CSTS_SHTS_CMPLT;
+		ep->ctrl->cc = le64toh(cmd->prop_set.value);
+		if (ep->ctrl->cc & NVME_CC_SHN_MASK)
+			ep->ctrl->csts = NVME_CSTS_SHTS_CMPLT;
 		else {
-			if (ep->cc & NVME_CC_ENABLE)
-				ep->csts = NVME_CSTS_RDY;
+			if (ep->ctrl->cc & NVME_CC_ENABLE)
+				ep->ctrl->csts = NVME_CSTS_RDY;
 			else
-				ep->csts = NVME_CSTS_SHTS_CMPLT;
+				ep->ctrl->csts = NVME_CSTS_SHTS_CMPLT;
 		}
 	} else
 		ret = NVME_SC_INVALID_FIELD;
@@ -57,11 +50,11 @@ static int handle_property_get(struct nvme_command *cmd,
 	u64			 value;
 
 	if (cmd->prop_get.offset == NVME_REG_CSTS)
-		value = ep->csts;
+		value = ep->ctrl->csts;
 	else if (cmd->prop_get.offset == NVME_REG_CAP)
 		value = 0x200f0003ffL;
 	else if (cmd->prop_get.offset == NVME_REG_CC)
-		value = ep->cc;
+		value = ep->ctrl->cc;
 	else if (cmd->prop_get.offset == NVME_REG_VS)
 		value = NVME_VER;
 	else {
@@ -101,8 +94,10 @@ static int handle_set_features(struct nvme_command *cmd, u32 *kato)
 
 static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 {
+	struct subsystem *subsys = NULL, *_subsys;
+	struct ctrl_conn *ctrl;
 	struct nvmf_connect_data *data = ep->data;
-	int			 ret;
+	int ret;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_fabrics_connect");
@@ -111,22 +106,57 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 	ret = ep->ops->rma_read(ep->ep, ep->data, addr, len);
 	if (ret) {
 		print_errno("rma_read failed", ret);
-		goto out;
+		return ret;
 	}
 
-	print_info("host '%s' connected", data->hostnqn);
-	strncpy(ep->nqn, data->hostnqn, MAX_NQN_SIZE);
+	if (ep->ctrl) {
+		print_err("ctrl '%s' qid %d already connected",
+			  ep->ctrl->nqn, ep->qid);
+		return NVME_SC_CONNECT_CTRL_BUSY;
+	}
 
-	if (!strcmp(data->subsysnqn, NVME_DISC_SUBSYS_NAME))
-		ep->ctrl_type = NVME_DISC_CTRL;
-	else if (!strcmp(data->subsysnqn, static_subsys.nqn))
-		ep->ctrl_type = NVME_IO_CTRL;
-	else {
+	print_info("host '%s' qid %d connected", data->hostnqn, qid);
+	ep->qid = qid;
+
+	list_for_each_entry(_subsys, &subsys_linked_list, node) {
+		if (!strcmp(data->subsysnqn, _subsys->nqn)) {
+			subsys = _subsys;
+			break;
+		}
+	}
+	if (!subsys) {
 		print_err("bad subsystem '%s', expecting '%s' or '%s'",
 			  data->subsysnqn, NVME_DISC_SUBSYS_NAME,
 			  static_subsys.nqn);
-		ret = NVME_SC_CONNECT_INVALID_HOST;
+		return NVME_SC_CONNECT_INVALID_HOST;
 	}
+
+	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
+		if (!strncmp(ctrl->nqn, data->hostnqn, MAX_NQN_SIZE)) {
+			ep->ctrl = ctrl;
+			break;
+		}
+	}
+	if (!ep->ctrl) {
+		print_info("Allocating new controller");
+		ctrl = malloc(sizeof(*ctrl));
+		if (!ctrl) {
+			print_err("Out of memory allocating controller");
+			goto out;
+		}
+		memset(ctrl, 0, sizeof(*ctrl));
+		strncpy(ctrl->nqn, data->hostnqn, MAX_NQN_SIZE);
+		ctrl->kato = RETRY_COUNT;
+		ep->ctrl = ctrl;
+		ctrl->subsys = subsys;
+		if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
+			     MAX_NQN_SIZE))
+			ctrl->ctrl_type = NVME_DISC_CTRL;
+		else
+			ctrl->ctrl_type = NVME_IO_CTRL;
+		list_add(&ctrl->node, &subsys->ctrl_list);
+	}
+	ctrl = ep->ctrl;
 
 	if (qid == 0) {
 		if (data->cntlid != 0xffff) {
@@ -134,10 +164,10 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 				  data->cntlid, 0xffff);
 			ret = NVME_SC_CONNECT_INVALID_PARAM;
 		}
-		ep->cntlid = nvmf_ctrl_id++;
-	} else if (le16toh(data->cntlid) != ep->cntlid) {
+		ctrl->cntlid = nvmf_ctrl_id++;
+	} else if (le16toh(data->cntlid) != ctrl->cntlid) {
 		print_err("bad controller id %x for queue %d, expecting %x",
-			  data->cntlid, qid, ep->cntlid);
+			  data->cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 out:
@@ -165,14 +195,14 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	strncpy((char *) id->fr, " ", sizeof(id->fr));
 
 	id->mdts = 0;
-	id->cntlid = htole16(ep->cntlid);
+	id->cntlid = htole16(ep->ctrl->cntlid);
 	id->ver = htole32(NVME_VER);
 	id->lpa = (1 << 2);
 	id->maxcmd = htole16(NVMF_DQ_DEPTH);
 	id->sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id->kas = 10;
 
-	if (ep->ctrl_type == NVME_DISC_CTRL)
+	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL)
 		strcpy(id->subnqn, NVME_DISC_SUBSYS_NAME);
 	else
 		strcpy(id->subnqn, static_subsys.nqn);
@@ -283,9 +313,8 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_request(struct ctrl_conn *host, void *buf, int length)
+static int handle_request(struct endpoint *ep, void *buf, int length)
 {
-	struct endpoint			*ep = host->ep;
 	struct nvme_command		*cmd = (struct nvme_command *) buf;
 	struct nvme_completion		*resp = (void *) ep->cmd;
 	struct nvmf_connect_command	*c = &cmd->connect;
@@ -314,7 +343,7 @@ static int handle_request(struct ctrl_conn *host, void *buf, int length)
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, cmd->connect.qid, addr, len);
 			if (!ret)
-				resp->result.U16 = htole16(ep->cntlid);
+				resp->result.U16 = htole16(ep->ctrl->cntlid);
 			break;
 		default:
 			print_err("unknown fctype %d", cmd->fabrics.fctype);
@@ -331,7 +360,7 @@ static int handle_request(struct ctrl_conn *host, void *buf, int length)
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 		else
-			host->kato = kato * (KATO_INTERVAL / DELAY_TIMEOUT);
+			ep->ctrl->kato = kato * (KATO_INTERVAL / DELAY_TIMEOUT);
 	} else {
 		print_err("unknown nvme opcode %d", cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
@@ -343,145 +372,50 @@ static int handle_request(struct ctrl_conn *host, void *buf, int length)
 	return ep->ops->send_rsp(ep->ep, resp, sizeof(*resp));
 }
 
-#define HOST_QUEUE_MAX 3 /* min of 3 otherwise cannot tell if full */
-struct host_queue {
-	struct endpoint		*ep[HOST_QUEUE_MAX];
-	int			 tail, head;
-};
-
-static inline int is_empty(struct host_queue *q)
+static void *endpoint_thread(void *arg)
 {
-	return q->head == q->tail;
-}
-
-static inline int is_full(struct host_queue *q)
-{
-	return ((q->head + 1) % HOST_QUEUE_MAX) == q->tail;
-}
-
-#ifdef DEBUG_HOST_QUEUE
-static inline void dump_queue(struct host_queue *q)
-{
-	print_debug("ep { %p, %p, %p }, tail %d, head %d",
-		    q->ep[0], q->ep[1], q->ep[2], q->tail, q->head);
-}
-#endif
-
-static inline int add_new_ctrl_conn(struct host_queue *q, struct endpoint *ep)
-{
-	if (is_full(q))
-		return -1;
-
-	q->ep[q->head] = ep;
-	q->head = (q->head + 1) % HOST_QUEUE_MAX;
-#ifdef DEBUG_HOST_QUEUE
-	dump_queue(q);
-#endif
-	return 0;
-}
-
-static inline int get_new_ctrl_conn(struct host_queue *q, struct endpoint **ep)
-{
-	if (is_empty(q))
-		return -1;
-
-	if (!q->ep[q->tail])
-		return 1;
-
-	*ep = q->ep[q->tail];
-	q->ep[q->tail] = NULL;
-	q->tail = (q->tail + 1) % HOST_QUEUE_MAX;
-#ifdef DEBUG_HOST_QUEUE
-	dump_queue(q);
-#endif
-	return 0;
-}
-
-static void *host_thread(void *arg)
-{
-	struct host_queue	*q = arg;
-	struct endpoint		*ep = NULL;
-	struct timeval		 timeval;
-	struct linked_list	 host_list;
-	struct ctrl_conn	*next;
-	struct ctrl_conn	*host;
-	void			*buf;
-	int			 len;
-	int			 delta;
-	int			 ret;
-
-	INIT_LINKED_LIST(&host_list);
+	struct endpoint *ep = arg;
+	int ret;
 
 	while (!stopped) {
+		struct timeval timeval;
+		void *buf;
+		int len;
+
 		gettimeofday(&timeval, NULL);
 
-		do {
-			ret = get_new_ctrl_conn(q, &ep);
-
-			if (!ret) {
-				host = malloc(sizeof(*host));
-				if (!host)
-					goto out;
-
-				host->ep	= ep;
-				host->kato	= RETRY_COUNT;
-				host->countdown	= RETRY_COUNT;
-				host->timeval	= timeval;
-
-				list_add_tail(&host->node, &host_list);
+		ret = ep->ops->poll_for_msg(ep->ep, &buf, &len);
+		if (!ret) {
+			ret = handle_request(ep, buf, len);
+			if (!ret && ep->ctrl) {
+				ep->countdown	= ep->ctrl->kato;
+				ep->timeval	= timeval;
+				continue;
 			}
-		} while (!ret && !stopped);
-
-		/* Service Host requests */
-		list_for_each_entry_safe(host, next, &host_list, node) {
-			ep = host->ep;
-loop:
-			ret = ep->ops->poll_for_msg(ep->ep, &buf, &len);
-			if (!ret) {
-				ret = handle_request(host, buf, len);
-				if (!ret) {
-					host->countdown	= host->kato;
-					host->timeval	= timeval;
-					goto loop;
-				}
-			}
-
-			if (ret == -EAGAIN)
-				if (--host->countdown > 0)
-					continue;
-
-			disconnect_endpoint(ep, !stopped);
-
-			print_info("host '%s' disconnected", ep->nqn);
-
-			free(ep);
-			list_del(&host->node);
-			free(host);
+			print_info("endpoint '%s' qid %d returned %d\n",
+				   ep->ctrl ? ep->ctrl->nqn : "<NULL>",
+				   ep->qid, ret);
 		}
 
-		delta = msec_delta(timeval);
-		if (delta < DELAY_TIMEOUT)
-			usleep((DELAY_TIMEOUT - delta) * 1000);
-	}
-out:
-	list_for_each_entry_safe(host, next, &host_list, node) {
-		disconnect_endpoint(host->ep, 1);
-		free(host->ep);
-		free(host);
+		if (ret == -EAGAIN)
+			if (--ep->countdown > 0)
+				continue;
+
+		if (ret < 0)
+			break;
 	}
 
-	while (!is_empty(q))
-		if (!get_new_ctrl_conn(q, &ep)) {
-			disconnect_endpoint(ep, 1);
-			free(ep);
-		}
+	disconnect_endpoint(ep, !stopped);
 
+	print_info("host '%s' qid %d %s",
+		   ep->ctrl ? ep->ctrl->nqn : "<NULL>", ep->qid,
+		   stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
 	return NULL;
 }
 
-static int add_host_to_queue(void *id, struct host_iface *iface, struct host_queue *q)
+static struct endpoint *enqueue_endpoint(void *id, struct host_iface *iface)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -489,13 +423,14 @@ static int add_host_to_queue(void *id, struct host_iface *iface, struct host_que
 	ep = malloc(sizeof(*ep));
 	if (!ep) {
 		print_err("no memory");
-		return -ENOMEM;
+		return NULL;
 	}
 
 	memset(ep, 0, sizeof(*ep));
 
 	ep->ops = iface->ops;
 	ep->iface = iface;
+	ep->countdown = RETRY_COUNT;
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {
@@ -503,27 +438,20 @@ static int add_host_to_queue(void *id, struct host_iface *iface, struct host_que
 		goto out;
 	}
 
-	while (is_full(q) && !stopped)
-		usleep(100);
-
-	add_new_ctrl_conn(q, ep);
-
-	usleep(20);
-
-	return 0;
+	list_add(&ep->node, &endpoint_linked_list);
+	return ep;
 out:
 	free(ep);
-	return ret;
+	return NULL;
 }
 
 int run_host_interface(struct host_iface *iface)
 {
-	struct xp_pep		*listener;
-	void			*id;
-	struct host_queue	 q;
-	pthread_attr_t		 pthread_attr;
-	pthread_t		 pthread;
-	int			 ret;
+	struct xp_pep *listener;
+	struct endpoint *ep, *_ep;
+	void *id;
+	pthread_attr_t pthread_attr;
+	int ret;
 
 	ret = start_pseudo_target(iface);
 	if (ret) {
@@ -535,35 +463,42 @@ int run_host_interface(struct host_iface *iface)
 
 	signal(SIGTERM, SIG_IGN);
 
-	memset(&q, 0, sizeof(q));
-
-	pthread_attr_init(&pthread_attr);
-
-	ret = pthread_create(&pthread, &pthread_attr, host_thread, &q);
-	if (ret) {
-		print_err("failed to start host thread");
-		print_errno("pthread_create failed", ret);
-		pthread_attr_destroy(&pthread_attr);
-		goto out;
-	}
-
-	pthread_attr_destroy(&pthread_attr);
-
 	while (!stopped) {
 		ret = iface->ops->wait_for_connection(listener, &id);
 
 		if (stopped)
 			break;
 
-		if (ret == 0)
-			add_host_to_queue(id, iface, &q);
-		else if (ret != -EAGAIN)
-			print_errno("Host connection failed", ret);
+		if (ret) {
+			if (ret != -EAGAIN)
+				print_errno("Host connection failed", ret);
+			continue;
+		}
+		ep = enqueue_endpoint(id, iface);
+		if (!ep)
+			continue;
+
+		pthread_attr_init(&pthread_attr);
+
+		ret = pthread_create(&ep->pthread, &pthread_attr,
+				     endpoint_thread, ep);
+		if (ret) {
+			ep->pthread = 0;
+			print_err("failed to start endpoint thread");
+			print_errno("pthread_create failed", ret);
+		}
+		pthread_attr_destroy(&pthread_attr);
 	}
 
-	pthread_join(pthread, NULL);
-out:
 	iface->ops->destroy_listener(listener);
+
+	list_for_each_entry_safe(ep, _ep, &endpoint_linked_list, node) {
+		if (ep->pthread) {
+			pthread_join(ep->pthread, NULL);
+		}
+		list_del(&ep->node);
+		free(ep);
+	}
 
 	return ret;
 }
