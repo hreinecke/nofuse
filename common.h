@@ -140,8 +140,6 @@ extern struct linked_list subsys_linked_list;
 
 void disconnect_endpoint(struct endpoint *ep, int shutdown);
 
-void shutdown_dem(void);
-
 int run_host_interface(struct host_iface *iface);
 int start_pseudo_target(struct host_iface *iface);
 int run_pseudo_target(struct endpoint *ep, void *id);

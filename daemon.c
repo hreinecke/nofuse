@@ -22,16 +22,10 @@ static struct host_iface		 host_iface;
 
 static int				 nsdevs = 1;
 
-void shutdown_dem(void)
-{
-	stopped = 1;
-}
-
 static void signal_handler(int sig_num)
 {
 	signalled = sig_num;
-
-	shutdown_dem();
+	stopped = 1;
 }
 
 static int daemonize(void)
