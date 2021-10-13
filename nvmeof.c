@@ -514,6 +514,11 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	} else if (ep->qid != 0) {
 		if (cmd->common.opcode == nvme_cmd_read)
 			ret = handle_read(ep, cmd, len);
+		else {
+			print_err("unknown I/O opcode %d",
+				  cmd->common.opcode);
+			ret = NVME_SC_INVALID_OPCODE;
+		}
 	} else if (cmd->common.opcode == nvme_admin_identify)
 		ret = handle_identify(ep, cmd, len);
 	else if (cmd->common.opcode == nvme_admin_keep_alive)
@@ -525,7 +530,7 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else {
-		print_err("unknown nvme opcode %d", cmd->common.opcode);
+		print_err("unknown nvme admin opcode %d", cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
 	}
 out:
