@@ -424,6 +424,49 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
+static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
+		       u64 addr, u64 len)
+{
+	struct nsdev *ns = NULL, *_ns;
+	int nsid = le32toh(cmd->rw.nsid);
+	u64 pos, data_len;
+	void *buf;
+	int ret;
+
+	list_for_each_entry(_ns, devices, node) {
+		if (_ns->nsid == nsid) {
+			ns = _ns;
+			break;
+		}
+	}
+	if (!ns) {
+		print_err("Invalid namespace %d", nsid);
+		return NVME_SC_INVALID_NS;
+	}
+
+	if ((cmd->rw.dptr.sgl.type >> 4) != NVME_TRANSPORT_SGL_DATA_DESC) {
+		print_err("unhandled sgl type %d\n",
+			  cmd->rw.dptr.sgl.type >> 4);
+		return NVME_SC_SGL_INVALID_TYPE;
+	}
+
+	pos = le64toh(cmd->rw.slba) * ns->blksize;
+	data_len = le64toh(cmd->rw.dptr.sgl.length);
+	print_info("ctrl %d qid %d nsid %d read pos %llu len %llu",
+		   ep->ctrl->cntlid, ep->qid, nsid, pos, data_len);
+	buf = malloc(data_len);
+	if (!buf)
+		return NVME_SC_NS_NOT_READY;
+	memset(buf, 0, data_len);
+	ret = ep->ops->rma_write(ep->ep, buf, addr, data_len, cmd);
+	if (ret) {
+		print_errno("rma_write failed", ret);
+		ret = NVME_SC_WRITE_FAULT;
+	}
+	free(buf);
+	return ret;
+}
+
 int handle_request(struct endpoint *ep, void *buf, int length)
 {
 	struct nvme_command		*cmd = (struct nvme_command *) buf;
@@ -459,6 +502,9 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 			print_err("unknown fctype %d", cmd->fabrics.fctype);
 			ret = NVME_SC_INVALID_OPCODE;
 		}
+	} else if (ep->qid != 0) {
+		if (cmd->common.opcode == nvme_cmd_read)
+			ret = handle_read(ep, cmd, addr, len);
 	} else if (cmd->common.opcode == nvme_admin_identify)
 		ret = handle_identify(ep, cmd, addr, len);
 	else if (cmd->common.opcode == nvme_admin_keep_alive)
