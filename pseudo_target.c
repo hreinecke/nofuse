@@ -134,7 +134,12 @@ static void *endpoint_thread(void *arg)
 		if (ret == -EAGAIN)
 			if (--ep->countdown > 0)
 				continue;
-
+		/*
+		 * ->poll_for_msg returns -ENODATA when the connection
+		 * is closed; that shouldn't count as an error.
+		 */
+		if (ret == -ENODATA)
+			break;
 		if (ret < 0) {
 			print_err("ctrl %d qid %d error %d retry %d",
 				  ep->ctrl ? ep->ctrl->cntlid : -1,
