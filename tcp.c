@@ -244,13 +244,13 @@ static int tcp_rma_read(struct xp_ep *ep, void *buf, u64 _len)
 }
 
 static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 _len,
-		struct nvme_command *cmd)
+			 struct nvme_command *cmd, bool last)
 {
 	struct nvme_tcp_data_pdu pdu;
 	int			 len;
 
 	pdu.hdr.type = nvme_tcp_c2h_data;
-	pdu.hdr.flags = 0;
+	pdu.hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
 	pdu.hdr.pdo = 0;
 	pdu.hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
 	pdu.hdr.plen = sizeof(struct nvme_tcp_data_pdu) + _len;

@@ -26,7 +26,7 @@ struct xp_ops {
 	int (*accept_connection)(struct xp_ep *ep);
 	int (*rma_read)(struct xp_ep *ep, void *buf, u64 len);
 	int (*rma_write)(struct xp_ep *ep, void *buf, u64 len,
-			 struct nvme_command *cmd);
+			 struct nvme_command *cmd, bool last);
 	int (*send_rsp)(struct xp_ep *ep, void *msg, int len);
 	int (*poll_for_msg)(struct xp_ep *ep, void **msg, int *bytes);
 	void (*set_sgl)(struct nvme_command *cmd, u8 opcode, int len,

@@ -323,7 +323,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, id_len, cmd);
+	ret = ep->ops->rma_write(ep->ep, ep->data, id_len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -415,7 +415,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, len, cmd);
+	ret = ep->ops->rma_write(ep->ep, ep->data, len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -458,7 +458,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	if (!buf)
 		return NVME_SC_NS_NOT_READY;
 	memset(buf, 0, data_len);
-	ret = ep->ops->rma_write(ep->ep, buf, data_len, cmd);
+	ret = ep->ops->rma_write(ep->ep, buf, data_len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
