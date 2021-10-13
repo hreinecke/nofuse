@@ -110,7 +110,7 @@ static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
+static int handle_connect(struct endpoint *ep, int qid, u64 len)
 {
 	struct subsystem *subsys = NULL, *_subsys;
 	struct ctrl_conn *ctrl;
@@ -121,7 +121,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 addr, u64 len)
 	print_debug("nvme_fabrics_connect");
 #endif
 
-	ret = ep->ops->rma_read(ep->ep, ep->data, addr, len);
+	ret = ep->ops->rma_read(ep->ep, ep->data, len);
 	if (ret) {
 		print_errno("rma_read failed", ret);
 		return ret;
@@ -295,7 +295,7 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u64 len)
 }
 
 static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
-			   u64 addr, u64 len)
+			   u64 len)
 {
 	int cns = cmd->identify.cns;
 	int nsid = le32toh(cmd->identify.nsid);
@@ -323,7 +323,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, addr, id_len, cmd);
+	ret = ep->ops->rma_write(ep->ep, ep->data, id_len, cmd);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -390,7 +390,7 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 }
 
 static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
-			       u64 addr, u64 len)
+			       u64 len)
 {
 	int ret = 0;
 
@@ -415,7 +415,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, addr, len, cmd);
+	ret = ep->ops->rma_write(ep->ep, ep->data, len, cmd);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -425,7 +425,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 }
 
 static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
-		       u64 addr, u64 len)
+		       u64 len)
 {
 	struct nsdev *ns = NULL, *_ns;
 	int nsid = le32toh(cmd->rw.nsid);
@@ -458,7 +458,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	if (!buf)
 		return NVME_SC_NS_NOT_READY;
 	memset(buf, 0, data_len);
-	ret = ep->ops->rma_write(ep->ep, buf, addr, data_len, cmd);
+	ret = ep->ops->rma_write(ep->ep, buf, data_len, cmd);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -472,12 +472,10 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	struct nvme_command		*cmd = (struct nvme_command *) buf;
 	struct nvme_completion		*resp = (void *) ep->cmd;
 	struct nvmf_connect_command	*c = &cmd->connect;
-	u64				 addr;
 	u32				 len;
 	int				 ret;
 
-	addr	= c->dptr.ksgl.addr;
-	len	= get_unaligned_le24(c->dptr.ksgl.length);
+	len = le32toh(c->dptr.sgl.length);
 
 	memset(resp, 0, sizeof(*resp));
 
@@ -494,7 +492,7 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 			ret = handle_property_get(cmd, resp, ep);
 			break;
 		case nvme_fabrics_type_connect:
-			ret = handle_connect(ep, cmd->connect.qid, addr, len);
+			ret = handle_connect(ep, cmd->connect.qid, len);
 			if (!ret)
 				resp->result.u16 = htole16(ep->ctrl->cntlid);
 			break;
@@ -504,13 +502,13 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 		}
 	} else if (ep->qid != 0) {
 		if (cmd->common.opcode == nvme_cmd_read)
-			ret = handle_read(ep, cmd, addr, len);
+			ret = handle_read(ep, cmd, len);
 	} else if (cmd->common.opcode == nvme_admin_identify)
-		ret = handle_identify(ep, cmd, addr, len);
+		ret = handle_identify(ep, cmd, len);
 	else if (cmd->common.opcode == nvme_admin_keep_alive)
 		ret = 0;
 	else if (cmd->common.opcode == nvme_admin_get_log_page)
-		ret = handle_get_log_page(ep, cmd, addr, len);
+		ret = handle_get_log_page(ep, cmd, len);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
 		ret = handle_set_features(ep, cmd, resp);
 		if (ret)

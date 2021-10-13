@@ -230,11 +230,9 @@ static void tcp_destroy_listener(struct xp_pep *pep)
 	free(pep->sock_addr);
 }
 
-static int tcp_rma_read(struct xp_ep *ep, void *buf, u64 addr, u64 _len)
+static int tcp_rma_read(struct xp_ep *ep, void *buf, u64 _len)
 {
 	int			 len;
-
-	UNUSED(addr);
 
 	len = read(ep->sockfd, buf, _len);
 	if (len < 0) {
@@ -245,13 +243,11 @@ static int tcp_rma_read(struct xp_ep *ep, void *buf, u64 addr, u64 _len)
 	return 0;
 }
 
-static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 addr, u64 _len,
+static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 _len,
 		struct nvme_command *cmd)
 {
 	struct nvme_tcp_data_pdu pdu;
 	int			 len;
-
-	UNUSED(addr);
 
 	pdu.hdr.type = nvme_tcp_c2h_data;
 	pdu.hdr.flags = 0;
