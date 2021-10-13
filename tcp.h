@@ -176,6 +176,7 @@ struct nvme_tcp_data_pdu {
 };
 
 union nvme_tcp_pdu {
+	struct nvme_tcp_hdr		common;
 	struct nvme_tcp_icreq_pdu	icreq;
 	struct nvme_tcp_icresp_pdu	icresp;
 	struct nvme_tcp_cmd_pdu		cmd;

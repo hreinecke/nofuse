@@ -8,6 +8,7 @@
 #include "common.h"
 #include "ops.h"
 #include "nvme.h"
+#include "tcp.h"
 
 #define NVME_DISC_CTRL 1
 #define NVME_IO_CTRL   2
@@ -472,17 +473,24 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 
 int handle_request(struct endpoint *ep, void *buf, int length)
 {
-	struct nvme_command		*cmd = (struct nvme_command *) buf;
-	struct nvme_completion		*resp = (void *) ep->cmd;
-	struct nvmf_connect_command	*c = &cmd->connect;
-	u32				 len;
-	int				 ret;
+	union nvme_tcp_pdu *pdu = buf;
+	struct nvme_tcp_hdr *hdr = &pdu->common;
+	struct nvme_command *cmd;
+	struct nvme_completion *resp = (void *) ep->cmd;
+	u32 len;
+	int ret;
 
-	len = le32toh(c->dptr.sgl.length);
+	if (hdr->type != nvme_tcp_cmd) {
+		print_err("unknown PDU type %x\n", hdr->type);
+		ret = NVME_SC_INVALID_OPCODE;
+		goto out;
+	}
+	cmd = &pdu->cmd.cmd;
 
 	memset(resp, 0, sizeof(*resp));
 
-	resp->command_id = c->command_id;
+	len = le32toh(cmd->common.dptr.sgl.length);
+	resp->command_id = cmd->common.command_id;
 
 	UNUSED(length);
 
@@ -520,7 +528,7 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 		print_err("unknown nvme opcode %d", cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
 	}
-
+out:
 	if (ret)
 		resp->status = (NVME_SC_DNR | ret) << 1;
 
