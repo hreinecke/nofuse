@@ -166,10 +166,13 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 		ep->ctrl = ctrl;
 		ctrl->subsys = subsys;
 		if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
-			     MAX_NQN_SIZE))
+			     MAX_NQN_SIZE)) {
 			ctrl->ctrl_type = NVME_DISC_CTRL;
-		else
+			ctrl->qsize = NVMF_DQ_DEPTH;
+		} else {
 			ctrl->ctrl_type = NVME_IO_CTRL;
+			ctrl->qsize = NVMF_SQ_DEPTH;
+		}
 		list_add(&ctrl->node, &subsys->ctrl_list);
 	}
 	ctrl = ep->ctrl;
@@ -212,7 +215,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u64 len)
 		id->maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
 		strcpy(id->subnqn, ep->ctrl->subsys->nqn);
-		id->maxcmd = htole16(256);
+		id->maxcmd = htole16(ep->ctrl->qsize);
 	}
 
 	if (len > sizeof(*id))
