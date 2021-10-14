@@ -272,72 +272,27 @@ static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 _len,
 	return 0;
 }
 
-static int tcp_inline_write(size_t sockfd, void *data, size_t _len)
+static int tcp_send_r2t(struct xp_ep *ep, u16 ttag,
+			u32 _offset, u32 _len)
 {
-	int			 len;
+	struct nvme_tcp_r2t_pdu pdu;
+	int len;
 
-	len = write(sockfd, (const void *) data, _len);
+	pdu.hdr.type = nvme_tcp_r2t;
+	pdu.hdr.flags = 0;
+	pdu.hdr.pdo = 0;
+	pdu.hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
+	pdu.hdr.plen = sizeof(struct nvme_tcp_r2t_pdu);
+	pdu.ttag = htole16(ttag);
+	pdu.r2t_offset = htole32(_offset);
+	pdu.r2t_length = htole32(_len);
+
+	len = write(ep->sockfd, &pdu, sizeof(pdu));
 	if (len < 0) {
-		print_err("data write returned %d", errno);
+		print_err("r2t write returned %d", errno);
 		return -errno;
 	}
-
 	return 0;
-}
-
-static int tcp_inline_read(size_t sockfd, void *data, size_t _len)
-{
-	struct nvme_tcp_data_pdu d_pdu;
-	int			 len;
-
-	UNUSED(_len);
-
-	len = read(sockfd, &d_pdu, sizeof(d_pdu));
-	if (len != sizeof(d_pdu)) {
-		print_err("header read returned %d", errno);
-		return (len < 0) ? -errno : -ENODATA;
-	}
-
-	while (d_pdu.data_length > 0) {
-		len = read(sockfd, (char *) data + d_pdu.data_offset,
-			   d_pdu.data_length);
-		if (len < 0) {
-			if (errno == EAGAIN)
-				continue;
-
-			print_err("data read returned %d", errno);
-			return -errno;
-		}
-
-		d_pdu.data_length -= len;
-		d_pdu.data_offset += len;
-	}
-
-	return 0;
-}
-
-static inline int tcp_handle_inline_data(struct xp_ep *ep,
-					struct nvme_command *cmd)
-{
-	struct nvme_sgl_desc	*sg = &cmd->common.dptr.sgl;
-	char			*data = (char *)sg->addr;
-	int			 length = sg->length;
-	int			 direction;
-	int			 ret;
-
-	if (cmd->common.opcode == nvme_fabrics_command)
-		direction = cmd->fabrics.fctype & NVME_OPCODE_MASK;
-	else
-		direction = cmd->common.opcode & NVME_OPCODE_MASK;
-
-	if (direction == NVME_OPCODE_H2C)
-		ret = tcp_inline_write(ep->sockfd, data, length);
-	else if (direction == NVME_OPCODE_C2H)
-		ret = tcp_inline_read(ep->sockfd, data, length);
-	else
-		ret = 0;
-
-	return ret;
 }
 
 static int tcp_send_rsp(struct xp_ep *ep, void *msg, int _len)
@@ -364,6 +319,51 @@ static int tcp_send_rsp(struct xp_ep *ep, void *msg, int _len)
 	}
 
 	return 0;
+}
+
+static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
+{
+	int ttag = le16toh(pdu->data.ttag);
+	u32 data_offset = le32toh(pdu->data.data_offset);
+	u32 data_len = le32toh(pdu->data.data_length);
+	char *buf;
+	int ret, offset = 0;
+
+	print_info("ctrl %d qid %d r2t tag %d pos %u len %u",
+		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
+	if (data_offset != ep->data_offset) {
+		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %u\n",
+			  ep->ctrl->cntlid, ep->qid,
+			  data_offset, ep->data_offset);
+		return NVME_SC_SGL_INVALID_DATA;
+	}
+	buf = malloc(data_len);
+	if (!buf) {
+		print_errno("malloc failed", errno);
+		return NVME_SC_INTERNAL;
+	}
+
+	while (offset < data_len) {
+		ret = tcp_rma_read(ep->ep, buf + offset, data_len - offset);
+		if (ret < 0) {
+			print_err("ctrl %d qid %d h2c data read failed, error %d",
+				  ep->ctrl->cntlid, ep->qid, errno);
+			return NVME_SC_SGL_INVALID_DATA;
+		}
+		offset += ret;
+	}
+	free(buf);
+	ep->data_expected -= data_len;
+	ep->data_offset += data_len;
+	if (!ep->data_expected) {
+		struct nvme_completion resp;
+
+		memset(&resp, 0, sizeof(resp));
+		tcp_send_rsp(ep->ep, &resp, sizeof(resp));
+		return 0;
+	}
+
+	return tcp_send_r2t(ep->ep, ttag, ep->data_offset, ep->data_expected);
 }
 
 static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
@@ -407,27 +407,24 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 	return 0;
 }
 
-static void tcp_set_sgl(struct nvme_command *cmd, u8 opcode, int len,
-			void *data)
+int tcp_handle_msg(struct endpoint *ep, void *msg, int bytes)
 {
-	struct nvme_sgl_desc	*sg;
+	union nvme_tcp_pdu *pdu = msg;
+	struct nvme_tcp_hdr *hdr = &pdu->common;
+	int ret;
 
-	memset(cmd, 0, sizeof(*cmd));
+	if (hdr->type == nvme_tcp_h2c_data) {
+		ret = tcp_handle_h2c_data(ep, pdu);
+		if (!ret)
+			return 0;
+	}
+	if (hdr->type != nvme_tcp_cmd) {
+		print_err("unknown PDU type %x\n", hdr->type);
+		return NVME_SC_INVALID_OPCODE;
+	}
 
-	cmd->common.flags = NVME_CMD_SGL_METABUF;
-	cmd->common.opcode = opcode;
-
-	sg = &cmd->common.dptr.sgl;
-	sg->length = htole32(len);
-
-	if (opcode == nvme_admin_get_log_page)
-		sg->type = (NVME_TRANSPORT_SGL_DATA_DESC << 4) |
-			   NVME_SGL_FMT_TRANSPORT_A;
-	else
-		sg->type = (NVME_SGL_FMT_DATA_DESC << 4) |
-			   NVME_SGL_FMT_OFFSET;
-
-	sg->addr = (u64) data;
+	return handle_request(ep, &pdu->cmd.cmd,
+			      bytes - sizeof(struct nvme_tcp_hdr));
 }
 
 static struct xp_ops tcp_ops = {
@@ -439,9 +436,10 @@ static struct xp_ops tcp_ops = {
 	.accept_connection	= tcp_accept_connection,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_rma_write,
+	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
 	.poll_for_msg		= tcp_poll_for_msg,
-	.set_sgl		= tcp_set_sgl,
+	.handle_msg		= tcp_handle_msg,
 };
 
 struct xp_ops *tcp_register_ops(void)

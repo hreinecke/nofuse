@@ -118,7 +118,7 @@ static void *endpoint_thread(void *arg)
 
 		ret = ep->ops->poll_for_msg(ep->ep, &buf, &len);
 		if (!ret) {
-			ret = handle_request(ep, buf, len);
+			ret = ep->ops->handle_msg(ep, buf, len);
 			if (!ret && ep->ctrl) {
 				ep->countdown	= ep->ctrl->kato;
 				ep->timeval	= timeval;

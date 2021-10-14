@@ -62,6 +62,8 @@ struct endpoint {
 	struct ctrl_conn	*ctrl;
 	struct nvme_command	*cmd;
 	void			*data;
+	unsigned int		 data_offset;
+	unsigned int		 data_expected;
 	int			 state;
 	int			 qid;
 	int			 countdown;

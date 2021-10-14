@@ -471,21 +471,46 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
+static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
+			u64 len)
+{
+	struct nsdev *ns = NULL, *_ns;
+	int nsid = le32toh(cmd->rw.nsid);
+	u64 pos, data_len;
+	int ret;
+
+	list_for_each_entry(_ns, devices, node) {
+		if (_ns->nsid == nsid) {
+			ns = _ns;
+			break;
+		}
+	}
+	if (!ns) {
+		print_err("Invalid namespace %d", nsid);
+		return NVME_SC_INVALID_NS;
+	}
+
+	pos = le64toh(cmd->rw.slba) * ns->blksize;
+	data_len = le64toh(cmd->rw.dptr.sgl.length);
+	ep->data_expected = data_len;
+	ep->data_offset = 0;
+	print_info("ctrl %d qid %d nsid %d write pos %llu len %llu",
+		   ep->ctrl->cntlid, ep->qid, nsid, pos, data_len);
+	ret = ep->ops->prep_rma_read(ep->ep, ep->qid,
+				     ep->data_offset, ep->data_expected);
+	if (ret) {
+		print_errno("prep_rma_read failed", ret);
+		ret = NVME_SC_WRITE_FAULT;
+	}
+	return ret;
+}
+
 int handle_request(struct endpoint *ep, void *buf, int length)
 {
-	union nvme_tcp_pdu *pdu = buf;
-	struct nvme_tcp_hdr *hdr = &pdu->common;
-	struct nvme_command *cmd;
+	struct nvme_command *cmd = buf;
 	struct nvme_completion *resp = (void *) ep->cmd;
 	u32 len;
 	int ret;
-
-	if (hdr->type != nvme_tcp_cmd) {
-		print_err("unknown PDU type %x\n", hdr->type);
-		ret = NVME_SC_INVALID_OPCODE;
-		goto out;
-	}
-	cmd = &pdu->cmd.cmd;
 
 	memset(resp, 0, sizeof(*resp));
 
@@ -512,10 +537,14 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 			ret = NVME_SC_INVALID_OPCODE;
 		}
 	} else if (ep->qid != 0) {
-		if (cmd->common.opcode == nvme_cmd_read)
+		if (cmd->common.opcode == nvme_cmd_read) {
 			ret = handle_read(ep, cmd, len);
-		else {
-			print_err("unknown I/O opcode %d",
+		} else if (cmd->common.opcode == nvme_cmd_write) {
+			ret = handle_write(ep, cmd, len);
+			if (!ret)
+				return 0;
+		} else {
+			print_err("unknown nvme I/O opcode %d",
 				  cmd->common.opcode);
 			ret = NVME_SC_INVALID_OPCODE;
 		}
@@ -533,7 +562,7 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 		print_err("unknown nvme admin opcode %d", cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
 	}
-out:
+
 	if (ret)
 		resp->status = (NVME_SC_DNR | ret) << 1;
 
