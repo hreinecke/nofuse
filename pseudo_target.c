@@ -15,11 +15,15 @@ static LINKED_LIST(endpoint_linked_list);
 
 void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
-	if (ep->ep)
+	if (ep->ep) {
 		ep->ops->destroy_endpoint(ep->ep);
+		ep->ep = NULL;
+	}
 
-	if (ep->cmd)
+	if (ep->cmd) {
 		free(ep->cmd);
+		ep->cmd = NULL;
+	}
 
 	ep->state = DISCONNECTED;
 }
@@ -233,6 +237,8 @@ int run_host_interface(struct host_iface *iface)
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
+
+	print_info("destroy listener");
 
 	iface->ops->destroy_listener(listener);
 
