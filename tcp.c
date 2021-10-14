@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <poll.h>
 
 #include "common.h"
@@ -374,13 +375,11 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 	int msg_len;
 	int ret, len;
 	struct pollfd fds;
-	struct timespec tmo;
 
-	tmo.tv_sec = 2; /* 2 seconds per default */
 	fds.fd = ep->sockfd;
 	fds.events = POLLIN | POLLERR;
 
-	ret = ppoll(&fds, 1, &tmo, NULL);
+	ret = poll(&fds, 1, 100);
 	if (ret <= 0) {
 		if (ret == 0)
 			return -ETIMEDOUT;
