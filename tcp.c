@@ -273,7 +273,7 @@ static int tcp_send_r2t(struct xp_ep *ep, u16 ttag,
 	pdu.hdr.pdo = 0;
 	pdu.hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
 	pdu.hdr.plen = sizeof(struct nvme_tcp_r2t_pdu);
-	pdu.ttag = htole16(ttag);
+	pdu.ttag = ttag;
 	pdu.r2t_offset = htole32(_offset);
 	pdu.r2t_length = htole32(_len);
 	ep->ttag = ttag;
@@ -347,13 +347,13 @@ static int tcp_send_rsp(struct xp_ep *ep, void *msg, int _len)
 
 static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 {
-	int ttag = le16toh(pdu->data.ttag);
+	u16 ttag = le16toh(pdu->data.ttag);
 	u32 data_offset = le32toh(pdu->data.data_offset);
 	u32 data_len = le32toh(pdu->data.data_length);
 	char *buf;
 	int ret, offset = 0;
 
-	print_info("ctrl %d qid %d h2c data tag %d pos %u len %u",
+	print_info("ctrl %d qid %d h2c data tag %04x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
 	if (ttag != ep->ep->ttag) {
 		print_err("ctrl %d qid %d h2c ttag mismatch, is %u exp %u\n",

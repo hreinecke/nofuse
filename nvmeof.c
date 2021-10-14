@@ -435,6 +435,8 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 {
 	struct nsdev *ns = NULL, *_ns;
 	int nsid = le32toh(cmd->rw.nsid);
+	/* tag is considered opaque; no endian conversion */
+	u16 tag = cmd->rw.command_id;
 	u64 pos, data_len;
 	void *buf;
 	int ret;
@@ -458,8 +460,8 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 
 	pos = le64toh(cmd->rw.slba) * ns->blksize;
 	data_len = le64toh(cmd->rw.dptr.sgl.length);
-	print_info("ctrl %d qid %d nsid %d read pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, pos, data_len);
+	print_info("ctrl %d qid %d nsid %d tag %04x read pos %llu len %llu",
+		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
 	buf = malloc(data_len);
 	if (!buf)
 		return NVME_SC_NS_NOT_READY;
@@ -478,6 +480,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 {
 	struct nsdev *ns = NULL, *_ns;
 	int nsid = le32toh(cmd->rw.nsid);
+	u16 tag = cmd->rw.command_id;
 	u64 pos, data_len;
 	int ret;
 
@@ -496,9 +499,9 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	data_len = le64toh(cmd->rw.dptr.sgl.length);
 	ep->data_expected = data_len;
 	ep->data_offset = 0;
-	print_info("ctrl %d qid %d nsid %d write pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, pos, data_len);
-	ret = ep->ops->prep_rma_read(ep->ep, ep->qid,
+	print_info("ctrl %d qid %d nsid %d write tag %04x pos %llu len %llu",
+		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
+	ret = ep->ops->prep_rma_read(ep->ep, tag,
 				     ep->data_offset, ep->data_expected);
 	if (ret) {
 		print_errno("prep_rma_read failed", ret);
@@ -568,5 +571,8 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	if (ret)
 		resp->status = (NVME_SC_DNR | ret) << 1;
 
+	print_info("ctrl %d qid %d send rsp tag %04x status %04x",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		   cmd->common.command_id, resp->status);
 	return ep->ops->send_rsp(ep->ep, resp, sizeof(*resp));
 }
