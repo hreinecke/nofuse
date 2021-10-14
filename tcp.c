@@ -228,7 +228,10 @@ static int tcp_rma_read(struct xp_ep *ep, void *buf, u64 _len)
 		print_err("read returned %d", errno);
 		return -errno;
 	}
-
+	if (len != _len) {
+		print_err("short read, %llu bytes missing",
+			  _len - len);
+	}
 	return 0;
 }
 
@@ -293,6 +296,11 @@ static int tcp_send_r2t(struct xp_ep *ep, u16 ttag,
 	if (len < 0) {
 		print_err("r2t write returned %d", errno);
 		return -errno;
+	}
+	if (len < sizeof(pdu)) {
+		print_err("short r2t write, %d bytes missing",
+			  (int)sizeof(pdu) - len);
+		return -EAGAIN;
 	}
 	return 0;
 }
@@ -451,8 +459,14 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 
 	hdr_len = hdr.hlen;
 	if (hdr_len < sizeof(hdr)) {
+		int i;
+		u8 *p = (u8 *)&hdr;
+
 		print_err("corrupt hdr, hlen %d size %ld",
 			  hdr.hlen, sizeof(hdr));
+		for (i = 0; i < len; i++) {
+			fprintf(stdout, "%02x ", p[i]);
+		}
 		hdr_len = sizeof(hdr);
 	}
 
@@ -469,6 +483,9 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 			print_errno("failed to read msg payload", errno);
 			return -errno;
 		}
+		if (len != msg_len)
+			print_err("short msg payload read, %d bytes missing",
+				  msg_len - len);
 	}
 	*_msg = msg;
 	*bytes = hdr.hlen;

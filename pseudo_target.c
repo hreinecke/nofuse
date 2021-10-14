@@ -128,7 +128,7 @@ static void *endpoint_thread(void *arg)
 				ep->timeval	= timeval;
 				continue;
 			}
-			print_info("ctrl %d qid %d handle msg error %d\n",
+			print_info("ctrl %d qid %d handle msg error %d",
 				   ep->ctrl ? ep->ctrl->cntlid : -1,
 				   ep->qid, ret);
 		} else if (ret != -ETIMEDOUT && ret != -EAGAIN) {
