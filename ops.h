@@ -9,6 +9,8 @@ struct xp_ep {
 	int			 sockfd;
 	int			 state;
 	__u64			 depth;
+	int			 maxr2t;
+	u16			 ttag;
 };
 
 struct xp_pep {

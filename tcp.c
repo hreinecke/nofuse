@@ -152,6 +152,7 @@ static int tcp_accept_connection(struct xp_ep *ep)
 			ret = -EPROTO;
 			goto err2;
 		}
+		ep->maxr2t = init_req->maxr2t + 1;
 	}
 
 	if (posix_memalign((void **) &init_rep, PAGE_SIZE,
@@ -286,11 +287,45 @@ static int tcp_send_r2t(struct xp_ep *ep, u16 ttag,
 	pdu.ttag = htole16(ttag);
 	pdu.r2t_offset = htole32(_offset);
 	pdu.r2t_length = htole32(_len);
+	ep->ttag = ttag;
 
 	len = write(ep->sockfd, &pdu, sizeof(pdu));
 	if (len < 0) {
 		print_err("r2t write returned %d", errno);
 		return -errno;
+	}
+	return 0;
+}
+
+static int tcp_send_c2h_term(struct xp_ep *ep, u16 fes, u8 pdu_offset,
+			     u8 parm_offset, bool hdr_digest,
+			     union nvme_tcp_pdu *pdu, int pdu_len)
+{
+	u8 raw_pdu[152];
+	struct nvme_tcp_term_pdu *term_pdu =
+		(struct nvme_tcp_term_pdu *)raw_pdu;
+	int len;
+
+	if (pdu_len > 152 - sizeof(struct nvme_tcp_term_pdu))
+		pdu_len = 152 - sizeof(struct nvme_tcp_term_pdu);
+	term_pdu->hdr.type = nvme_tcp_c2h_term;
+	term_pdu->hdr.flags = 0;
+	term_pdu->hdr.pdo = 0;
+	term_pdu->hdr.hlen = sizeof(struct nvme_tcp_term_pdu);
+	term_pdu->hdr.plen = sizeof(struct nvme_tcp_term_pdu) + pdu_len;
+	term_pdu->fes = htole16(fes);
+	term_pdu->fei = htole32(parm_offset << 6 | pdu_offset << 1);
+	memcpy(raw_pdu + sizeof(struct nvme_tcp_term_pdu), pdu, pdu_len);
+
+	len = write(ep->sockfd, raw_pdu, term_pdu->hdr.plen);
+	if (len < 0) {
+		print_err("c2h_term write returned %d", errno);
+		return -errno;
+	}
+	if (len != term_pdu->hdr.plen) {
+		print_err("c2h_term short write; %d bytes missing",
+			  term_pdu->hdr.plen - len);
+		return -EAGAIN;
 	}
 	return 0;
 }
@@ -329,14 +364,32 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	char *buf;
 	int ret, offset = 0;
 
-	print_info("ctrl %d qid %d r2t tag %d pos %u len %u",
+	print_info("ctrl %d qid %d h2c data tag %d pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
+	if (ttag != ep->ep->ttag) {
+		print_err("ctrl %d qid %d h2c ttag mismatch, is %u exp %u\n",
+			  ep->ctrl->cntlid, ep->qid, ttag, ep->ep->ttag);
+		return tcp_send_c2h_term(ep->ep, NVME_TCP_FES_INVALID_PDU_HDR,
+				offset_of(struct nvme_tcp_data_pdu, ttag),
+				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
+	}
 	if (data_offset != ep->data_offset) {
 		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %u\n",
 			  ep->ctrl->cntlid, ep->qid,
 			  data_offset, ep->data_offset);
-		return NVME_SC_SGL_INVALID_DATA;
+		return tcp_send_c2h_term(ep->ep, NVME_TCP_FES_PDU_SEQ_ERR,
+				offset_of(struct nvme_tcp_data_pdu, data_offset),
+				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
+	if (data_len > ep->data_expected) {
+		print_err("ctrl %d qid %d h2c len overflow, is %u exp %u\n",
+			  ep->ctrl->cntlid, ep->qid,
+			  data_len, ep->data_expected);
+		return tcp_send_c2h_term(ep->ep, NVME_TCP_FES_PDU_SEQ_ERR,
+				offset_of(struct nvme_tcp_data_pdu, data_offset),
+				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
+	}
+
 	buf = malloc(data_len);
 	if (!buf) {
 		print_errno("malloc failed", errno);
