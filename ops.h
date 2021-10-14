@@ -18,7 +18,7 @@ struct xp_pep {
 };
 
 struct xp_ops {
-	int (*create_endpoint)(struct xp_ep **ep, void *id, int depth);
+	int (*create_endpoint)(struct xp_ep **ep, void *id);
 	void (*destroy_endpoint)(struct xp_ep *ep);
 	int (*init_listener)(struct xp_pep **pep, int port);
 	void (*destroy_listener)(struct xp_pep *pep);

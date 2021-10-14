@@ -64,7 +64,7 @@ int run_pseudo_target(struct endpoint *ep, void *id)
 	void			*data;
 	int			 ret;
 
-	ret = ep->ops->create_endpoint(&ep->ep, id, NVMF_DQ_DEPTH);
+	ret = ep->ops->create_endpoint(&ep->ep, id);
 	if (ret) {
 		print_errno("Failed to create endpoint", ret);
 		return ret;

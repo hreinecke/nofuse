@@ -42,12 +42,10 @@ static void tcp_destroy_endpoint(struct xp_ep *ep)
 	free(ep);
 }
 
-static int tcp_create_endpoint(struct xp_ep **_ep, void *id, int depth)
+static int tcp_create_endpoint(struct xp_ep **_ep, void *id)
 {
 	struct xp_ep		*ep;
 	int			 flags;
-
-	UNUSED(depth);
 
 	ep = malloc(sizeof(*ep));
 	if (!ep)
