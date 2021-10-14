@@ -429,7 +429,7 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 {
 	struct nvme_tcp_hdr hdr;
 	void *msg;
-	int msg_len;
+	int hdr_len, msg_len;
 	int ret, len;
 	struct pollfd fds;
 
@@ -449,20 +449,26 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 		return (len < 0) ? -errno : -ENODATA;
 	}
 
-	msg_len = hdr.hlen - sizeof(hdr);
-	if (msg_len <= 0)
-		return msg_len;
+	hdr_len = hdr.hlen;
+	if (hdr_len < sizeof(hdr)) {
+		print_err("corrupt hdr, hlen %d size %ld",
+			  hdr.hlen, sizeof(hdr));
+		hdr_len = sizeof(hdr);
+	}
 
-	if (posix_memalign(&msg, PAGE_SIZE, hdr.hlen))
+	if (posix_memalign(&msg, PAGE_SIZE, hdr_len))
 		return -ENOMEM;
 
-	memcpy(msg, &hdr, msg_len);
-	len = read(ep->sockfd, msg + sizeof(hdr), msg_len);
-	if (len == 0)
-		return -EAGAIN;
-	if (len < 0) {
-		print_errno("failed to read msg payload", errno);
-		return -errno;
+	memcpy(msg, &hdr, sizeof(hdr));
+	msg_len = hdr_len - sizeof(hdr);
+	if (msg_len) {
+		len = read(ep->sockfd, msg + sizeof(hdr), msg_len);
+		if (len == 0)
+			return -EAGAIN;
+		if (len < 0) {
+			print_errno("failed to read msg payload", errno);
+			return -errno;
+		}
 	}
 	*_msg = msg;
 	*bytes = hdr.hlen;
@@ -482,8 +488,8 @@ int tcp_handle_msg(struct endpoint *ep, void *msg, int bytes)
 			return 0;
 	}
 	if (hdr->type != nvme_tcp_cmd) {
-		print_err("unknown PDU type %x\n", hdr->type);
-		return NVME_SC_INVALID_OPCODE;
+		print_err("unknown PDU type %x", hdr->type);
+		return -EPROTO;
 	}
 
 	return handle_request(ep, &pdu->cmd.cmd,
