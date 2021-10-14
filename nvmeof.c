@@ -205,6 +205,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u64 len)
 	strncpy((char *) id->fr, " ", sizeof(id->fr));
 
 	id->mdts = 0;
+	id->cmic = 3;
 	id->cntlid = htole16(ep->ctrl->cntlid);
 	id->ver = htole32(NVME_VER);
 	id->lpa = (1 << 2);
@@ -246,6 +247,7 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u64 len)
 	id->ncap = id->nsze;
 	id->nlbaf = 1;
 	id->flbas = 0;
+	id->nmic = 1;
 	id->lbaf[0].ds = 12;
 	if (len > sizeof(*id))
 		len = sizeof(*id);
