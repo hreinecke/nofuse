@@ -427,6 +427,8 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 	}
 	len = read(ep->sockfd, &hdr, sizeof(hdr));
 	if (len != sizeof(hdr)) {
+		if (len < 0)
+			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
 
@@ -441,8 +443,10 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 	len = read(ep->sockfd, msg + sizeof(hdr), msg_len);
 	if (len == 0)
 		return -EAGAIN;
-	if (len < 0)
+	if (len < 0) {
+		print_errno("failed to read msg payload", errno);
 		return -errno;
+	}
 	*_msg = msg;
 	*bytes = hdr.hlen;
 
