@@ -58,7 +58,7 @@ int start_pseudo_target(struct host_iface *iface)
 	return 0;
 }
 
-int run_pseudo_target(struct endpoint *ep, void *id)
+int run_pseudo_target(struct endpoint *ep, int id)
 {
 	void			*cmd;
 	void			*data;
@@ -158,7 +158,7 @@ static void *endpoint_thread(void *arg)
 	return NULL;
 }
 
-static struct endpoint *enqueue_endpoint(void *id, struct host_iface *iface)
+static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -166,6 +166,7 @@ static struct endpoint *enqueue_endpoint(void *id, struct host_iface *iface)
 	ep = malloc(sizeof(*ep));
 	if (!ep) {
 		print_err("no memory");
+		close(id);
 		return NULL;
 	}
 
@@ -192,7 +193,7 @@ int run_host_interface(struct host_iface *iface)
 {
 	struct xp_pep *listener;
 	struct endpoint *ep, *_ep;
-	void *id;
+	int id;
 	pthread_attr_t pthread_attr;
 	int ret;
 
@@ -207,14 +208,14 @@ int run_host_interface(struct host_iface *iface)
 	signal(SIGTERM, SIG_IGN);
 
 	while (!stopped) {
-		ret = iface->ops->wait_for_connection(listener, &id);
+		id = iface->ops->wait_for_connection(listener);
 
 		if (stopped)
 			break;
 
-		if (ret) {
-			if (ret != -EAGAIN)
-				print_errno("Host connection failed", ret);
+		if (id < 0) {
+			if (id != -EAGAIN)
+				print_errno("Host connection failed", id);
 			continue;
 		}
 		ep = enqueue_endpoint(id, iface);

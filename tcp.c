@@ -42,7 +42,7 @@ static void tcp_destroy_endpoint(struct xp_ep *ep)
 	free(ep);
 }
 
-static int tcp_create_endpoint(struct xp_ep **_ep, void *id)
+static int tcp_create_endpoint(struct xp_ep **_ep, int id)
 {
 	struct xp_ep		*ep;
 	int			 flags;
@@ -53,7 +53,7 @@ static int tcp_create_endpoint(struct xp_ep **_ep, void *id)
 
 	memset(ep, 0, sizeof(*ep));
 
-	ep->sockfd = *(int *) id;
+	ep->sockfd = id;
 
 	flags = fcntl(ep->sockfd, F_GETFL);
 	fcntl(ep->sockfd, F_SETFL, flags | O_NONBLOCK);
@@ -186,40 +186,29 @@ err1:
 	return ret;
 }
 
-static int tcp_wait_for_connection(struct xp_pep *pep, void **_id)
+static int tcp_wait_for_connection(struct xp_pep *pep)
 {
-	int			 sockfd;
-	int			*id;
-	int			 ret;
-
-	id = malloc(sizeof(int));
-	if (!id)
-		return -ENOMEM;
+	int sockfd;
+	int ret = -ESHUTDOWN;
 
 	while (true) {
 		usleep(100); //TBD
-		if (stopped) {
-			ret = -ESHUTDOWN;
-			goto err;
-		}
+		if (stopped)
+			break;
 
 		sockfd = accept(pep->listenfd, (struct sockaddr *) NULL,
 				NULL);
 		if (sockfd < 0) {
 			if (errno != EAGAIN)
-				print_err("failed to accept err=%d\n",
-						sockfd);
-			ret = -EAGAIN;
-			goto err;
+				print_errno("failed to accept",
+					    errno);
+			return -EAGAIN;
 		}
 
 		pep->sockfd = sockfd;
-		*id = sockfd;
-		*_id = id;
-		return 0;
+		return sockfd;
 	}
-err:
-	free(id);
+
 	return ret;
 }
 

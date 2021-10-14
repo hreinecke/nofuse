@@ -20,11 +20,11 @@ struct xp_pep {
 };
 
 struct xp_ops {
-	int (*create_endpoint)(struct xp_ep **ep, void *id);
+	int (*create_endpoint)(struct xp_ep **ep, int id);
 	void (*destroy_endpoint)(struct xp_ep *ep);
 	int (*init_listener)(struct xp_pep **pep, int port);
 	void (*destroy_listener)(struct xp_pep *pep);
-	int (*wait_for_connection)(struct xp_pep *pep, void **id);
+	int (*wait_for_connection)(struct xp_pep *pep);
 	int (*accept_connection)(struct xp_ep *ep);
 	int (*rma_read)(struct xp_ep *ep, void *buf, u64 len);
 	int (*rma_write)(struct xp_ep *ep, void *buf, u64 len,
