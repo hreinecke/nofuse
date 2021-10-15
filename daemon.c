@@ -129,6 +129,7 @@ static int open_namespace(char *filename)
 	} else {
 		ns->size = (off_t)128 * 1024 * 1024 * 1024; /* 128 MB */
 		ns->blksize = 4096;
+		ns->fd = -1;
 	}
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
@@ -185,6 +186,7 @@ static int init_args(int argc, char *argv[])
 	if (init_subsys())
 		return 1;
 	init_host_iface();
+	open_namespace(NULL);
 
 	debug = 0;
 	run_as_daemon = 1;

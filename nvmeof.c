@@ -499,7 +499,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	data_len = le64toh(cmd->rw.dptr.sgl.length);
 	ep->data_expected = data_len;
 	ep->data_offset = 0;
-	print_info("ctrl %d qid %d nsid %d write tag %04x pos %llu len %llu",
+	print_info("ctrl %d qid %d nsid %d tag %04x write pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
 	ret = ep->ops->prep_rma_read(ep->ep, cmd->rw.command_id, tag,
 				     ep->data_offset, ep->data_expected);

@@ -152,7 +152,7 @@ static int tcp_accept_connection(struct xp_ep *ep)
 			ret = -EPROTO;
 			goto err2;
 		}
-		ep->maxr2t = init_req->maxr2t + 1;
+		ep->maxr2t = le32toh(init_req->maxr2t) + 1;
 	}
 
 	if (posix_memalign((void **) &init_rep, PAGE_SIZE,
@@ -168,6 +168,7 @@ static int tcp_accept_connection(struct xp_ep *ep)
 	init_rep->pfv = htole16(NVME_TCP_PFV_1_0);
 	init_rep->maxdata = 0xffff;
 	init_rep->cpda = 0;
+	init_rep->digest = 0;
 	digest = 0;
 	init_rep->digest = htole16(digest);
 
@@ -247,7 +248,7 @@ static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 _len,
 	pdu.hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
 	pdu.hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) + _len);
 	pdu.data_offset = 0;
-	pdu.data_length = _len;
+	pdu.data_length = htole32(_len);
 	pdu.command_id = cmd->common.command_id;
 
 	len = write(ep->sockfd, &pdu, sizeof(pdu));
@@ -458,7 +459,7 @@ static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
 			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
-
+	print_debug("msg %u hlen %d", hdr.type, hdr.hlen);
 	hdr_len = hdr.hlen;
 	if (hdr_len < sizeof(hdr)) {
 		int i;
