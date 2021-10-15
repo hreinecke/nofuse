@@ -115,14 +115,14 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 {
 	struct subsystem *subsys = NULL, *_subsys;
 	struct ctrl_conn *ctrl;
-	struct nvmf_connect_data *data = ep->data;
+	struct nvmf_connect_data connect;
 	int ret;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_fabrics_connect");
 #endif
 
-	ret = ep->ops->rma_read(ep->ep, ep->data, len);
+	ret = ep->ops->rma_read(ep->ep, &connect, len);
 	if (ret) {
 		print_errno("rma_read failed", ret);
 		return ret;
@@ -137,32 +137,32 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 	ep->qid = qid;
 
 	list_for_each_entry(_subsys, &subsys_linked_list, node) {
-		if (!strcmp(data->subsysnqn, _subsys->nqn)) {
+		if (!strcmp(connect.subsysnqn, _subsys->nqn)) {
 			subsys = _subsys;
 			break;
 		}
 	}
 	if (!subsys) {
 		print_err("subsystem '%s' not found",
-			  data->subsysnqn);
+			  connect.subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
-		if (!strncmp(ctrl->nqn, data->hostnqn, MAX_NQN_SIZE)) {
+		if (!strncmp(connect.hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
 			ep->ctrl = ctrl;
 			break;
 		}
 	}
 	if (!ep->ctrl) {
-		print_info("Allocating new controller '%s'", data->hostnqn);
+		print_info("Allocating new controller '%s'", connect.hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
 			print_err("Out of memory allocating controller");
 			goto out;
 		}
 		memset(ctrl, 0, sizeof(*ctrl));
-		strncpy(ctrl->nqn, data->hostnqn, MAX_NQN_SIZE);
+		strncpy(ctrl->nqn, connect.hostnqn, MAX_NQN_SIZE);
 		ctrl->max_endpoints = NVMF_NUM_QUEUES;
 		ep->ctrl = ctrl;
 		ctrl->subsys = subsys;
@@ -179,15 +179,15 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 	ctrl = ep->ctrl;
 
 	if (qid == 0) {
-		if (data->cntlid != 0xffff) {
+		if (le16toh(connect.cntlid) != 0xffff) {
 			print_err("bad controller id %x, expecting %x",
-				  data->cntlid, 0xffff);
+				  connect.cntlid, 0xffff);
 			ret = NVME_SC_CONNECT_INVALID_PARAM;
 		}
 		ctrl->cntlid = nvmf_ctrl_id++;
-	} else if (le16toh(data->cntlid) != ctrl->cntlid) {
+	} else if (le16toh(connect.cntlid) != ctrl->cntlid) {
 		print_err("bad controller id %x for queue %d, expecting %x",
-			  data->cntlid, qid, ctrl->cntlid);
+			  connect.cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	print_info("ctrl %d qid %d connected", ep->ctrl->cntlid, ep->qid);
