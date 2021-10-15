@@ -275,7 +275,7 @@ static int tcp_rma_write(struct xp_ep *ep, void *buf, u64 _len,
 	return 0;
 }
 
-static int tcp_send_r2t(struct xp_ep *ep, u16 ttag,
+static int tcp_send_r2t(struct xp_ep *ep, u16 cmdid, u16 ttag,
 			u32 _offset, u32 _len)
 {
 	struct nvme_tcp_r2t_pdu pdu;
@@ -288,6 +288,7 @@ static int tcp_send_r2t(struct xp_ep *ep, u16 ttag,
 	pdu.hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
 	pdu.hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
 	pdu.ttag = ttag;
+	pdu.command_id = cmdid;
 	pdu.r2t_offset = htole32(_offset);
 	pdu.r2t_length = htole32(_len);
 	ep->ttag = ttag;
@@ -430,7 +431,8 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		return 0;
 	}
 
-	return tcp_send_r2t(ep->ep, ttag, ep->data_offset, ep->data_expected);
+	return tcp_send_r2t(ep->ep, pdu->data.command_id,
+			    ttag, ep->data_offset, ep->data_expected);
 }
 
 static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)

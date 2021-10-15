@@ -29,7 +29,7 @@ struct xp_ops {
 	int (*rma_read)(struct xp_ep *ep, void *buf, u64 len);
 	int (*rma_write)(struct xp_ep *ep, void *buf, u64 len,
 			 struct nvme_command *cmd, bool last);
-	int (*prep_rma_read)(struct xp_ep *ep, u16 ttag,
+	int (*prep_rma_read)(struct xp_ep *ep, u16 cmdid, u16 ttag,
 			     u32 offset, u32 len);
 	int (*send_rsp)(struct xp_ep *ep, void *msg, int len);
 	int (*poll_for_msg)(struct xp_ep *ep, void **msg, int *bytes);

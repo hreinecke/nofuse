@@ -501,7 +501,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	ep->data_offset = 0;
 	print_info("ctrl %d qid %d nsid %d write tag %04x pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
-	ret = ep->ops->prep_rma_read(ep->ep, tag,
+	ret = ep->ops->prep_rma_read(ep->ep, cmd->rw.command_id, tag,
 				     ep->data_offset, ep->data_expected);
 	if (ret) {
 		print_errno("prep_rma_read failed", ret);
