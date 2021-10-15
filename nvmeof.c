@@ -513,14 +513,14 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 int handle_request(struct endpoint *ep, void *buf, int length)
 {
 	struct nvme_command *cmd = buf;
-	struct nvme_completion *resp = (void *) ep->cmd;
+	struct nvme_completion resp;
 	u32 len;
 	int ret;
 
-	memset(resp, 0, sizeof(*resp));
+	memset(&resp, 0, sizeof(resp));
 
 	len = le32toh(cmd->common.dptr.sgl.length);
-	resp->command_id = cmd->common.command_id;
+	resp.command_id = cmd->common.command_id;
 
 	UNUSED(length);
 
@@ -530,12 +530,12 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 			ret = handle_property_set(cmd, ep);
 			break;
 		case nvme_fabrics_type_property_get:
-			ret = handle_property_get(cmd, resp, ep);
+			ret = handle_property_get(cmd, &resp, ep);
 			break;
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, cmd->connect.qid, len);
 			if (!ret)
-				resp->result.u16 = htole16(ep->ctrl->cntlid);
+				resp.result.u16 = htole16(ep->ctrl->cntlid);
 			break;
 		default:
 			print_err("unknown fctype %d", cmd->fabrics.fctype);
@@ -560,7 +560,7 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	else if (cmd->common.opcode == nvme_admin_get_log_page)
 		ret = handle_get_log_page(ep, cmd, len);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
-		ret = handle_set_features(ep, cmd, resp);
+		ret = handle_set_features(ep, cmd, &resp);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else {
@@ -569,10 +569,10 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	}
 
 	if (ret)
-		resp->status = (NVME_SC_DNR | ret) << 1;
+		resp.status = (NVME_SC_DNR | ret) << 1;
 
 	print_info("ctrl %d qid %d send rsp tag %04x status %04x",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   cmd->common.command_id, resp->status);
-	return ep->ops->send_rsp(ep->ep, resp, sizeof(*resp));
+		   cmd->common.command_id, resp.status);
+	return ep->ops->send_rsp(ep->ep, &resp, sizeof(resp));
 }

@@ -60,7 +60,6 @@ struct endpoint {
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;
-	struct nvme_command	*cmd;
 	void			*data;
 	unsigned int		 data_offset;
 	unsigned int		 data_expected;

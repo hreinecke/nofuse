@@ -20,11 +20,6 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 		ep->ep = NULL;
 	}
 
-	if (ep->cmd) {
-		free(ep->cmd);
-		ep->cmd = NULL;
-	}
-
 	if (ep->data) {
 		free(ep->data);
 		ep->data = NULL;
@@ -69,7 +64,6 @@ int start_pseudo_target(struct host_iface *iface)
 
 int run_pseudo_target(struct endpoint *ep, int id)
 {
-	void			*cmd;
 	void			*data;
 	int			 ret;
 
@@ -79,34 +73,28 @@ int run_pseudo_target(struct endpoint *ep, int id)
 		return ret;
 	}
 
+retry:
 	ret = ep->ops->accept_connection(ep->ep);
 	if (ret) {
+		if (ret == -EAGAIN)
+			goto retry;
+
 		print_errno("accept() failed for endpoint", ret);
-		goto out_destroy;
+		return ret;
 	}
-
-	if (posix_memalign(&cmd, PAGE_SIZE, PAGE_SIZE)) {
-		ret = -errno;
-		goto out_destroy;
-	}
-
-	memset(cmd, 0, PAGE_SIZE);
 
 	if (posix_memalign(&data, PAGE_SIZE, PAGE_SIZE)) {
 		ret = -errno;
-		goto out_free_cmd;
+		goto out_destroy;
 	}
 
 	memset(data, 0, PAGE_SIZE);
 
-	ep->cmd = cmd;
 	ep->data = data;
 
 	ep->state = CONNECTED;
 	return 0;
 
-out_free_cmd:
-	free(cmd);
 out_destroy:
 	ep->ops->destroy_endpoint(ep->ep);
 	ep->ep = NULL;
