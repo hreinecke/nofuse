@@ -377,6 +377,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	u32 data_len = le32toh(pdu->data.data_length);
 	char *buf;
 	int ret, offset = 0;
+	struct nvme_completion resp;
 
 	print_info("ctrl %d qid %d h2c data tag %04x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
@@ -407,7 +408,8 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	buf = malloc(data_len);
 	if (!buf) {
 		print_errno("malloc failed", errno);
-		return NVME_SC_INTERNAL;
+		ret = NVME_SC_INTERNAL;
+		goto out_rsp;
 	}
 
 	while (offset < data_len) {
@@ -415,7 +417,8 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		if (ret < 0) {
 			print_err("ctrl %d qid %d h2c data read failed, error %d",
 				  ep->ctrl->cntlid, ep->qid, errno);
-			return NVME_SC_SGL_INVALID_DATA;
+			ret = NVME_SC_SGL_INVALID_DATA;
+			goto out_rsp;
 		}
 		offset += ret;
 	}
@@ -423,15 +426,17 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	ep->data_expected -= data_len;
 	ep->data_offset += data_len;
 	if (!ep->data_expected) {
-		struct nvme_completion resp;
-
-		memset(&resp, 0, sizeof(resp));
-		tcp_send_rsp(ep->ep, &resp, sizeof(resp));
-		return 0;
+		ret = 0;
+		goto out_rsp;
 	}
 
 	return tcp_send_r2t(ep->ep, pdu->data.command_id,
 			    ttag, ep->data_offset, ep->data_expected);
+out_rsp:
+	memset(&resp, 0, sizeof(resp));
+	if (ret)
+		resp.status = (NVME_SC_DNR | ret) << 1;
+	return tcp_send_rsp(ep->ep, &resp, sizeof(resp));
 }
 
 static int tcp_poll_for_msg(struct xp_ep *ep, void **_msg, int *bytes)
@@ -498,13 +503,10 @@ int tcp_handle_msg(struct endpoint *ep, void *msg, int bytes)
 {
 	union nvme_tcp_pdu *pdu = msg;
 	struct nvme_tcp_hdr *hdr = &pdu->common;
-	int ret;
 
-	if (hdr->type == nvme_tcp_h2c_data) {
-		ret = tcp_handle_h2c_data(ep, pdu);
-		if (!ret)
-			return 0;
-	}
+	if (hdr->type == nvme_tcp_h2c_data)
+		return tcp_handle_h2c_data(ep, pdu);
+
 	if (hdr->type != nvme_tcp_cmd) {
 		print_err("unknown PDU type %x", hdr->type);
 		return -EPROTO;

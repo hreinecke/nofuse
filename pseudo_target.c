@@ -88,7 +88,7 @@ static void *endpoint_thread(void *arg)
 
 	while (!stopped) {
 		struct timeval timeval;
-		void *buf;
+		void *buf = NULL;
 		int len;
 
 		gettimeofday(&timeval, NULL);
@@ -99,13 +99,11 @@ static void *endpoint_thread(void *arg)
 			if (!ret && ep->ctrl) {
 				ep->countdown	= ep->ctrl->kato;
 				ep->timeval	= timeval;
-				free(buf);
 				continue;
 			}
 			print_info("ctrl %d qid %d handle msg error %d",
 				   ep->ctrl ? ep->ctrl->cntlid : -1,
 				   ep->qid, ret);
-			free(buf);
 		} else if (ret != -ETIMEDOUT && ret != -EAGAIN) {
 			print_err("ctrl %d qid %d poll error %d",
 				  ep->ctrl ? ep->ctrl->cntlid : -1,
