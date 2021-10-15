@@ -20,11 +20,6 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 		ep->ep = NULL;
 	}
 
-	if (ep->data) {
-		free(ep->data);
-		ep->data = NULL;
-	}
-
 	ep->state = DISCONNECTED;
 }
 
@@ -64,7 +59,6 @@ int start_pseudo_target(struct host_iface *iface)
 
 int run_pseudo_target(struct endpoint *ep, int id)
 {
-	void			*data;
 	int			 ret;
 
 	ret = ep->ops->create_endpoint(&ep->ep, id);
@@ -83,22 +77,8 @@ retry:
 		return ret;
 	}
 
-	if (posix_memalign(&data, PAGE_SIZE, PAGE_SIZE)) {
-		ret = -errno;
-		goto out_destroy;
-	}
-
-	memset(data, 0, PAGE_SIZE);
-
-	ep->data = data;
-
 	ep->state = CONNECTED;
 	return 0;
-
-out_destroy:
-	ep->ops->destroy_endpoint(ep->ep);
-	ep->ep = NULL;
-	return ret;
 }
 
 static void *endpoint_thread(void *arg)

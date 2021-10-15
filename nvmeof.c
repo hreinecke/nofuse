@@ -407,34 +407,39 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 			       u64 len)
 {
 	int ret = 0;
+	u8 *log_buf;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_get_log_page opcode %02x lid %02x len %lu",
 		    cmd->get_log_page.opcode, cmd->get_log_page.lid,
 		    (unsigned long)len);
 #endif
+	log_buf = malloc(len);
+	if (!log_buf)
+		return NVME_SC_INTERNAL;
 
 	switch (cmd->get_log_page.lid) {
 	case 0x02:
 		/* SMART Log */
-		memset(ep->data, 0, len);
+		memset(log_buf, 0, len);
 		break;
 	case 0x70:
 		/* Discovery log */
-		len = format_disc_log(ep->data, len, ep);
+		len = format_disc_log(log_buf, len, ep);
 		break;
 	default:
 		print_err("get_log_page: lid %02x not supported",
 			  cmd->get_log_page.lid);
+		free(log_buf);
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, len, cmd, true);
+	ret = ep->ops->rma_write(ep->ep, log_buf, len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-
+	free(log_buf);
 	return ret;
 }
 
