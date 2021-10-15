@@ -195,43 +195,44 @@ out:
 	return ret;
 }
 
-static int handle_identify_ctrl(struct endpoint *ep, u64 len)
+static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 {
-	struct nvme_id_ctrl *id = ep->data;
+	struct nvme_id_ctrl id;
 
-	memset(id, 0, sizeof(*id));
+	memset(&id, 0, sizeof(id));
 
-	memset(id->fr, ' ', sizeof(id->fr));
-	strncpy((char *) id->fr, " ", sizeof(id->fr));
+	memset(id.fr, ' ', sizeof(id.fr));
+	strncpy((char *) id.fr, " ", sizeof(id.fr));
 
-	id->mdts = 0;
-	id->cmic = 3;
-	id->cntlid = htole16(ep->ctrl->cntlid);
-	id->ver = htole32(NVME_VER);
-	id->lpa = (1 << 2);
-	id->sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
-	id->kas = DELAY_TIMEOUT / 100; /* KAS is in units of 100 msecs */
+	id.mdts = 0;
+	id.cmic = 3;
+	id.cntlid = htole16(ep->ctrl->cntlid);
+	id.ver = htole32(NVME_VER);
+	id.lpa = (1 << 2);
+	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
+	id.kas = DELAY_TIMEOUT / 100; /* KAS is in units of 100 msecs */
 
 	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL) {
-		strcpy(id->subnqn, NVME_DISC_SUBSYS_NAME);
-		id->maxcmd = htole16(NVMF_DQ_DEPTH);
+		strcpy(id.subnqn, NVME_DISC_SUBSYS_NAME);
+		id.maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
-		strcpy(id->subnqn, ep->ctrl->subsys->nqn);
-		id->maxcmd = htole16(ep->ctrl->qsize);
+		strcpy(id.subnqn, ep->ctrl->subsys->nqn);
+		id.maxcmd = htole16(ep->ctrl->qsize);
 	}
 
-	if (len > sizeof(*id))
-		len = sizeof(*id);
+	if (len > sizeof(id))
+		len = sizeof(id);
+
+	memcpy(id_buf, &id, len);
 
 	return len;
 }
 
-static int handle_identify_ns(struct endpoint *ep, u32 nsid, u64 len)
+static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len)
 {
 	struct nsdev *ns = NULL, *_ns;
-	struct nvme_id_ns *id = ep->data;
+	struct nvme_id_ns id;
 
-	memset(id, 0, len);
 	list_for_each_entry(_ns, devices, node) {
 		if (_ns->nsid == nsid) {
 			ns = _ns;
@@ -241,24 +242,27 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u64 len)
 	if (!ns)
 		return -ENODEV;
 
-	memset(id, 0, sizeof(*id));
+	memset(&id, 0, sizeof(id));
 
-	id->nsze = ns->size / ns->blksize;
-	id->ncap = id->nsze;
-	id->nlbaf = 1;
-	id->flbas = 0;
-	id->nmic = 1;
-	id->lbaf[0].ds = 12;
-	if (len > sizeof(*id))
-		len = sizeof(*id);
+	id.nsze = ns->size / ns->blksize;
+	id.ncap = id.nsze;
+	id.nlbaf = 1;
+	id.flbas = 0;
+	id.nmic = 1;
+	id.lbaf[0].ds = 12;
+
+	if (len > sizeof(id))
+		len = sizeof(id);
+
+	memcpy(id_buf, &id, len);
 
 	return len;
 }
 
-static int handle_identify_active_ns(struct endpoint *ep, u64 len)
+static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 {
 	struct nsdev *ns;
-	u8 *ns_list = ep->data;
+	u8 *ns_list = id_buf;
 	int id_len = len;
 
 	memset(ns_list, 0, len);
@@ -273,10 +277,9 @@ static int handle_identify_active_ns(struct endpoint *ep, u64 len)
 	return id_len;
 }
 
-static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u64 len)
+static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_list, u64 len)
 {
 	struct nsdev *ns = NULL, *_ns;
-	u8 *desc_list = ep->data;
 	int desc_len = len;
 
 	memset(desc_list, 0, len);
@@ -305,36 +308,41 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 {
 	int cns = cmd->identify.cns;
 	int nsid = le32toh(cmd->identify.nsid);
+	u8 *id_buf;
 	int ret, id_len;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_fabrics_identify cns %d", cns);
 #endif
 
+	id_buf = malloc(len);
+	if (!id_buf)
+		return NVME_SC_INTERNAL;
+
 	switch (cns) {
 	case NVME_ID_CNS_NS:
-		id_len = handle_identify_ns(ep, nsid, len);
+		id_len = handle_identify_ns(ep, nsid, id_buf, len);
 		break;
 	case NVME_ID_CNS_CTRL:
-		id_len = handle_identify_ctrl(ep, len);
+		id_len = handle_identify_ctrl(ep, id_buf, len);
 		break;
 	case NVME_ID_CNS_NS_ACTIVE_LIST:
-		id_len = handle_identify_active_ns(ep, len);
+		id_len = handle_identify_active_ns(ep, id_buf, len);
 		break;
 	case NVME_ID_CNS_NS_DESC_LIST:
-		id_len = handle_identify_ns_desc_list(ep, nsid, len);
+		id_len = handle_identify_ns_desc_list(ep, nsid, id_buf, len);
 		break;
 	default:
 		print_err("unexpected identify command cns %u", cns);
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, ep->data, id_len, cmd, true);
+	ret = ep->ops->rma_write(ep->ep, id_buf, id_len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-
+	free(id_buf);
 	return ret;
 }
 
