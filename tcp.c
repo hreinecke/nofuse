@@ -114,76 +114,74 @@ err:
 
 static int tcp_accept_connection(struct xp_ep *ep)
 {
-	struct nvme_tcp_icreq_pdu *init_req = NULL;
-	struct nvme_tcp_icresp_pdu *init_rep;
-	struct nvme_tcp_hdr *hdr;
-	unsigned int digest = 0;
-	int ret, len;
+	struct nvme_tcp_icreq_pdu *icreq = NULL;
+	struct nvme_tcp_icresp_pdu *icrep;
+	int ret, len, hdr_len;
 
 	if (!ep)
 		return -EINVAL;
 
-	hdr = malloc(sizeof(*hdr));
-	if (!hdr)
+	icreq = malloc(sizeof(*icreq));
+	if (!icreq)
 		return -ENOMEM;
 
-	memset(hdr, 0, sizeof(*hdr));
+	memset(icreq, 0, sizeof(*icreq));
 
-	len = sizeof(*hdr);
-	ret = read(ep->sockfd, hdr, len);
-	if (ret != sizeof(*hdr)) {
+	hdr_len = sizeof(struct nvme_tcp_hdr);
+	ret = read(ep->sockfd, icreq, hdr_len);
+	if (ret < 0) {
+		print_errno("icreq header read", errno);
+		return -errno;
+	}
+	if (ret != hdr_len) {
+		print_err("icreq short header read, %d bytes missing",
+			  hdr_len - ret);
 		ret = (ret < 0) ? -EAGAIN : -ENODATA;
-		goto err1;
+		goto out_free;
 	}
 
-	if (hdr->type == 0) {
-		if (posix_memalign((void **) &init_req, PAGE_SIZE,
-					sizeof(*init_req))) {
-			ret = -ENOMEM;
-			goto err1;
-		}
-		len = sizeof(*init_req)-sizeof(*hdr);
-		ret = read(ep->sockfd, init_req, len);
+	if (icreq->hdr.type == 0) {
+		len = icreq->hdr.hlen - hdr_len;
+		ret = read(ep->sockfd, icreq + hdr_len, len);
 		if (ret != len) {
+			print_err("icreq short read, %d bytes missing",
+				  len - ret);
 			ret = -ENODATA;
-			goto err2;
+			goto out_free;
 		}
-		if (init_req->hpda != 0) {
+		if (icreq->hpda != 0) {
 			ret = -EPROTO;
-			goto err2;
+			goto out_free;
 		}
-		ep->maxr2t = le32toh(init_req->maxr2t) + 1;
+		ep->maxr2t = le32toh(icreq->maxr2t) + 1;
 	}
 
-	if (posix_memalign((void **) &init_rep, PAGE_SIZE,
-				sizeof(*init_rep))) {
+	icrep = malloc(sizeof(*icrep));
+	if (!icrep) {
 		ret = -ENOMEM;
-		goto err2;
+		goto out_free;
 	}
 
-	init_rep->hdr.type = nvme_tcp_icresp;
-	init_rep->hdr.hlen = sizeof(*init_rep);
-	init_rep->hdr.pdo = 0;
-	init_rep->hdr.plen = htole32(sizeof(*init_rep));
-	init_rep->pfv = htole16(NVME_TCP_PFV_1_0);
-	init_rep->maxdata = 0xffff;
-	init_rep->cpda = 0;
-	init_rep->digest = 0;
-	digest = 0;
-	init_rep->digest = htole16(digest);
+	icrep->hdr.type = nvme_tcp_icresp;
+	icrep->hdr.hlen = sizeof(*icrep);
+	icrep->hdr.pdo = 0;
+	icrep->hdr.plen = htole32(sizeof(*icrep));
+	icrep->pfv = htole16(NVME_TCP_PFV_1_0);
+	icrep->maxdata = 0xffff;
+	icrep->cpda = 0;
+	icrep->digest = 0;
 
-	ret = write(ep->sockfd, init_rep, sizeof(*init_rep));
-	if (ret < 0)
-		goto err3;
+	len = write(ep->sockfd, icrep, sizeof(*icrep));
+	if (len != sizeof(*icrep)) {
+		print_err("icrep short read, %ld bytes missing",
+			  sizeof(*icrep) - len);
+		ret = -ENODATA;
+	} else
+		ret = 0;
 
-	return 0;
-err3:
-	free(init_rep);
-err2:
-	if (init_req)
-		free(init_req);
-err1:
-	free(hdr);
+	free(icrep);
+out_free:
+	free(icreq);
 	return ret;
 }
 
