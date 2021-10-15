@@ -56,7 +56,6 @@ extern int			 stopped;
 struct endpoint {
 	struct linked_list	 node;
 	pthread_t		 pthread;
-	struct xp_ep		*ep;
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;
@@ -66,6 +65,11 @@ struct endpoint {
 	int			 qid;
 	int			 countdown;
 	struct timeval		 timeval;
+	struct sockaddr_in	*sock_addr;
+	int			 sockfd;
+	__u64			 depth;
+	int			 maxr2t;
+	u16			 ttag;
 };
 
 struct ctrl_conn {

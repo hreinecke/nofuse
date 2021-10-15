@@ -15,10 +15,7 @@ static LINKED_LIST(endpoint_linked_list);
 
 void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
-	if (ep->ep) {
-		ep->ops->destroy_endpoint(ep->ep);
-		ep->ep = NULL;
-	}
+	ep->ops->destroy_endpoint(ep);
 
 	ep->state = DISCONNECTED;
 }
@@ -61,14 +58,14 @@ int run_pseudo_target(struct endpoint *ep, int id)
 {
 	int			 ret;
 
-	ret = ep->ops->create_endpoint(&ep->ep, id);
+	ret = ep->ops->create_endpoint(ep, id);
 	if (ret) {
 		print_errno("Failed to create endpoint", ret);
 		return ret;
 	}
 
 retry:
-	ret = ep->ops->accept_connection(ep->ep);
+	ret = ep->ops->accept_connection(ep);
 	if (ret) {
 		if (ret == -EAGAIN)
 			goto retry;
@@ -93,7 +90,7 @@ static void *endpoint_thread(void *arg)
 
 		gettimeofday(&timeval, NULL);
 
-		ret = ep->ops->poll_for_msg(ep->ep, &buf, &len);
+		ret = ep->ops->poll_for_msg(ep, &buf, &len);
 		if (!ret) {
 			ret = ep->ops->handle_msg(ep, buf, len);
 			if (!ret && ep->ctrl) {

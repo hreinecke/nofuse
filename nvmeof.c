@@ -122,7 +122,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 	print_debug("nvme_fabrics_connect");
 #endif
 
-	ret = ep->ops->rma_read(ep->ep, &connect, len);
+	ret = ep->ops->rma_read(ep, &connect, len);
 	if (ret) {
 		print_errno("rma_read failed", ret);
 		return ret;
@@ -337,7 +337,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, id_buf, id_len, cmd, true);
+	ret = ep->ops->rma_write(ep, id_buf, id_len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -434,7 +434,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ret = ep->ops->rma_write(ep->ep, log_buf, len, cmd, true);
+	ret = ep->ops->rma_write(ep, log_buf, len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -479,7 +479,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	if (!buf)
 		return NVME_SC_NS_NOT_READY;
 	memset(buf, 0, data_len);
-	ret = ep->ops->rma_write(ep->ep, buf, data_len, cmd, true);
+	ret = ep->ops->rma_write(ep, buf, data_len, cmd, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -514,7 +514,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	ep->data_offset = 0;
 	print_info("ctrl %d qid %d nsid %d tag %04x write pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
-	ret = ep->ops->prep_rma_read(ep->ep, cmd->rw.command_id, tag,
+	ret = ep->ops->prep_rma_read(ep, cmd->rw.command_id, tag,
 				     ep->data_offset, ep->data_expected);
 	if (ret) {
 		print_errno("prep_rma_read failed", ret);
@@ -587,5 +587,5 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	print_info("ctrl %d qid %d send rsp tag %04x status %04x",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   cmd->common.command_id, resp.status);
-	return ep->ops->send_rsp(ep->ep, &resp, sizeof(resp));
+	return ep->ops->send_rsp(ep, &resp, sizeof(resp));
 }
