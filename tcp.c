@@ -22,6 +22,8 @@
 
 static void tcp_destroy_endpoint(struct endpoint *ep)
 {
+	free(ep->pdu);
+	ep->pdu = NULL;
 	close(ep->sockfd);
 	ep->sockfd = -1;
 }
@@ -34,6 +36,12 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 
 	flags = fcntl(ep->sockfd, F_GETFL);
 	fcntl(ep->sockfd, F_SETFL, flags | O_NONBLOCK);
+
+	ep->pdu = malloc(sizeof(union nvme_tcp_pdu));
+	if (!ep->pdu) {
+		print_err("no memory");
+		return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -200,24 +208,25 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 static int tcp_rma_write(struct endpoint *ep, void *buf, u64 _len,
 			 struct nvme_command *cmd, bool last)
 {
-	struct nvme_tcp_data_pdu pdu;
-	int			 len;
+	int len;
+	struct nvme_tcp_data_pdu *pdu = &ep->pdu->data;
 
-	pdu.hdr.type = nvme_tcp_c2h_data;
-	pdu.hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
-	pdu.hdr.pdo = 0;
-	pdu.hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
-	pdu.hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) + _len);
-	pdu.data_offset = 0;
-	pdu.data_length = htole32(_len);
-	pdu.command_id = cmd->common.command_id;
+	memset(pdu, 0, sizeof(*pdu));
+	pdu->hdr.type = nvme_tcp_c2h_data;
+	pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
+	pdu->hdr.pdo = 0;
+	pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
+	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) + _len);
+	pdu->data_offset = 0;
+	pdu->data_length = htole32(_len);
+	pdu->command_id = cmd->common.command_id;
 
-	len = write(ep->sockfd, &pdu, sizeof(pdu));
+	len = write(ep->sockfd, pdu, sizeof(struct nvme_tcp_data_pdu));
 	if (len < 0) {
 		print_err("header write returned %d", errno);
 		return -errno;
 	}
-	if (len != sizeof(pdu)) {
+	if (len != sizeof(struct nvme_tcp_data_pdu)) {
 		print_err("short header write, %d bytes missing",
 			  (int)sizeof(pdu) - len);
 		return -EAGAIN;
@@ -240,29 +249,29 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u64 _len,
 static int tcp_send_r2t(struct endpoint *ep, u16 cmdid, u16 ttag,
 			u32 _offset, u32 _len)
 {
-	struct nvme_tcp_r2t_pdu pdu;
+	struct nvme_tcp_r2t_pdu *pdu = &ep->pdu->r2t;
 	int len;
 
-	memset(&pdu, 0, sizeof(pdu));
-	pdu.hdr.type = nvme_tcp_r2t;
-	pdu.hdr.flags = 0;
-	pdu.hdr.pdo = 0;
-	pdu.hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
-	pdu.hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
-	pdu.ttag = ttag;
-	pdu.command_id = cmdid;
-	pdu.r2t_offset = htole32(_offset);
-	pdu.r2t_length = htole32(_len);
+	memset(pdu, 0, sizeof(*pdu));
+	pdu->hdr.type = nvme_tcp_r2t;
+	pdu->hdr.flags = 0;
+	pdu->hdr.pdo = 0;
+	pdu->hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
+	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
+	pdu->ttag = ttag;
+	pdu->command_id = cmdid;
+	pdu->r2t_offset = htole32(_offset);
+	pdu->r2t_length = htole32(_len);
 	ep->ttag = ttag;
 
-	len = write(ep->sockfd, &pdu, sizeof(pdu));
+	len = write(ep->sockfd, pdu, sizeof(*pdu));
 	if (len < 0) {
 		print_err("r2t write returned %d", errno);
 		return -errno;
 	}
-	if (len < sizeof(pdu)) {
+	if (len < sizeof(*pdu)) {
 		print_err("short r2t write, %d bytes missing",
-			  (int)sizeof(pdu) - len);
+			  (int)sizeof(*pdu) - len);
 		return -EAGAIN;
 	}
 	return 0;
@@ -272,12 +281,9 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 			     u8 parm_offset, bool hdr_digest,
 			     union nvme_tcp_pdu *pdu, int pdu_len)
 {
-	u8 raw_pdu[152];
-	struct nvme_tcp_term_pdu *term_pdu =
-		(struct nvme_tcp_term_pdu *)raw_pdu;
+	struct nvme_tcp_term_pdu *term_pdu = (struct nvme_tcp_term_pdu *)&ep->pdu->data;
 	int len, plen;
 
-	memset(&raw_pdu, 0, sizeof(raw_pdu));
 	if (!pdu)
 		pdu_len = 0;
 	if (pdu_len > 152 - sizeof(struct nvme_tcp_term_pdu))
@@ -290,19 +296,28 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	term_pdu->hdr.plen = htole32(plen);
 	term_pdu->fes = htole16(fes);
 	term_pdu->fei = htole32(parm_offset << 6 | pdu_offset << 1);
-	if (pdu)
-		memcpy(raw_pdu + sizeof(struct nvme_tcp_term_pdu),
-		       pdu, pdu_len);
 
-	len = write(ep->sockfd, raw_pdu, plen);
+	len = write(ep->sockfd, term_pdu, sizeof(*term_pdu));
 	if (len < 0) {
 		print_err("c2h_term write returned %d", errno);
 		return -errno;
 	}
-	if (len != plen) {
+	if (len != sizeof(*term_pdu)) {
 		print_err("c2h_term short write; %d bytes missing",
 			  plen - len);
 		return -EAGAIN;
+	}
+	if (pdu) {
+		len = write(ep->sockfd, pdu, pdu_len);
+		if (len < 0) {
+			print_err("c2h term pdu write returned %d", errno);
+			return -errno;
+		}
+		if (len != pdu_len) {
+			print_err("c2h term short write; %d bytes missing",
+				  pdu_len - len);
+			return -EAGAIN;
+		}
 	}
 	return 0;
 }
@@ -310,22 +325,19 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 static int tcp_send_rsp(struct endpoint *ep, void *msg, int _len)
 {
 	struct nvme_completion *comp = (struct nvme_completion *)msg;
-	struct nvme_tcp_rsp_pdu pdu;
+	struct nvme_tcp_rsp_pdu *pdu = &ep->pdu->rsp;
 	int len;
 
-	UNUSED(msg);
-	UNUSED(_len);
+	pdu->hdr.type = nvme_tcp_rsp;
+	pdu->hdr.flags = 0;
+	pdu->hdr.pdo = 0;
+	pdu->hdr.hlen = sizeof(struct nvme_tcp_rsp_pdu);
+	pdu->hdr.plen = sizeof(struct nvme_tcp_rsp_pdu);
 
-	pdu.hdr.type = nvme_tcp_rsp;
-	pdu.hdr.flags = 0;
-	pdu.hdr.pdo = 0;
-	pdu.hdr.hlen = sizeof(struct nvme_tcp_rsp_pdu);
-	pdu.hdr.plen = sizeof(struct nvme_tcp_rsp_pdu);
+	memcpy(&(pdu->cqe), comp, sizeof(struct nvme_completion));
 
-	memcpy(&(pdu.cqe), comp, sizeof(struct nvme_completion));
-
-	len = write(ep->sockfd, &pdu, sizeof(pdu));
-	if (len != sizeof(pdu)) {
+	len = write(ep->sockfd, pdu, sizeof(*pdu));
+	if (len != sizeof(*pdu)) {
 		print_err("write completion returned %d", errno);
 		return -errno;
 	}
@@ -457,7 +469,7 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 				  msg_len - len);
 	}
 	*_msg = msg;
-	*bytes = hdr.hlen;
+	*bytes = hdr_len;
 
 	return 0;
 }

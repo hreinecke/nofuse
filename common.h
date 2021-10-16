@@ -59,6 +59,7 @@ struct endpoint {
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;
+	union nvme_tcp_pdu	*pdu;
 	unsigned int		 data_offset;
 	unsigned int		 data_expected;
 	int			 state;

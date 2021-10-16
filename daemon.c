@@ -162,6 +162,7 @@ static int init_subsys(void)
 		"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
 	subsys->type = NVME_NQN_NVME;
 	INIT_LINKED_LIST(&subsys->ctrl_list);
+	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	list_add(&subsys->node, &subsys_linked_list);
 	return 0;
 }
