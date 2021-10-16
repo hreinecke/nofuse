@@ -38,12 +38,11 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 	return 0;
 }
 
-static int tcp_init_listener(struct xp_pep **_pep, int port)
+static int tcp_init_listener(int port)
 {
-	struct xp_pep		*pep;
-	struct sockaddr_in	 addr;
-	int			 listenfd;
-	int			 ret;
+	struct sockaddr_in addr;
+	int listenfd;
+	int ret;
 
 	memset(&addr, 0, sizeof(addr));
 
@@ -60,28 +59,18 @@ static int tcp_init_listener(struct xp_pep **_pep, int port)
 	ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
 	if (ret < 0) {
 		print_err("Socket bind error %d", errno);
+		ret = -errno;
 		goto err;
 	}
 
 	ret = listen(listenfd, BACKLOG);
-	if (ret) {
+	if (ret < 0) {
 		print_err("Socket listen error %d", errno);
+		ret = -errno;
 		goto err;
 	}
 
-	pep = malloc(sizeof(*pep));
-	if (!pep) {
-		ret = -ENOMEM;
-		goto err;
-	}
-
-	memset(pep, 0, sizeof(*pep));
-
-	*_pep = (struct xp_pep *) pep;
-
-	pep->listenfd = listenfd;
-
-	return 0;
+	return listenfd;
 err:
 	close(listenfd);
 	return ret;
@@ -160,7 +149,7 @@ out_free:
 	return ret;
 }
 
-static int tcp_wait_for_connection(struct xp_pep *pep)
+static int tcp_wait_for_connection(struct host_iface *iface)
 {
 	int sockfd;
 	int ret = -ESHUTDOWN;
@@ -170,7 +159,7 @@ static int tcp_wait_for_connection(struct xp_pep *pep)
 		if (stopped)
 			break;
 
-		sockfd = accept(pep->listenfd, (struct sockaddr *) NULL,
+		sockfd = accept(iface->listenfd, (struct sockaddr *) NULL,
 				NULL);
 		if (sockfd < 0) {
 			if (errno != EAGAIN)
@@ -185,11 +174,10 @@ static int tcp_wait_for_connection(struct xp_pep *pep)
 	return ret;
 }
 
-static void tcp_destroy_listener(struct xp_pep *pep)
+static void tcp_destroy_listener(struct host_iface *iface)
 {
-	close(pep->listenfd);
-	pep->listenfd = -1;
-	free(pep->sock_addr);
+	close(iface->listenfd);
+	iface->listenfd = -1;
 }
 
 static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)

@@ -3,17 +3,12 @@
 
 #include <sys/socket.h>
 
-struct xp_pep {
-	struct sockaddr_in	*sock_addr;
-	int			 listenfd;
-};
-
 struct xp_ops {
 	int (*create_endpoint)(struct endpoint *ep, int id);
 	void (*destroy_endpoint)(struct endpoint *ep);
-	int (*init_listener)(struct xp_pep **pep, int port);
-	void (*destroy_listener)(struct xp_pep *pep);
-	int (*wait_for_connection)(struct xp_pep *pep);
+	int (*init_listener)(int port);
+	void (*destroy_listener)(struct host_iface *iface);
+	int (*wait_for_connection)(struct host_iface *iface);
 	int (*accept_connection)(struct endpoint *ep);
 	int (*rma_read)(struct endpoint *ep, void *buf, u64 len);
 	int (*rma_write)(struct endpoint *ep, void *buf, u64 len,

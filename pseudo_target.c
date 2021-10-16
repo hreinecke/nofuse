@@ -45,12 +45,12 @@ int start_pseudo_target(struct host_iface *iface)
 	if (!iface->ops)
 		return -EINVAL;
 
-	ret = iface->ops->init_listener(&iface->listener, iface->port_num);
-	if (ret) {
+	ret = iface->ops->init_listener(iface->port_num);
+	if (ret < 0) {
 		printf("start_pseudo_target init_listener failed\n");
 		return ret;
 	}
-
+	iface->listenfd = ret;
 	return 0;
 }
 
@@ -168,7 +168,6 @@ out:
 
 int run_host_interface(struct host_iface *iface)
 {
-	struct xp_pep *listener;
 	struct endpoint *ep, *_ep;
 	int id;
 	pthread_attr_t pthread_attr;
@@ -180,12 +179,10 @@ int run_host_interface(struct host_iface *iface)
 		return ret;
 	}
 
-	listener = iface->listener;
-
 	signal(SIGTERM, SIG_IGN);
 
 	while (!stopped) {
-		id = iface->ops->wait_for_connection(listener);
+		id = iface->ops->wait_for_connection(iface);
 
 		if (stopped)
 			break;
@@ -213,7 +210,7 @@ int run_host_interface(struct host_iface *iface)
 
 	print_info("destroy listener");
 
-	iface->ops->destroy_listener(listener);
+	iface->ops->destroy_listener(iface);
 
 	list_for_each_entry_safe(ep, _ep, &endpoint_linked_list, node) {
 		if (ep->pthread) {

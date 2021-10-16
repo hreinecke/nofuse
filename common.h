@@ -65,7 +65,6 @@ struct endpoint {
 	int			 qid;
 	int			 countdown;
 	struct timeval		 timeval;
-	struct sockaddr_in	*sock_addr;
 	int			 sockfd;
 	__u64			 depth;
 	int			 maxr2t;
@@ -103,8 +102,8 @@ struct host_iface {
 	int			 port_num;
 	int			 adrfam;
 	int			 portid;
+	int			 listenfd;
 	struct endpoint		 ep;
-	struct xp_pep		*listener;
 	struct xp_ops		*ops;
 };
 
