@@ -205,11 +205,15 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 	return 0;
 }
 
-static int tcp_rma_write(struct endpoint *ep, void *buf, u64 _len,
-			 struct nvme_command *cmd, bool last)
+static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
+			 u16 cid, bool last)
 {
 	int len;
 	struct nvme_tcp_data_pdu *pdu = &ep->pdu->data;
+
+	print_info("ctrl %d qid %d write cid %u offset %u len %u",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		   cid, _offset, _len);
 
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_c2h_data;
@@ -217,9 +221,9 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u64 _len,
 	pdu->hdr.pdo = 0;
 	pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
 	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) + _len);
-	pdu->data_offset = 0;
+	pdu->data_offset = htole32(_offset);
 	pdu->data_length = htole32(_len);
-	pdu->command_id = cmd->common.command_id;
+	pdu->command_id = cid;
 
 	len = write(ep->sockfd, pdu, sizeof(struct nvme_tcp_data_pdu));
 	if (len < 0) {
@@ -246,11 +250,15 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u64 _len,
 	return 0;
 }
 
-static int tcp_send_r2t(struct endpoint *ep, u16 cmdid, u16 ttag,
+static int tcp_send_r2t(struct endpoint *ep, u16 cid, u16 ttag,
 			u32 _offset, u32 _len)
 {
 	struct nvme_tcp_r2t_pdu *pdu = &ep->pdu->r2t;
 	int len;
+
+	print_info("ctrl %d qid %d r2t cid %u ttag %u offset %u len %u",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		   cid, ttag, _offset, _len);
 
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_r2t;
@@ -259,10 +267,9 @@ static int tcp_send_r2t(struct endpoint *ep, u16 cmdid, u16 ttag,
 	pdu->hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
 	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
 	pdu->ttag = ttag;
-	pdu->command_id = cmdid;
+	pdu->command_id = cid;
 	pdu->r2t_offset = htole32(_offset);
 	pdu->r2t_length = htole32(_len);
-	ep->ttag = ttag;
 
 	len = write(ep->sockfd, pdu, sizeof(*pdu));
 	if (len < 0) {
@@ -283,6 +290,10 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 {
 	struct nvme_tcp_term_pdu *term_pdu = (struct nvme_tcp_term_pdu *)&ep->pdu->data;
 	int len, plen;
+
+	print_info("ctrl %d qid %d c2h term fes %u offset pdu %u parm %u",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		   fes, pdu_offset, parm_offset);
 
 	if (!pdu)
 		pdu_len = 0;
@@ -322,11 +333,15 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	return 0;
 }
 
-static int tcp_send_rsp(struct endpoint *ep, void *msg, int _len)
+static int tcp_send_rsp(struct endpoint *ep, u16 command_id, void *msg, int _len)
 {
 	struct nvme_completion *comp = (struct nvme_completion *)msg;
 	struct nvme_tcp_rsp_pdu *pdu = &ep->pdu->rsp;
 	int len;
+
+	print_info("ctrl %d qid %d rsp tag %04x status %04x",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		   command_id, comp->status);
 
 	pdu->hdr.type = nvme_tcp_rsp;
 	pdu->hdr.flags = 0;
@@ -356,9 +371,9 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 
 	print_info("ctrl %d qid %d h2c data tag %04x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
-	if (ttag != ep->ttag) {
+	if (ttag != ep->data_tag) {
 		print_err("ctrl %d qid %d h2c ttag mismatch, is %u exp %u\n",
-			  ep->ctrl->cntlid, ep->qid, ttag, ep->ttag);
+			  ep->ctrl->cntlid, ep->qid, ttag, ep->data_tag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
 				offset_of(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
@@ -411,7 +426,7 @@ out_rsp:
 	memset(&resp, 0, sizeof(resp));
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
-	return tcp_send_rsp(ep, &resp, sizeof(resp));
+	return tcp_send_rsp(ep, pdu->data.command_id, &resp, sizeof(resp));
 }
 
 static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
@@ -437,7 +452,7 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
-	print_debug("msg %u hlen %d", hdr.type, hdr.hlen);
+	print_debug("msg %u len %d hlen %d", hdr.type, len, hdr.hlen);
 	hdr_len = hdr.hlen;
 	if (hdr_len < sizeof(hdr)) {
 		int i;

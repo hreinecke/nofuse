@@ -158,6 +158,7 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->ops = iface->ops;
 	ep->iface = iface;
 	ep->countdown = RETRY_COUNT;
+	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
 
 	ret = run_pseudo_target(ep, id);

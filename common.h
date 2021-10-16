@@ -60,15 +60,18 @@ struct endpoint {
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;
 	union nvme_tcp_pdu	*pdu;
+	u64			 data_pos;
+	u64			 data_length;
 	unsigned int		 data_offset;
 	unsigned int		 data_expected;
+	u16			 data_tag;
 	int			 state;
 	int			 qid;
 	int			 countdown;
 	struct timeval		 timeval;
 	int			 sockfd;
 	int			 maxr2t;
-	u16			 ttag;
+	int			 maxh2cdata;
 };
 
 struct ctrl_conn {

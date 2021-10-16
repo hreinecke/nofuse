@@ -311,6 +311,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 {
 	int cns = cmd->identify.cns;
 	int nsid = le32toh(cmd->identify.nsid);
+	u16 cid = cmd->identify.command_id;
 	u8 *id_buf;
 	int ret = 0, id_len;
 
@@ -341,7 +342,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	}
 
 	if (!ret) {
-		ret = ep->ops->rma_write(ep, id_buf, id_len, cmd, true);
+		ret = ep->ops->rma_write(ep, id_buf, 0, id_len, cid, true);
 		if (ret) {
 			print_errno("rma_write failed", ret);
 			ret = NVME_SC_WRITE_FAULT;
@@ -412,6 +413,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 			       u64 len)
 {
 	int ret = 0;
+	u16 cid = cmd->get_log_page.command_id;
 	u8 *log_buf;
 
 #ifdef DEBUG_COMMANDS
@@ -439,7 +441,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ret = ep->ops->rma_write(ep, log_buf, len, cmd, true);
+	ret = ep->ops->rma_write(ep, log_buf, 0, len, cid, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -484,7 +486,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	if (!buf)
 		return NVME_SC_NS_NOT_READY;
 	memset(buf, 0, data_len);
-	ret = ep->ops->rma_write(ep, buf, data_len, cmd, true);
+	ret = ep->ops->rma_write(ep, buf, pos, data_len, tag, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -499,7 +501,6 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	struct nsdev *ns = NULL, *_ns;
 	int nsid = le32toh(cmd->rw.nsid);
 	u16 tag = cmd->rw.command_id;
-	u64 pos, data_len;
 	int ret;
 
 	list_for_each_entry(_ns, devices, node) {
@@ -513,12 +514,18 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_NS;
 	}
 
-	pos = le64toh(cmd->rw.slba) * ns->blksize;
-	data_len = le64toh(cmd->rw.dptr.sgl.length);
-	ep->data_expected = data_len;
+	ep->data_tag = tag;
+	ep->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	ep->data_length = le64toh(cmd->rw.dptr.sgl.length);
 	ep->data_offset = 0;
+	if (ep->data_length > ep->maxh2cdata)
+		ep->data_expected = ep->maxh2cdata;
+	else
+		ep->data_expected = ep->data_length;
+
 	print_info("ctrl %d qid %d nsid %d tag %04x write pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
+		   ep->ctrl->cntlid, ep->qid, nsid, tag, ep->data_pos, ep->data_length);
+
 	ret = ep->ops->prep_rma_read(ep, cmd->rw.command_id, tag,
 				     ep->data_offset, ep->data_expected);
 	if (ret) {
@@ -589,8 +596,5 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
 
-	print_info("ctrl %d qid %d send rsp tag %04x status %04x",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   cmd->common.command_id, resp.status);
-	return ep->ops->send_rsp(ep, &resp, sizeof(resp));
+	return ep->ops->send_rsp(ep, cmd->common.command_id, &resp, sizeof(resp));
 }
