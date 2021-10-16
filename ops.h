@@ -6,7 +6,6 @@
 struct xp_pep {
 	struct sockaddr_in	*sock_addr;
 	int			 listenfd;
-	int			 sockfd;
 };
 
 struct xp_ops {

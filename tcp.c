@@ -179,7 +179,6 @@ static int tcp_wait_for_connection(struct xp_pep *pep)
 			return -EAGAIN;
 		}
 
-		pep->sockfd = sockfd;
 		return sockfd;
 	}
 
