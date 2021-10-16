@@ -172,6 +172,8 @@ static void init_host_iface()
 	host_iface.portid = 1;
 	strcpy(host_iface.address, "127.0.0.1");
 	host_iface.port_num = 8009;
+	pthread_mutex_init(&host_iface.ep_mutex, NULL);
+	INIT_LINKED_LIST(&host_iface.ep_list);
 }
 
 static int init_args(int argc, char *argv[])

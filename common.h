@@ -72,7 +72,6 @@ struct endpoint {
 
 struct ctrl_conn {
 	struct linked_list	 node;
-	struct linked_list	 ep_list;
 	struct subsystem	*subsys;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 cntlid;
@@ -104,6 +103,8 @@ struct host_iface {
 	int			 listenfd;
 	struct endpoint		 ep;
 	struct xp_ops		*ops;
+	struct linked_list ep_list;
+	pthread_mutex_t ep_mutex;
 };
 
 struct subsystem {

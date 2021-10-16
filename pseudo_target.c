@@ -11,8 +11,6 @@
 #define RETRY_COUNT	1200	// 2 min since multiplier of delay timeout
 #define KATO_INTERVAL	500	// ms per spec
 
-static LINKED_LIST(endpoint_linked_list);
-
 void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
 	ep->ops->destroy_endpoint(ep);
@@ -165,7 +163,9 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 		goto out;
 	}
 
-	list_add(&ep->node, &endpoint_linked_list);
+	pthread_mutex_lock(&iface->ep_mutex);
+	list_add(&ep->node, &iface->ep_list);
+	pthread_mutex_unlock(&iface->ep_mutex);
 	return ep;
 out:
 	free(ep);
@@ -217,14 +217,14 @@ int run_host_interface(struct host_iface *iface)
 	print_info("destroy listener");
 
 	iface->ops->destroy_listener(iface);
-
-	list_for_each_entry_safe(ep, _ep, &endpoint_linked_list, node) {
+	pthread_mutex_lock(&iface->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
 		if (ep->pthread) {
 			pthread_join(ep->pthread, NULL);
 		}
 		list_del(&ep->node);
 		free(ep);
 	}
-
+	pthread_mutex_unlock(&iface->ep_mutex);
 	return ret;
 }
