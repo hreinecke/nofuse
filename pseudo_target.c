@@ -143,14 +143,14 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	struct endpoint		*ep;
 	int			 ret;
 
-	ep = malloc(sizeof(*ep));
+	ep = malloc(sizeof(struct endpoint));
 	if (!ep) {
 		print_err("no memory");
 		close(id);
 		return NULL;
 	}
 
-	memset(ep, 0, sizeof(*ep));
+	memset(ep, 0, sizeof(struct endpoint));
 
 	ep->ops = iface->ops;
 	ep->iface = iface;

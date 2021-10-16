@@ -312,7 +312,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	int cns = cmd->identify.cns;
 	int nsid = le32toh(cmd->identify.nsid);
 	u8 *id_buf;
-	int ret, id_len;
+	int ret = 0, id_len;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_fabrics_identify cns %d", cns);
@@ -337,13 +337,15 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		break;
 	default:
 		print_err("unexpected identify command cns %u", cns);
-		return NVME_SC_BAD_ATTRIBUTES;
+		ret = NVME_SC_BAD_ATTRIBUTES;
 	}
 
-	ret = ep->ops->rma_write(ep, id_buf, id_len, cmd, true);
-	if (ret) {
-		print_errno("rma_write failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
+	if (!ret) {
+		ret = ep->ops->rma_write(ep, id_buf, id_len, cmd, true);
+		if (ret) {
+			print_errno("rma_write failed", ret);
+			ret = NVME_SC_WRITE_FAULT;
+		}
 	}
 	free(id_buf);
 	return ret;

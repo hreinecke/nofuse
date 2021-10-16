@@ -126,6 +126,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 		goto out_free;
 	}
 
+	memset(icrep, 0, sizeof(*icrep));
 	icrep->hdr.type = nvme_tcp_icresp;
 	icrep->hdr.hlen = sizeof(*icrep);
 	icrep->hdr.pdo = 0;
