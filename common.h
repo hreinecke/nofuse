@@ -66,7 +66,6 @@ struct endpoint {
 	int			 countdown;
 	struct timeval		 timeval;
 	int			 sockfd;
-	__u64			 depth;
 	int			 maxr2t;
 	u16			 ttag;
 };
