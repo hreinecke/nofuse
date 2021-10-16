@@ -114,7 +114,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 
 	if (icreq->hdr.type == 0) {
 		len = icreq->hdr.hlen - hdr_len;
-		ret = read(ep->sockfd, icreq + hdr_len, len);
+		ret = read(ep->sockfd, (u8 *)icreq + hdr_len, len);
 		if (ret != len) {
 			print_err("icreq short read, %d bytes missing",
 				  len - ret);
