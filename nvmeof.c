@@ -148,6 +148,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
+	pthread_mutex_lock(&subsys->ctrl_mutex);
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 		if (!strncmp(connect.hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
 			ep->ctrl = ctrl;
@@ -159,24 +160,26 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
 			print_err("Out of memory allocating controller");
-			goto out;
-		}
-		memset(ctrl, 0, sizeof(*ctrl));
-		strncpy(ctrl->nqn, connect.hostnqn, MAX_NQN_SIZE);
-		ctrl->max_endpoints = NVMF_NUM_QUEUES;
-		ep->ctrl = ctrl;
-		ctrl->subsys = subsys;
-		if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
-			     MAX_NQN_SIZE)) {
-			ctrl->ctrl_type = NVME_DISC_CTRL;
-			ctrl->qsize = NVMF_DQ_DEPTH;
 		} else {
-			ctrl->ctrl_type = NVME_IO_CTRL;
-			ctrl->qsize = NVMF_SQ_DEPTH;
+			memset(ctrl, 0, sizeof(*ctrl));
+			strncpy(ctrl->nqn, connect.hostnqn, MAX_NQN_SIZE);
+			ctrl->max_endpoints = NVMF_NUM_QUEUES;
+			ep->ctrl = ctrl;
+			ctrl->subsys = subsys;
+			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
+				     MAX_NQN_SIZE)) {
+				ctrl->ctrl_type = NVME_DISC_CTRL;
+				ctrl->qsize = NVMF_DQ_DEPTH;
+			} else {
+				ctrl->ctrl_type = NVME_IO_CTRL;
+				ctrl->qsize = NVMF_SQ_DEPTH;
+			}
+			list_add(&ctrl->node, &subsys->ctrl_list);
 		}
-		list_add(&ctrl->node, &subsys->ctrl_list);
 	}
-	ctrl = ep->ctrl;
+	pthread_mutex_unlock(&subsys->ctrl_mutex);
+	if (!ctrl)
+		goto out;
 
 	if (qid == 0) {
 		if (le16toh(connect.cntlid) != 0xffff) {

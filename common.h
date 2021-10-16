@@ -110,6 +110,7 @@ struct subsystem {
 	struct linked_list	 node;
 	struct linked_list	 host_list;
 	struct linked_list	 ctrl_list;
+	pthread_mutex_t ctrl_mutex;
 	char			 nqn[MAX_NQN_SIZE + 1];
 	int			 type;
 };

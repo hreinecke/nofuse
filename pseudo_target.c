@@ -89,6 +89,11 @@ static void *endpoint_thread(void *arg)
 		int len;
 
 		gettimeofday(&timeval, NULL);
+		if (!ep->ops) {
+			print_err("endpoint %d not initialized",
+				  ep->qid);
+			break;
+		}
 
 		ret = ep->ops->poll_for_msg(ep, &buf, &len);
 		if (!ret) {
@@ -152,6 +157,7 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->ops = iface->ops;
 	ep->iface = iface;
 	ep->countdown = RETRY_COUNT;
+	ep->qid = -1;
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {

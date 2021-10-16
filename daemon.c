@@ -146,6 +146,7 @@ static int init_subsys(void)
 		return -ENOMEM;
 	sprintf(subsys->nqn, "%s", NVME_DISC_SUBSYS_NAME);
 	subsys->type = NVME_NQN_DISC;
+	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	list_add(&subsys->node, &subsys_linked_list);
 
