@@ -372,14 +372,22 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	print_info("ctrl %d qid %d h2c data tag %04x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
 	if (ttag != ep->data_tag) {
-		print_err("ctrl %d qid %d h2c ttag mismatch, is %u exp %u\n",
+		print_err("ctrl %d qid %d h2c ttag mismatch, is %u exp %u",
 			  ep->ctrl->cntlid, ep->qid, ttag, ep->data_tag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
 				offset_of(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
+	if (ep->data_skipped) {
+		print_err("ctrl %d qid %d h2c %u bytes of unsolicited data",
+			  ep->ctrl->cntlid, ep->qid, ep->data_skipped);
+		ep->data_skipped = 0;
+		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
+				offset_of(struct nvme_tcp_data_pdu, data_offset),
+				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
+	}
 	if (data_offset != ep->data_offset) {
-		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %u\n",
+		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %u",
 			  ep->ctrl->cntlid, ep->qid,
 			  data_offset, ep->data_offset);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
@@ -387,7 +395,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 	if (data_len > ep->data_expected) {
-		print_err("ctrl %d qid %d h2c len overflow, is %u exp %u\n",
+		print_err("ctrl %d qid %d h2c len overflow, is %u exp %u",
 			  ep->ctrl->cntlid, ep->qid,
 			  data_len, ep->data_expected);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
@@ -452,7 +460,9 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
+#if 0
 	print_debug("msg hdr %u len %d hlen %d", hdr.type, len, hdr.hlen);
+#endif
 	hdr_len = hdr.hlen;
 	if (hdr_len < sizeof(hdr)) {
 #if 0
@@ -470,10 +480,8 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 		return -ETIMEDOUT;
 	}
 
-	if (ep->data_skipped) {
+	if (ep->data_skipped)
 		print_info("%d bytes skipped", ep->data_skipped);
-		ep->data_skipped = 0;
-	}
 
 	if (posix_memalign(&msg, PAGE_SIZE, hdr_len))
 		return -ENOMEM;
