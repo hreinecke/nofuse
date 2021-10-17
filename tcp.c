@@ -452,9 +452,10 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
-	print_debug("msg %u len %d hlen %d", hdr.type, len, hdr.hlen);
+	print_debug("msg hdr %u len %d hlen %d", hdr.type, len, hdr.hlen);
 	hdr_len = hdr.hlen;
 	if (hdr_len < sizeof(hdr)) {
+#if 0
 		int i;
 		u8 *p = (u8 *)&hdr;
 
@@ -463,7 +464,15 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 		for (i = 0; i < len; i++) {
 			fprintf(stdout, "%02x ", p[i]);
 		}
-		hdr_len = sizeof(hdr);
+#endif
+		ep->data_skipped += len;
+		ep->countdown = ep->ctrl->kato;
+		return -ETIMEDOUT;
+	}
+
+	if (ep->data_skipped) {
+		print_info("%d bytes skipped", ep->data_skipped);
+		ep->data_skipped = 0;
 	}
 
 	if (posix_memalign(&msg, PAGE_SIZE, hdr_len))
