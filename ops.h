@@ -22,4 +22,11 @@ struct xp_ops {
 
 struct xp_ops *tcp_register_ops(void);
 
+struct ns_ops {
+	int (*ns_read)(struct endpoint *ep, struct nsdev *ns, u64 offset, u64 len);
+	int (*ns_write)(struct endpoint *ep, struct nsdev *ns, u64 offset, u64 len, u16 tag);
+};
+
+struct ns_ops *null_register_ops(void);
+
 #endif /* __OPS_H__ */

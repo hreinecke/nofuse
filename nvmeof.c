@@ -460,8 +460,6 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	/* tag is considered opaque; no endian conversion */
 	u16 tag = cmd->rw.command_id;
 	u64 pos, data_len;
-	void *buf;
-	int ret;
 
 	list_for_each_entry(_ns, devices, node) {
 		if (_ns->nsid == nsid) {
@@ -486,17 +484,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	print_info("ctrl %d qid %d nsid %d tag %#x read pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
 
-	buf = malloc(data_len);
-	if (!buf)
-		return NVME_SC_NS_NOT_READY;
-	memset(buf, 0, data_len);
-	ret = ep->ops->rma_write(ep, buf, 0, data_len, tag, true);
-	if (ret) {
-		print_errno("rma_write failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
-	}
-	free(buf);
-	return ret;
+	return ns->ops->ns_write(ep, ns, pos, data_len, tag);
 }
 
 static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
@@ -526,22 +514,11 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	ep->data_offset = 0;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
-		u8 *buf;
-
-		buf = malloc(ep->data_length);
-		if (!buf)
-			return NVME_SC_NS_NOT_READY;
 		/* Inline data */
 		print_info("ctrl %d qid %d nsid %d tag %#x inline write pos %llu len %llu",
 			   ep->ctrl->cntlid, ep->qid, nsid, tag, ep->data_pos, ep->data_length);
 
-		ret = ep->ops->rma_read(ep, buf, ep->data_expected);
-		if (ret < 0) {
-			print_errno("rma_read failed", ret);
-			ret = NVME_SC_WRITE_FAULT;
-		}
-		free(buf);
-		return 0;
+		return ns->ops->ns_read(ep, ns, ep->data_pos, ep->data_length);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		print_err("Invalid sgl type %x", sgl_type);

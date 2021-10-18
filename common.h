@@ -53,7 +53,7 @@ extern struct linked_list	*interfaces;
 
 enum { DISCONNECTED, CONNECTED };
 
-extern int			 stopped;
+extern int stopped;
 
 struct endpoint {
 	struct linked_list	 node;
@@ -93,6 +93,7 @@ struct ctrl_conn {
 
 struct nsdev {
 	struct linked_list	 node;
+	struct ns_ops *ops;
 	int			 devid;
 	int			 nsid;
 	int			 fd;

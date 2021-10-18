@@ -130,6 +130,7 @@ static int open_namespace(char *filename)
 		ns->size = (off_t)128 * 1024 * 1024 * 1024; /* 128 MB */
 		ns->blksize = 4096;
 		ns->fd = -1;
+		ns->ops = null_register_ops();
 	}
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
