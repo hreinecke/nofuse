@@ -482,13 +482,15 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 
 	pos = le64toh(cmd->rw.slba) * ns->blksize;
 	data_len = le64toh(cmd->rw.dptr.sgl.length);
+
 	print_info("ctrl %d qid %d nsid %d tag %#x read pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
+
 	buf = malloc(data_len);
 	if (!buf)
 		return NVME_SC_NS_NOT_READY;
 	memset(buf, 0, data_len);
-	ret = ep->ops->rma_write(ep, buf, pos, data_len, tag, true);
+	ret = ep->ops->rma_write(ep, buf, 0, data_len, tag, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
