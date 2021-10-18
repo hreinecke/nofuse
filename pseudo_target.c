@@ -8,9 +8,6 @@
 #include "common.h"
 #include "ops.h"
 
-#define RETRY_COUNT	1200	// 2 min since multiplier of delay timeout
-#define KATO_INTERVAL	500	// ms per spec
-
 void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
 	ep->ops->destroy_endpoint(ep);
@@ -97,8 +94,8 @@ static void *endpoint_thread(void *arg)
 		if (!ret) {
 			ret = ep->ops->handle_msg(ep, buf, len);
 			if (!ret && ep->ctrl) {
-				ep->countdown	= ep->ctrl->kato;
-				ep->timeval	= timeval;
+				ep->kato_countdown = ep->ctrl->kato;
+				ep->timeval = timeval;
 				free(buf);
 				continue;
 			}
@@ -115,7 +112,7 @@ static void *endpoint_thread(void *arg)
 		if (ret == -ETIMEDOUT)
 			continue;
 		if (ret == -EAGAIN)
-			if (--ep->countdown > 0)
+			if (--ep->kato_countdown > 0)
 				continue;
 		/*
 		 * ->poll_for_msg returns -ENODATA when the connection
@@ -126,7 +123,7 @@ static void *endpoint_thread(void *arg)
 		if (ret < 0) {
 			print_err("ctrl %d qid %d error %d retry %d",
 				  ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret, ep->countdown);
+				  ep->qid, ret, ep->kato_countdown);
 			break;
 		}
 	}
@@ -157,7 +154,8 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 
 	ep->ops = iface->ops;
 	ep->iface = iface;
-	ep->countdown = RETRY_COUNT;
+	ep->kato_countdown = RETRY_COUNT;
+	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
 

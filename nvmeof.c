@@ -103,7 +103,8 @@ static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 		ep->ctrl->aen_mask = cdw11;
 		break;
 	case NVME_FEAT_KATO:
-		ep->ctrl->kato = cdw11 / DELAY_TIMEOUT; /* in msecs */
+		/* cdw11 / kato is in msecs */
+		ep->ctrl->kato = cdw11 / ep->kato_interval;
 		break;
 	default:
 		ret = NVME_SC_FEATURE_NOT_CHANGEABLE;
@@ -164,6 +165,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 			memset(ctrl, 0, sizeof(*ctrl));
 			strncpy(ctrl->nqn, connect.hostnqn, MAX_NQN_SIZE);
 			ctrl->max_endpoints = NVMF_NUM_QUEUES;
+			ctrl->kato = RETRY_COUNT;
 			ep->ctrl = ctrl;
 			ctrl->subsys = subsys;
 			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
@@ -213,7 +215,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.ver = htole32(NVME_VER);
 	id.lpa = (1 << 2);
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
-	id.kas = DELAY_TIMEOUT / 100; /* KAS is in units of 100 msecs */
+	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */
 
 	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL) {
 		strcpy(id.subnqn, NVME_DISC_SUBSYS_NAME);

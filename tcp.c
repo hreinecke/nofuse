@@ -191,16 +191,32 @@ static void tcp_destroy_listener(struct host_iface *iface)
 
 static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 {
-	int			 len;
+	struct pollfd fds;
+	int ret, len = 0, offset = 0;
 
-	len = read(ep->sockfd, buf, _len);
-	if (len < 0) {
-		print_err("read returned %d", errno);
-		return -errno;
-	}
-	if (len != _len) {
+	fds.fd = ep->sockfd;
+	fds.events = POLLIN | POLLERR;
+
+	while (len < _len) {
+		ret = poll(&fds, 1, ep->kato_interval);
+		if (ret <= 0) {
+			if (ret < 0) {
+				print_err("poll returned %d", errno);
+				return -errno;
+			}
+			if (--ep->kato_countdown > 0)
+				continue;
+			print_err("poll timeout");
+			return -ETIMEDOUT;
+		}
+		len = read(ep->sockfd, (u8 *)buf + offset, _len - offset);
+		if (len < 0) {
+			print_err("read returned %d", errno);
+			return -errno;
+		}
 		print_err("short read, %llu bytes missing",
 			  _len - len);
+		offset += len;
 	}
 	return 0;
 }
@@ -366,7 +382,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	u32 data_offset = le32toh(pdu->data.data_offset);
 	u32 data_len = le32toh(pdu->data.data_length);
 	char *buf;
-	int ret, offset = 0;
+	int ret;
 	struct nvme_completion resp;
 
 	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
@@ -409,16 +425,12 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		ret = NVME_SC_INTERNAL;
 		goto out_rsp;
 	}
-
-	while (offset < data_len) {
-		ret = tcp_rma_read(ep, buf + offset, data_len - offset);
-		if (ret < 0) {
-			print_err("ctrl %d qid %d h2c data read failed, error %d",
-				  ep->ctrl->cntlid, ep->qid, errno);
-			ret = NVME_SC_SGL_INVALID_DATA;
-			goto out_rsp;
-		}
-		offset += ret;
+	ret = tcp_rma_read(ep, buf, data_len);
+	if (ret < 0) {
+		print_err("ctrl %d qid %d h2c data read failed, error %d",
+			  ep->ctrl->cntlid, ep->qid, errno);
+		ret = NVME_SC_SGL_INVALID_DATA;
+		goto out_rsp;
 	}
 	free(buf);
 	ep->data_expected -= data_len;
@@ -476,7 +488,8 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 		}
 #endif
 		ep->data_skipped += len;
-		ep->countdown = ep->ctrl->kato;
+		if (ep->ctrl->kato)
+			ep->kato_countdown = ep->ctrl->kato;
 		return -ETIMEDOUT;
 	}
 

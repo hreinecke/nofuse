@@ -36,7 +36,9 @@ extern struct linked_list	*interfaces;
 
 #define PAGE_SIZE		4096
 
-#define DELAY_TIMEOUT	2000	/* 2 secs */
+#define KATO_INTERVAL	500	/* in ms as per spec */
+#define RETRY_COUNT	1200	/* 2 min; value is multiplied with kato interval */
+
 
 #define ADRFAM_STR_IPV4 "ipv4"
 #define ADRFAM_STR_IPV6 "ipv6"
@@ -68,7 +70,8 @@ struct endpoint {
 	u16			 data_tag;
 	int			 state;
 	int			 qid;
-	int			 countdown;
+	int			 kato_countdown;
+	int			 kato_interval;
 	struct timeval		 timeval;
 	int			 sockfd;
 	int			 maxr2t;
