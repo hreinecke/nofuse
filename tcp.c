@@ -211,7 +211,7 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
 	int len;
 	struct nvme_tcp_data_pdu *pdu = &ep->pdu->data;
 
-	print_info("ctrl %d qid %d write cid %u offset %u len %u",
+	print_info("ctrl %d qid %d write cid %x offset %u len %u",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   cid, _offset, _len);
 
@@ -256,7 +256,7 @@ static int tcp_send_r2t(struct endpoint *ep, u16 cid, u16 ttag,
 	struct nvme_tcp_r2t_pdu *pdu = &ep->pdu->r2t;
 	int len;
 
-	print_info("ctrl %d qid %d r2t cid %u ttag %u offset %u len %u",
+	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %u len %u",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   cid, ttag, _offset, _len);
 
@@ -339,7 +339,7 @@ static int tcp_send_rsp(struct endpoint *ep, u16 command_id, void *msg, int _len
 	struct nvme_tcp_rsp_pdu *pdu = &ep->pdu->rsp;
 	int len;
 
-	print_info("ctrl %d qid %d rsp tag %04x status %04x",
+	print_info("ctrl %d qid %d rsp tag %#x status %04x",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   command_id, comp->status);
 
@@ -369,10 +369,10 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	int ret, offset = 0;
 	struct nvme_completion resp;
 
-	print_info("ctrl %d qid %d h2c data tag %04x pos %u len %u",
+	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
 	if (ttag != ep->data_tag) {
-		print_err("ctrl %d qid %d h2c ttag mismatch, is %u exp %u",
+		print_err("ctrl %d qid %d h2c ttag mismatch, is %#x exp %#x",
 			  ep->ctrl->cntlid, ep->qid, ttag, ep->data_tag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
 				offset_of(struct nvme_tcp_data_pdu, ttag),

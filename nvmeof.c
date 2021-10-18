@@ -480,7 +480,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 
 	pos = le64toh(cmd->rw.slba) * ns->blksize;
 	data_len = le64toh(cmd->rw.dptr.sgl.length);
-	print_info("ctrl %d qid %d nsid %d tag %04x read pos %llu len %llu",
+	print_info("ctrl %d qid %d nsid %d tag %#x read pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
 	buf = malloc(data_len);
 	if (!buf)
@@ -523,7 +523,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	else
 		ep->data_expected = ep->data_length;
 
-	print_info("ctrl %d qid %d nsid %d tag %04x write pos %llu len %llu",
+	print_info("ctrl %d qid %d nsid %d tag %#x write pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, tag, ep->data_pos, ep->data_length);
 
 	ret = ep->ops->prep_rma_read(ep, cmd->rw.command_id, tag,
