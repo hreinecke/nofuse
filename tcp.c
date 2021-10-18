@@ -214,8 +214,6 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 			print_err("read returned %d", errno);
 			return -errno;
 		}
-		print_err("short read, %llu bytes missing",
-			  _len - len);
 		offset += len;
 	}
 	return 0;
