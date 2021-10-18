@@ -392,14 +392,6 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 				offset_of(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
-	if (ep->data_skipped) {
-		print_err("ctrl %d qid %d h2c %u bytes of unsolicited data",
-			  ep->ctrl->cntlid, ep->qid, ep->data_skipped);
-		ep->data_skipped = 0;
-		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
-				offset_of(struct nvme_tcp_data_pdu, data_offset),
-				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
-	}
 	if (data_offset != ep->data_offset) {
 		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %u",
 			  ep->ctrl->cntlid, ep->qid,
@@ -451,7 +443,7 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 {
 	struct nvme_tcp_hdr hdr;
 	void *msg;
-	int hdr_len, msg_len;
+	int msg_len;
 	int ret, len;
 	struct pollfd fds;
 
@@ -470,35 +462,20 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
-#if 0
-	print_debug("msg hdr %u len %d hlen %d", hdr.type, len, hdr.hlen);
-#endif
-	hdr_len = hdr.hlen;
-	if (hdr_len < sizeof(hdr)) {
-#if 0
-		int i;
-		u8 *p = (u8 *)&hdr;
-
+	if (!hdr.hlen) {
 		print_err("corrupt hdr, hlen %d size %ld",
 			  hdr.hlen, sizeof(hdr));
-		for (i = 0; i < len; i++) {
-			fprintf(stdout, "%02x ", p[i]);
-		}
-#endif
-		ep->data_skipped += len;
-		if (ep->ctrl->kato)
-			ep->kato_countdown = ep->ctrl->kato;
-		return -ETIMEDOUT;
+		ret = tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
+					offset_of(struct nvme_tcp_hdr, hlen),
+					0, false, NULL, 0);
+		if (!ret)
+			return -EPROTO;
 	}
-
-	if (ep->data_skipped)
-		print_info("%d bytes skipped", ep->data_skipped);
-
-	if (posix_memalign(&msg, PAGE_SIZE, hdr_len))
+	if (posix_memalign(&msg, PAGE_SIZE, hdr.hlen))
 		return -ENOMEM;
 
 	memcpy(msg, &hdr, sizeof(hdr));
-	msg_len = hdr_len - sizeof(hdr);
+	msg_len = hdr.hlen - sizeof(hdr);
 	if (msg_len) {
 		len = read(ep->sockfd, msg + sizeof(hdr), msg_len);
 		if (len == 0)
@@ -512,7 +489,7 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 				  msg_len - len);
 	}
 	*_msg = msg;
-	*bytes = hdr_len;
+	*bytes = hdr.hlen;
 
 	return 0;
 }
@@ -526,6 +503,9 @@ int tcp_handle_msg(struct endpoint *ep, void *msg, int bytes)
 		return tcp_handle_h2c_data(ep, pdu);
 
 	if (hdr->type != nvme_tcp_cmd) {
+		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
+					 offset_of(struct nvme_tcp_hdr, type),
+					 0, false, pdu, hdr->hlen);
 		print_err("unknown PDU type %x", hdr->type);
 		return -EPROTO;
 	}

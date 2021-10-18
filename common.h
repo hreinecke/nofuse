@@ -66,7 +66,6 @@ struct endpoint {
 	u64			 data_length;
 	unsigned int		 data_offset;
 	unsigned int		 data_expected;
-	unsigned int		 data_skipped;
 	u16			 data_tag;
 	int			 state;
 	int			 qid;
