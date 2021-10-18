@@ -556,7 +556,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 		print_errno("prep_rma_read failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-	return ret;
+	return ret ? ret : -1;
 }
 
 int handle_request(struct endpoint *ep, void *buf, int length)
@@ -614,6 +614,10 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 		print_err("unknown nvme admin opcode %d", cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
 	}
+
+	if (ret < 0)
+		/* Internal return; response is sent separately */
+		return 0;
 
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
