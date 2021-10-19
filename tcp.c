@@ -22,6 +22,8 @@
 
 static void tcp_destroy_endpoint(struct endpoint *ep)
 {
+	free(ep->qes);
+	ep->qes = NULL;
 	free(ep->recv_pdu);
 	ep->recv_pdu = NULL;
 	free(ep->send_pdu);
@@ -32,7 +34,7 @@ static void tcp_destroy_endpoint(struct endpoint *ep)
 
 static int tcp_create_endpoint(struct endpoint *ep, int id)
 {
-	int flags;
+	int flags, i;
 
 	ep->sockfd = id;
 
@@ -53,7 +55,53 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 		return -ENOMEM;
 	}
 
+	ep->qes = calloc(NVMF_SQ_DEPTH, sizeof(struct ep_qe));
+	if (!ep->qes) {
+		free(ep->recv_pdu);
+		ep->recv_pdu = NULL;
+		free(ep->send_pdu);
+		ep->send_pdu = NULL;
+		return -ENOMEM;
+	}
+	for (i = 0; i < NVMF_SQ_DEPTH; i++) {
+		ep->qes[i].idx = i;
+		ep->qes[i].ep = ep;
+	}
 	return 0;
+}
+
+int tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
+		    u64 pos, u64 len)
+{
+	int i;
+
+	for (i = 0; i < NVMF_SQ_DEPTH; i++) {
+		if (!ep->qes[i].busy) {
+			ep->qes[i].busy = true;
+			ep->qes[i].pos = pos;
+			ep->qes[i].offset = 0;
+			ep->qes[i].len = len;
+			ep->qes[i].remaining = len;
+			memcpy(&ep->qes[i].pdu, pdu,
+			       sizeof(union nvme_tcp_pdu));
+			return i;
+		}
+	}
+	return -1;
+}
+
+struct ep_qe *tcp_get_tag(struct endpoint *ep, u16 tag)
+{
+	if (tag >= NVMF_SQ_DEPTH || !ep->qes[tag].busy)
+		return NULL;
+	return &ep->qes[tag];
+}
+
+void tcp_release_tag(struct endpoint *ep, u16 tag)
+{
+	if (tag >= NVMF_SQ_DEPTH)
+		return;
+	ep->qes[tag].busy = false;
 }
 
 static int tcp_init_listener(int port)
@@ -274,15 +322,23 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
 	return 0;
 }
 
-static int tcp_send_r2t(struct endpoint *ep, u16 cid, u16 ttag,
-			u32 _offset, u32 _len)
+static int tcp_send_r2t(struct endpoint *ep, u16 tag, u16 ccid)
 {
 	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
+	struct ep_qe *qe;
 	int len;
 
-	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %u len %u",
+	qe = ep->ops->get_tag(ep, tag);
+	if (!qe) {
+		print_err("ctrl %d qod %d invalid ttag %#x",
+			  ep->ctrl ? ep->ctrl->cntlid : -1,
+			  ep->qid, tag);
+		return -EINVAL;
+	}
+
+	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %llu len %llu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   cid, ttag, _offset, _len);
+		   ccid, tag, qe->offset, qe->remaining);
 
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_r2t;
@@ -290,10 +346,12 @@ static int tcp_send_r2t(struct endpoint *ep, u16 cid, u16 ttag,
 	pdu->hdr.pdo = 0;
 	pdu->hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
 	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
-	pdu->ttag = ttag;
-	pdu->command_id = cid;
-	pdu->r2t_offset = htole32(_offset);
-	pdu->r2t_length = htole32(_len);
+	pdu->ttag = tag;
+	pdu->command_id = ccid;
+	pdu->r2t_offset = htole32(qe->offset);
+	pdu->r2t_length = htole32(qe->remaining);
+
+	memcpy(&qe->pdu, pdu, sizeof(*pdu));
 
 	len = write(ep->sockfd, pdu, sizeof(*pdu));
 	if (len < 0) {
@@ -390,31 +448,33 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	u16 ttag = le16toh(pdu->data.ttag);
 	u32 data_offset = le32toh(pdu->data.data_offset);
 	u32 data_len = le32toh(pdu->data.data_length);
+	struct ep_qe *qe;
 	char *buf;
 	int ret;
 	struct nvme_completion resp;
 
 	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
-	if (ttag != ep->data_tag) {
-		print_err("ctrl %d qid %d h2c ttag mismatch, is %#x exp %#x",
-			  ep->ctrl->cntlid, ep->qid, ttag, ep->data_tag);
+	qe = &ep->qes[ttag];
+	if (!qe->busy) {
+		print_err("ctrl %d qid %d h2c invalid ttag %#x",
+			  ep->ctrl->cntlid, ep->qid, ttag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
 				offset_of(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
-	if (data_offset != ep->data_offset) {
-		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %u",
+	if (data_offset != qe->offset) {
+		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %llu",
 			  ep->ctrl->cntlid, ep->qid,
-			  data_offset, ep->data_offset);
+			  data_offset, qe->offset);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 				offset_of(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
-	if (data_len > ep->data_expected) {
-		print_err("ctrl %d qid %d h2c len overflow, is %u exp %u",
+	if (data_len > qe->remaining) {
+		print_err("ctrl %d qid %d h2c len overflow, is %u exp %llu",
 			  ep->ctrl->cntlid, ep->qid,
-			  data_len, ep->data_expected);
+			  data_len, qe->remaining);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 				offset_of(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
@@ -434,15 +494,14 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		goto out_rsp;
 	}
 	free(buf);
-	ep->data_expected -= data_len;
-	ep->data_offset += data_len;
-	if (!ep->data_expected) {
+	qe->remaining -= data_len;
+	qe->offset += data_len;
+	if (!qe->remaining) {
 		ret = 0;
 		goto out_rsp;
 	}
 
-	return tcp_send_r2t(ep, pdu->data.command_id,
-			    ttag, ep->data_offset, ep->data_expected);
+	return tcp_send_r2t(ep, ttag, pdu->data.command_id);
 out_rsp:
 	memset(&resp, 0, sizeof(resp));
 	if (ret)
@@ -517,6 +576,9 @@ static struct xp_ops tcp_ops = {
 	.destroy_listener	= tcp_destroy_listener,
 	.wait_for_connection	= tcp_wait_for_connection,
 	.accept_connection	= tcp_accept_connection,
+	.acquire_tag		= tcp_acquire_tag,
+	.get_tag		= tcp_get_tag,
+	.release_tag		= tcp_release_tag,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_rma_write,
 	.prep_rma_read		= tcp_send_r2t,

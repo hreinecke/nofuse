@@ -56,19 +56,27 @@ enum { DISCONNECTED, CONNECTED };
 
 extern int stopped;
 
+struct ep_qe {
+	struct linked_list node;
+	int idx;
+	struct endpoint *ep;
+	union nvme_tcp_pdu pdu;
+	u64 pos;
+	u64 offset;
+	u64 len;
+	u64 remaining;
+	bool busy;
+};
+
 struct endpoint {
 	struct linked_list	 node;
 	pthread_t		 pthread;
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;
+	struct ep_qe		*qes;
 	union nvme_tcp_pdu	*recv_pdu;
 	union nvme_tcp_pdu	*send_pdu;
-	u64			 data_pos;
-	u64			 data_length;
-	unsigned int		 data_offset;
-	unsigned int		 data_expected;
-	u16			 data_tag;
 	int			 state;
 	int			 qid;
 	int			 kato_countdown;

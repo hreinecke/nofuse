@@ -457,9 +457,9 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 {
 	struct nsdev *ns = NULL, *_ns;
 	int nsid = le32toh(cmd->rw.nsid);
-	/* tag is considered opaque; no endian conversion */
-	u16 tag = cmd->rw.command_id;
-	u64 pos, data_len;
+	/* ccid is considered opaque; no endian conversion */
+	u16 ccid = cmd->rw.command_id, tag;
+	u64 data_pos, data_len;
 
 	list_for_each_entry(_ns, devices, node) {
 		if (_ns->nsid == nsid) {
@@ -478,13 +478,19 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	pos = le64toh(cmd->rw.slba) * ns->blksize;
+	data_pos = le64toh(cmd->rw.slba) * ns->blksize;
 	data_len = le64toh(cmd->rw.dptr.sgl.length);
 
-	print_info("ctrl %d qid %d nsid %d tag %#x read pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, tag, pos, data_len);
+	tag = ep->ops->acquire_tag(ep, ep->recv_pdu, data_pos, data_len);
+	if (tag < 0) {
+		print_err("nsid %d busy", nsid);
+		return NVME_SC_NS_NOT_READY;
+	}
 
-	return ns->ops->ns_write(ep, ns, pos, data_len, tag);
+	print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x read pos %llu len %llu",
+		   ep->ctrl->cntlid, ep->qid, nsid, tag, ccid, data_pos, data_len);
+
+	return ns->ops->ns_write(ep, ns, tag, ccid);
 }
 
 static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
@@ -493,7 +499,9 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	struct nsdev *ns = NULL, *_ns;
 	u8 sgl_type = cmd->rw.dptr.sgl.type;
 	int nsid = le32toh(cmd->rw.nsid);
-	u16 tag = cmd->rw.command_id;
+	/* ccid is considered opaque; no endian conversion */
+	u16 ccid = cmd->rw.command_id, tag;
+	u64 data_pos, data_len;
 	int ret;
 
 	list_for_each_entry(_ns, devices, node) {
@@ -507,34 +515,38 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_NS;
 	}
 
-	ep->data_tag = tag;
-	ep->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
-	ep->data_length = le64toh(cmd->rw.dptr.sgl.length);
-	ep->data_expected = ep->data_length;
-	ep->data_offset = 0;
+	data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	data_len = le64toh(cmd->rw.dptr.sgl.length);
+
+	tag = ep->ops->acquire_tag(ep, ep->recv_pdu, data_pos, data_len);
+	if (tag < 0) {
+		print_err("nsid %d busy", nsid);
+		return NVME_SC_NS_NOT_READY;
+	}
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		print_info("ctrl %d qid %d nsid %d tag %#x inline write pos %llu len %llu",
-			   ep->ctrl->cntlid, ep->qid, nsid, tag, ep->data_pos, ep->data_length);
-
-		return ns->ops->ns_read(ep, ns, ep->data_pos, ep->data_length);
+		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
+			   ep->ctrl->cntlid, ep->qid, nsid, tag, ccid,
+			   data_pos, data_len);
+		return ns->ops->ns_read(ep, ns, tag, ccid);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		print_err("Invalid sgl type %x", sgl_type);
+		ep->ops->release_tag(ep, tag);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-
-	print_info("ctrl %d qid %d nsid %d tag %#x write pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, tag, ep->data_pos, ep->data_length);
-
-	ret = ep->ops->prep_rma_read(ep, cmd->rw.command_id, tag,
-				     ep->data_offset, ep->data_expected);
+	ret = ns->ops->ns_prep_read(ep, ns, tag, ccid);
 	if (ret) {
 		print_errno("prep_rma_read failed", ret);
+		ep->ops->release_tag(ep, tag);
 		ret = NVME_SC_WRITE_FAULT;
-	}
+	} else
+		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x write pos %llu len %llu",
+			   ep->ctrl->cntlid, ep->qid, nsid, tag, ccid,
+			   data_pos, data_len);
+
 	return ret ? ret : -1;
 }
 
