@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <arpa/inet.h>
+#include <poll.h>
 
 #include "common.h"
 #include "ops.h"
@@ -80,8 +81,7 @@ static void *endpoint_thread(void *arg)
 
 	while (!stopped) {
 		struct timeval timeval;
-		void *buf = NULL;
-		int len;
+		struct pollfd fds;
 
 		gettimeofday(&timeval, NULL);
 		if (!ep->ops) {
@@ -90,32 +90,36 @@ static void *endpoint_thread(void *arg)
 			break;
 		}
 
-		ret = ep->ops->poll_for_msg(ep, &buf, &len);
+		fds.fd = ep->sockfd;
+		fds.events = POLLIN | POLLERR;
+
+		ret = poll(&fds, 1, ep->kato_interval);
+		if (ret == 0)
+			/* poll timeout */
+			continue;
+		if (ret < 0) {
+			print_err("ctrl %d qid %d poll error %d",
+				  ep->ctrl ? ep->ctrl->cntlid : -1,
+				  ep->qid, ret);
+			break;
+		}
+		ret = ep->ops->read_msg(ep);
 		if (!ret) {
-			ret = ep->ops->handle_msg(ep, buf, len);
+			ret = ep->ops->handle_msg(ep);
 			if (!ret && ep->ctrl) {
 				ep->kato_countdown = ep->ctrl->kato;
 				ep->timeval = timeval;
-				free(buf);
 				continue;
 			}
 			print_info("ctrl %d qid %d handle msg error %d",
 				   ep->ctrl ? ep->ctrl->cntlid : -1,
 				   ep->qid, ret);
-			if (buf)
-				free(buf);
-		} else if (ret != -ETIMEDOUT && ret != -EAGAIN) {
-			print_err("ctrl %d qid %d poll error %d",
-				  ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret);
 		}
-		if (ret == -ETIMEDOUT)
-			continue;
 		if (ret == -EAGAIN)
 			if (--ep->kato_countdown > 0)
 				continue;
 		/*
-		 * ->poll_for_msg returns -ENODATA when the connection
+		 * ->read_msg returns -ENODATA when the connection
 		 * is closed; that shouldn't count as an error.
 		 */
 		if (ret == -ENODATA)

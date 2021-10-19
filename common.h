@@ -20,6 +20,7 @@
 
 #include "utils.h"
 #include "nvme.h"
+#include "tcp.h"
 
 extern int			 debug;
 extern struct linked_list	*devices;
@@ -61,7 +62,8 @@ struct endpoint {
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;
-	union nvme_tcp_pdu	*pdu;
+	union nvme_tcp_pdu	*recv_pdu;
+	union nvme_tcp_pdu	*send_pdu;
 	u64			 data_pos;
 	u64			 data_length;
 	unsigned int		 data_offset;
@@ -126,7 +128,7 @@ struct subsystem {
 
 extern struct linked_list subsys_linked_list;
 
-int handle_request(struct endpoint *ep, void *buf, int length);
+int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int run_host_interface(struct host_iface *iface);
 
 #endif

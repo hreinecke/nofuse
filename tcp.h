@@ -183,6 +183,7 @@ union nvme_tcp_pdu {
 	struct nvme_tcp_rsp_pdu		rsp;
 	struct nvme_tcp_r2t_pdu		r2t;
 	struct nvme_tcp_data_pdu	data;
+	struct nvme_tcp_term_pdu	term;
 };
 
 #endif /* _NVME_TCP_H */

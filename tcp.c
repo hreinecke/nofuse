@@ -22,8 +22,10 @@
 
 static void tcp_destroy_endpoint(struct endpoint *ep)
 {
-	free(ep->pdu);
-	ep->pdu = NULL;
+	free(ep->recv_pdu);
+	ep->recv_pdu = NULL;
+	free(ep->send_pdu);
+	ep->send_pdu = NULL;
 	close(ep->sockfd);
 	ep->sockfd = -1;
 }
@@ -37,8 +39,16 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 	flags = fcntl(ep->sockfd, F_GETFL);
 	fcntl(ep->sockfd, F_SETFL, flags | O_NONBLOCK);
 
-	ep->pdu = malloc(sizeof(union nvme_tcp_pdu));
-	if (!ep->pdu) {
+	ep->send_pdu = malloc(sizeof(union nvme_tcp_pdu));
+	if (!ep->send_pdu) {
+		print_err("no memory");
+		return -ENOMEM;
+	}
+
+	ep->recv_pdu = malloc(sizeof(union nvme_tcp_pdu));
+	if (!ep->recv_pdu) {
+		free(ep->send_pdu);
+		ep->send_pdu = NULL;
 		print_err("no memory");
 		return -ENOMEM;
 	}
@@ -223,7 +233,7 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
 			 u16 cid, bool last)
 {
 	int len;
-	struct nvme_tcp_data_pdu *pdu = &ep->pdu->data;
+	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
 	print_info("ctrl %d qid %d write cid %x offset %u len %u",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
@@ -267,7 +277,7 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
 static int tcp_send_r2t(struct endpoint *ep, u16 cid, u16 ttag,
 			u32 _offset, u32 _len)
 {
-	struct nvme_tcp_r2t_pdu *pdu = &ep->pdu->r2t;
+	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
 	int len;
 
 	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %u len %u",
@@ -302,7 +312,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 			     u8 parm_offset, bool hdr_digest,
 			     union nvme_tcp_pdu *pdu, int pdu_len)
 {
-	struct nvme_tcp_term_pdu *term_pdu = (struct nvme_tcp_term_pdu *)&ep->pdu->data;
+	struct nvme_tcp_term_pdu *term_pdu = &ep->send_pdu->term;
 	int len, plen;
 
 	print_info("ctrl %d qid %d c2h term fes %u offset pdu %u parm %u",
@@ -347,10 +357,10 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	return 0;
 }
 
-static int tcp_send_rsp(struct endpoint *ep, u16 command_id, void *msg, int _len)
+static int tcp_send_rsp(struct endpoint *ep, u16 command_id,
+			struct nvme_completion *comp)
 {
-	struct nvme_completion *comp = (struct nvme_completion *)msg;
-	struct nvme_tcp_rsp_pdu *pdu = &ep->pdu->rsp;
+	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
 
 	print_info("ctrl %d qid %d rsp tag %#x status %04x",
@@ -436,48 +446,34 @@ out_rsp:
 	memset(&resp, 0, sizeof(resp));
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
-	return tcp_send_rsp(ep, pdu->data.command_id, &resp, sizeof(resp));
+	return tcp_send_rsp(ep, pdu->data.command_id, &resp);
 }
 
-static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
+static int tcp_read_msg(struct endpoint *ep)
 {
-	struct nvme_tcp_hdr hdr;
-	void *msg;
-	int msg_len;
-	int ret, len;
-	struct pollfd fds;
+	int len, msg_len, ret;
 
-	fds.fd = ep->sockfd;
-	fds.events = POLLIN | POLLERR;
-
-	ret = poll(&fds, 1, 100);
-	if (ret <= 0) {
-		if (ret == 0)
-			return -ETIMEDOUT;
-		return -errno;
-	}
-	len = read(ep->sockfd, &hdr, sizeof(hdr));
-	if (len != sizeof(hdr)) {
+	len = read(ep->sockfd, ep->recv_pdu, sizeof(struct nvme_tcp_hdr));
+	if (len != sizeof(struct nvme_tcp_hdr)) {
 		if (len < 0)
 			print_errno("failed to read msg hdr", errno);
 		return (len < 0) ? -errno : -ENODATA;
 	}
-	if (!hdr.hlen) {
+	if (!ep->recv_pdu->common.hlen) {
 		print_err("corrupt hdr, hlen %d size %ld",
-			  hdr.hlen, sizeof(hdr));
+			  ep->recv_pdu->common.hlen,
+			  sizeof(struct nvme_tcp_hdr));
 		ret = tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
 					offset_of(struct nvme_tcp_hdr, hlen),
 					0, false, NULL, 0);
 		if (!ret)
 			return -EPROTO;
 	}
-	if (posix_memalign(&msg, PAGE_SIZE, hdr.hlen))
-		return -ENOMEM;
-
-	memcpy(msg, &hdr, sizeof(hdr));
-	msg_len = hdr.hlen - sizeof(hdr);
+	msg_len = ep->recv_pdu->common.hlen - sizeof(struct nvme_tcp_hdr);
 	if (msg_len) {
-		len = read(ep->sockfd, msg + sizeof(hdr), msg_len);
+		u8 *msg = (u8 *)ep->recv_pdu + sizeof(struct nvme_tcp_hdr);
+
+		len = read(ep->sockfd, msg, msg_len);
 		if (len == 0)
 			return -EAGAIN;
 		if (len < 0) {
@@ -488,15 +484,12 @@ static int tcp_poll_for_msg(struct endpoint *ep, void **_msg, int *bytes)
 			print_err("short msg payload read, %d bytes missing",
 				  msg_len - len);
 	}
-	*_msg = msg;
-	*bytes = hdr.hlen;
-
 	return 0;
 }
 
-int tcp_handle_msg(struct endpoint *ep, void *msg, int bytes)
+int tcp_handle_msg(struct endpoint *ep)
 {
-	union nvme_tcp_pdu *pdu = msg;
+	union nvme_tcp_pdu *pdu = ep->recv_pdu;
 	struct nvme_tcp_hdr *hdr = &pdu->common;
 
 	if (hdr->type == nvme_tcp_h2c_data)
@@ -510,8 +503,7 @@ int tcp_handle_msg(struct endpoint *ep, void *msg, int bytes)
 		return -EPROTO;
 	}
 
-	return handle_request(ep, &pdu->cmd.cmd,
-			      bytes - sizeof(struct nvme_tcp_hdr));
+	return handle_request(ep, &pdu->cmd.cmd);
 }
 
 static struct xp_ops tcp_ops = {
@@ -525,7 +517,7 @@ static struct xp_ops tcp_ops = {
 	.rma_write		= tcp_rma_write,
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
-	.poll_for_msg		= tcp_poll_for_msg,
+	.read_msg		= tcp_read_msg,
 	.handle_msg		= tcp_handle_msg,
 };
 

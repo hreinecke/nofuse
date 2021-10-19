@@ -15,9 +15,10 @@ struct xp_ops {
 			 u16 cid, bool last);
 	int (*prep_rma_read)(struct endpoint *ep, u16 cid, u16 ttag,
 			     u32 offset, u32 len);
-	int (*send_rsp)(struct endpoint *ep, u16 command_id, void *msg, int len);
-	int (*poll_for_msg)(struct endpoint *ep, void **msg, int *bytes);
-	int (*handle_msg)(struct endpoint *ep, void *msg, int bytes);
+	int (*send_rsp)(struct endpoint *ep, u16 command_id,
+			struct nvme_completion *comp);
+	int (*read_msg)(struct endpoint *ep);
+	int (*handle_msg)(struct endpoint *ep);
 };
 
 struct xp_ops *tcp_register_ops(void);

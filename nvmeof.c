@@ -538,9 +538,8 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	return ret ? ret : -1;
 }
 
-int handle_request(struct endpoint *ep, void *buf, int length)
+int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 {
-	struct nvme_command *cmd = buf;
 	struct nvme_completion resp;
 	u32 len;
 	int ret;
@@ -549,8 +548,6 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 
 	len = le32toh(cmd->common.dptr.sgl.length);
 	resp.command_id = cmd->common.command_id;
-
-	UNUSED(length);
 
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
@@ -601,5 +598,5 @@ int handle_request(struct endpoint *ep, void *buf, int length)
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
 
-	return ep->ops->send_rsp(ep, cmd->common.command_id, &resp, sizeof(resp));
+	return ep->ops->send_rsp(ep, cmd->common.command_id, &resp);
 }
