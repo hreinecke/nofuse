@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <arpa/inet.h>
-#include <poll.h>
+#include <sys/epoll.h>
 
 #include "common.h"
 #include "ops.h"
@@ -77,11 +77,28 @@ retry:
 static void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
+	struct epoll_event ev;
+	int epollfd;
 	int ret;
+
+	epollfd = epoll_create(1);
+	if (epollfd < 0) {
+		print_err("endpoint %d: error %d creatint epoll instance",
+			  ep->qid, errno);
+		goto out_disconnect;
+	}
+
+	ev.events = EPOLLIN;
+	ev.data.fd = ep->sockfd;
+
+	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, ep->sockfd, &ev) < 0) {
+		print_err("endpont %d failed to add epoll fd, error %d",
+			  ep->qid, errno);
+		goto out_close;
+	}
 
 	while (!stopped) {
 		struct timeval timeval;
-		struct pollfd fds;
 
 		gettimeofday(&timeval, NULL);
 		if (!ep->ops) {
@@ -90,18 +107,20 @@ static void *endpoint_thread(void *arg)
 			break;
 		}
 
-		fds.fd = ep->sockfd;
-		fds.events = POLLIN | POLLERR;
-
-		ret = poll(&fds, 1, ep->kato_interval);
+		ret = epoll_wait(epollfd, &ev, 1, ep->kato_interval);
 		if (ret == 0)
-			/* poll timeout */
+			/* epoll timeout */
 			continue;
 		if (ret < 0) {
 			print_err("ctrl %d qid %d poll error %d",
 				  ep->ctrl ? ep->ctrl->cntlid : -1,
 				  ep->qid, ret);
 			break;
+		}
+		if (ev.data.fd != ep->sockfd) {
+			print_err("endpoint %d epoll invalid fd",
+				  ep->qid);
+			continue;
 		}
 		ret = ep->ops->read_msg(ep);
 		if (!ret) {
@@ -131,7 +150,10 @@ static void *endpoint_thread(void *arg)
 			break;
 		}
 	}
+out_close:
+	close(epollfd);
 
+out_disconnect:
 	disconnect_endpoint(ep, !stopped);
 
 	print_info("ctrl %d qid %d %s",
