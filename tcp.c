@@ -354,7 +354,8 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 			return -EAGAIN;
 		}
 	}
-	return 0;
+	/* Return -EPROTO to signal the connection should be dropped */
+	return -EPROTO;
 }
 
 static int tcp_send_rsp(struct endpoint *ep, u16 command_id,
@@ -463,11 +464,9 @@ static int tcp_read_msg(struct endpoint *ep)
 		print_err("corrupt hdr, hlen %d size %ld",
 			  ep->recv_pdu->common.hlen,
 			  sizeof(struct nvme_tcp_hdr));
-		ret = tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
+		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
 					offset_of(struct nvme_tcp_hdr, hlen),
 					0, false, NULL, 0);
-		if (!ret)
-			return -EPROTO;
 	}
 	msg_len = ep->recv_pdu->common.hlen - sizeof(struct nvme_tcp_hdr);
 	if (msg_len) {
@@ -496,11 +495,10 @@ int tcp_handle_msg(struct endpoint *ep)
 		return tcp_handle_h2c_data(ep, pdu);
 
 	if (hdr->type != nvme_tcp_cmd) {
+		print_err("unknown PDU type %x", hdr->type);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 					 offset_of(struct nvme_tcp_hdr, type),
 					 0, false, pdu, hdr->hlen);
-		print_err("unknown PDU type %x", hdr->type);
-		return -EPROTO;
 	}
 
 	return handle_request(ep, &pdu->cmd.cmd);
