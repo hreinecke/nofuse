@@ -452,7 +452,7 @@ out_rsp:
 
 static int tcp_read_msg(struct endpoint *ep)
 {
-	int len, msg_len, ret;
+	int len, msg_len;
 
 	len = read(ep->sockfd, ep->recv_pdu, sizeof(struct nvme_tcp_hdr));
 	if (len != sizeof(struct nvme_tcp_hdr)) {
@@ -493,6 +493,12 @@ int tcp_handle_msg(struct endpoint *ep)
 
 	if (hdr->type == nvme_tcp_h2c_data)
 		return tcp_handle_h2c_data(ep, pdu);
+
+	if (hdr->type == nvme_tcp_h2c_term) {
+		print_info("ctrl %d qid %d h2c term, disconnecting",
+			   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid);
+		return -ENOTCONN;
+	}
 
 	if (hdr->type != nvme_tcp_cmd) {
 		print_err("unknown PDU type %x", hdr->type);
