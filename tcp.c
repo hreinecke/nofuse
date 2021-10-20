@@ -104,7 +104,7 @@ void tcp_release_tag(struct endpoint *ep, u16 tag)
 	ep->qes[tag].busy = false;
 }
 
-static int tcp_init_listener(int port)
+static int tcp_init_listener(struct host_iface *iface)
 {
 	struct sockaddr_in addr;
 	int listenfd;
@@ -113,7 +113,7 @@ static int tcp_init_listener(int port)
 	memset(&addr, 0, sizeof(addr));
 
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(port);
+	addr.sin_port = htons(iface->port_num);
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	listenfd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);

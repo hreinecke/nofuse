@@ -6,7 +6,7 @@
 struct xp_ops {
 	int (*create_endpoint)(struct endpoint *ep, int id);
 	void (*destroy_endpoint)(struct endpoint *ep);
-	int (*init_listener)(int port);
+	int (*init_listener)(struct host_iface *iface);
 	void (*destroy_listener)(struct host_iface *iface);
 	int (*wait_for_connection)(struct host_iface *iface);
 	int (*accept_connection)(struct endpoint *ep);

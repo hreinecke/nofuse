@@ -18,32 +18,16 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 
 int start_pseudo_target(struct host_iface *iface)
 {
-	struct sockaddr		 dest;
-	int			 ret;
-
-	switch (iface->adrfam) {
-	case NVMF_ADDR_FAMILY_IP4:
-		ret = inet_pton(AF_INET, iface->address, &dest);
-		break;
-	case NVMF_ADDR_FAMILY_IP6:
-		ret = inet_pton(AF_INET6, iface->address, &dest);
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	if (!ret)
-		return -EINVAL;
-	if (ret < 0)
-		return errno;
+	int ret;
 
 	iface->ops = tcp_register_ops();
 	if (!iface->ops)
 		return -EINVAL;
 
-	ret = iface->ops->init_listener(iface->port_num);
+	ret = iface->ops->init_listener(iface);
 	if (ret < 0) {
-		printf("start_pseudo_target init_listener failed\n");
+		print_err("iface %s init_listener failed",
+			iface->address);
 		return ret;
 	}
 	iface->listenfd = ret;
