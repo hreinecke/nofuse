@@ -13,8 +13,8 @@
 #include "ops.h"
 
 LINKED_LIST(subsys_linked_list);
+LINKED_LIST(iface_linked_list);
 static LINKED_LIST(device_linked_list);
-static LINKED_LIST(iface_linked_list);
 
 int					 stopped;
 int					 debug;
@@ -224,6 +224,8 @@ static int add_host_port(int port)
 	struct host_iface *iface, *new;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
+		if (iface->port_num == port)
+			continue;
 		new = new_host_iface(iface->address, iface->adrfam, port);
 		if (new) {
 			list_add(&new->node, &tmp_iface_list);
@@ -242,7 +244,7 @@ static int init_args(int argc, char *argv[])
 	char *eptr;
 	const char *opt_list = "?dSu:r:c:t:f:a:s:n:i:";
 	int port_num[16];
-	int port_max = 0, idx;
+	int port_max = 0, port, idx;
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
@@ -254,6 +256,9 @@ static int init_args(int argc, char *argv[])
 
 	debug = 0;
 	run_as_daemon = 1;
+
+	port_num[0] = 8009;
+	port_max++;
 
 	while ((opt = getopt(argc, argv, opt_list)) != -1) {
 		switch (opt) {
@@ -272,13 +277,22 @@ static int init_args(int argc, char *argv[])
 				print_err("Too many port numbers specified");
 				return 1;
 			}
-			port_num[port_max] = strtoul(optarg, &eptr, 10);
-			if (errno || port_num[port_max] > LONG_MAX) {
+			port = strtoul(optarg, &eptr, 10);
+			if (errno || port == 0 || port > LONG_MAX) {
 				print_err("Invalid port number '%s'",
 					  optarg);
 				return 1;
 			}
-			port_max++;
+			for (idx = 0; idx < port_max; idx++) {
+				if (port_num[idx] == port) {
+					port = -1;
+					break;
+				}
+			}
+			if (port > 0) {
+				port_num[idx] = port;
+				port_max++;
+			}
 			break;
 		case 'n':
 			if (open_namespace(optarg) < 0)

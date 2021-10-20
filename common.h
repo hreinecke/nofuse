@@ -138,6 +138,7 @@ struct subsystem {
 };
 
 extern struct linked_list subsys_linked_list;
+extern struct linked_list iface_linked_list;
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 void *run_host_interface(void *arg);

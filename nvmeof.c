@@ -355,6 +355,7 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 {
 	struct subsystem *subsys;
+	struct host_iface *iface;
 	struct nvmf_disc_rsp_page_hdr hdr;
 	struct nvmf_disc_rsp_page_entry entry;
 	u64 log_len = data_len;
@@ -365,7 +366,11 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
-		hdr.numrec++;
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			if (iface->port_type == NVME_NQN_NVM) {
+				hdr.numrec++;
+			}
+		}
 	}
 	print_info("Found %llu subsystems", hdr.numrec);
 
@@ -382,30 +387,33 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
-		memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
-		entry.trtype = NVMF_TRTYPE_TCP;
-		if (ep->iface->adrfam == AF_INET)
-			entry.adrfam = NVMF_ADDR_FAMILY_IP4;
-		else
-			entry.adrfam = NVMF_ADDR_FAMILY_IP6;
-		entry.treq = 0;
-		entry.portid = ep->iface->portid;
-		entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
-		entry.asqsz = 32;
-		entry.subtype = subsys->type;
-		snprintf(trsvcid, NVMF_TRSVCID_SIZE + 1, "%d",
-			 ep->iface->port_num);
-		memcpy(entry.trsvcid, trsvcid, NVMF_TRSVCID_SIZE);
-		memcpy(entry.traddr, ep->iface->address, NVMF_TRADDR_SIZE);
-		strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
-		if (data_len < sizeof(entry)) {
-			memcpy(data, &entry, data_len);
-			data_len = 0;
-			break;
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			memset(&entry, 0,
+			       sizeof(struct nvmf_disc_rsp_page_entry));
+			entry.trtype = NVMF_TRTYPE_TCP;
+			if (iface->adrfam == AF_INET)
+				entry.adrfam = NVMF_ADDR_FAMILY_IP4;
+			else
+				entry.adrfam = NVMF_ADDR_FAMILY_IP6;
+			entry.treq = 0;
+			entry.portid = iface->portid;
+			entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
+			entry.asqsz = 32;
+			entry.subtype = subsys->type;
+			snprintf(trsvcid, NVMF_TRSVCID_SIZE + 1, "%d",
+				 iface->port_num);
+			memcpy(entry.trsvcid, trsvcid, NVMF_TRSVCID_SIZE);
+			memcpy(entry.traddr, iface->address, NVMF_TRADDR_SIZE);
+			strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
+			if (data_len < sizeof(entry)) {
+				memcpy(data, &entry, data_len);
+				data_len = 0;
+				break;
+			}
+			memcpy(data, &entry, sizeof(entry));
+			data += sizeof(entry);
+			data_len -= sizeof(entry);
 		}
-		memcpy(data, &entry, sizeof(entry));
-		data += sizeof(entry);
-		data_len -= sizeof(entry);
 	}
 	print_info("Returning %llu entries len %llu", hdr.numrec,
 		   log_len - data_len);
