@@ -214,8 +214,8 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */
 
-	id.cntrtltype = ep->ctrl->ctrl_type;
-	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL) {
+	id.cntrltype = ep->ctrl->ctrl_type;
+	if (ep->ctrl->ctrl_type == NVME_CTRL_CNTRLTYPE_DISC) {
 		strcpy(id.subnqn, NVME_DISC_SUBSYS_NAME);
 		id.maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
@@ -363,7 +363,7 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 	hdr.recfmt = 0;
 	hdr.numrec = 0;
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		if (subsys->type == NVME_NQN_DISC)
+		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		hdr.numrec++;
 	}
@@ -380,7 +380,7 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
 		char trsvcid[NVMF_TRSVCID_SIZE + 1];
 
-		if (subsys->type != NVME_NQN_NVME)
+		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
 		entry.trtype = NVMF_TRTYPE_TCP;

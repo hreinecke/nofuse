@@ -119,7 +119,7 @@ static int init_subsys(void)
 	if (!subsys)
 		return -ENOMEM;
 	sprintf(subsys->nqn, "%s", NVME_DISC_SUBSYS_NAME);
-	subsys->type = NVME_NQN_DISC;
+	subsys->type = NVME_NQN_CUR;
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	list_add(&subsys->node, &subsys_linked_list);
@@ -134,7 +134,7 @@ static int init_subsys(void)
 	}
 	sprintf(subsys->nqn, NVMF_UUID_FMT,
 		"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
-	subsys->type = NVME_NQN_NVME;
+	subsys->type = NVME_NQN_NVM;
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	list_add(&subsys->node, &subsys_linked_list);

@@ -24,8 +24,9 @@
 #define NVME_NSID_ALL		0xffffffff
 
 enum nvme_subsys_type {
-	NVME_NQN_DISC	= 1,		/* Discovery type target subsystem */
-	NVME_NQN_NVME	= 2,		/* NVME type target subsystem */
+	NVME_NQN_REF	= 1,		/* Referral to another another discovery subsystem */
+	NVME_NQN_NVM	= 2,		/* NVM type target subsystem */
+	NVME_NQN_CUR	= 3,		/* Current discovery subsystem */
 };
 
 /* Address Family codes for Discovery Log Page entry ADRFAM field */
