@@ -113,8 +113,12 @@ struct nsdev {
 };
 
 struct host_iface {
+	struct linked_list	 node;
+	pthread_t		 pthread;
 	char			 address[41];
+	struct sockaddr		 addr;
 	int			 port_num;
+	int			 port_type;
 	int			 adrfam;
 	int			 portid;
 	int			 listenfd;
@@ -136,6 +140,6 @@ struct subsystem {
 extern struct linked_list subsys_linked_list;
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
-int run_host_interface(struct host_iface *iface);
+void *run_host_interface(void *arg);
 
 #endif

@@ -58,6 +58,19 @@ static inline void __list_add(struct linked_list *entry,
 	prev->next = entry;
 }
 
+static inline void __list_splice(struct linked_list *list,
+				 struct linked_list *prev,
+				 struct linked_list *next)
+{
+	struct linked_list *first = list->next;
+	struct linked_list *last = list->prev;
+
+	first->prev = prev;
+	prev->next = first;
+	last->next = next;
+	next->prev = last;
+}
+
 static inline void list_add(struct linked_list *entry, struct linked_list *list)
 {
 	__list_add(entry, list, list->next);
@@ -78,6 +91,20 @@ static inline void list_del(struct linked_list *entry)
 static inline int list_empty(const struct linked_list *list)
 {
 	return list->next == list;
+}
+
+static inline void list_splice(struct linked_list *list,
+			       struct linked_list *head)
+{
+	if (!list_empty(list))
+		__list_splice(list, head, head->next);
+}
+
+static inline void list_splice_tail(struct linked_list *list,
+				    struct linked_list *head)
+{
+	if (!list_empty(list))
+		__list_splice(list, head->prev, head);
 }
 
 #define offset_of(type, member) ((size_t) &((type *)0)->member)

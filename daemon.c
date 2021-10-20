@@ -6,20 +6,23 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <netdb.h>
+#include <ifaddrs.h>
 
 #include "common.h"
 #include "ops.h"
 
 LINKED_LIST(subsys_linked_list);
 static LINKED_LIST(device_linked_list);
+static LINKED_LIST(iface_linked_list);
 
 int					 stopped;
 int					 debug;
 static int				 signalled;
 struct linked_list			*devices = &device_linked_list;
-static struct host_iface		 host_iface;
 
-static int				 nsdevs = 1;
+static int nsdevs = 1;
+static int nvmf_portid = 1;
 
 static void signal_handler(int sig_num)
 {
@@ -71,6 +74,37 @@ static void show_help(char *app)
 	print_info("  -f - address family [ ipv4, ipv6 ]");
 	print_info("  -a - transport address (e.g. 192.168.1.1)");
 	print_info("  -s - transport service id (e.g. 4444 - not 4420 if used by NVMe-oF ctrl)");
+}
+
+static struct host_iface *new_host_iface(const char *ifaddr,
+					 int adrfam, int port)
+{
+	struct host_iface *iface;
+
+	iface = malloc(sizeof(*iface));
+	if (!iface)
+		return NULL;
+	strcpy(iface->address, ifaddr);
+	iface->adrfam = adrfam;
+	if (iface->adrfam != AF_INET && iface->adrfam != AF_INET6) {
+		print_err("invalid address family %d", adrfam);
+		free(iface);
+		return NULL;
+	}
+	iface->portid = nvmf_portid++;
+	iface->port_num = port;
+	if (port == 8009)
+		iface->port_type = NVME_NQN_CUR;
+	else
+		iface->port_type = NVME_NQN_NVM;
+	pthread_mutex_init(&iface->ep_mutex, NULL);
+	INIT_LINKED_LIST(&iface->ep_list);
+	print_info("iface %d: listening on %s address %s port %d",
+		   iface->portid,
+		   iface->adrfam == AF_INET ? "ipv4" : "ipv6",
+		   iface->address, iface->port_num);
+
+	return iface;
 }
 
 static int open_namespace(char *filename)
@@ -141,14 +175,64 @@ static int init_subsys(void)
 	return 0;
 }
 
-static void init_host_iface()
+int get_iface(const char *ifname)
 {
-	host_iface.adrfam = AF_INET;
-	host_iface.portid = 1;
-	strcpy(host_iface.address, "127.0.0.1");
-	host_iface.port_num = 8009;
-	pthread_mutex_init(&host_iface.ep_mutex, NULL);
-	INIT_LINKED_LIST(&host_iface.ep_list);
+	struct ifaddrs *ifaddrs, *ifa;
+
+	if (getifaddrs(&ifaddrs) == -1) {
+		perror("getifaddrs");
+		return -1;
+	}
+
+
+	for (ifa = ifaddrs; ifa != NULL; ifa = ifa->ifa_next) {
+		char host[NI_MAXHOST];
+		struct host_iface *iface;
+		int ret, addrlen;
+
+		if (ifa->ifa_addr == NULL)
+			continue;
+
+		if (strcmp(ifa->ifa_name, ifname))
+			continue;
+
+		if (ifa->ifa_addr->sa_family == AF_INET)
+			addrlen = sizeof(struct sockaddr_in);
+		else if (ifa->ifa_addr->sa_family == AF_INET6)
+			addrlen = sizeof(struct sockaddr_in6);
+		else
+			continue;
+
+		ret = getnameinfo(ifa->ifa_addr, addrlen,
+				  host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+		if (ret) {
+			print_err("getnameinfo failed, error %d", ret);
+			continue;
+		}
+		iface = new_host_iface(host, ifa->ifa_addr->sa_family, 8009);
+		if (iface)
+			list_add(&iface->node, &iface_linked_list);
+        }
+	freeifaddrs(ifaddrs);
+	return 0;
+}
+
+static int add_host_port(int port)
+{
+	int iface_num = 0;
+	LINKED_LIST(tmp_iface_list);
+	struct host_iface *iface, *new;
+
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		new = new_host_iface(iface->address, iface->adrfam, port);
+		if (new) {
+			list_add(&new->node, &tmp_iface_list);
+			iface_num++;
+		}
+	}
+
+	list_splice(&tmp_iface_list, &iface_linked_list);
+	return iface_num;
 }
 
 static int init_args(int argc, char *argv[])
@@ -156,14 +240,16 @@ static int init_args(int argc, char *argv[])
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	const char		*opt_list = "?dSu:r:c:t:f:a:s:n:";
+	const char *opt_list = "?dSu:r:c:t:f:a:s:n:i:";
+	int port_num[16];
+	int port_max = 0, idx;
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
 
 	if (init_subsys())
 		return 1;
-	init_host_iface();
+
 	open_namespace(NULL);
 
 	debug = 0;
@@ -177,29 +263,22 @@ static int init_args(int argc, char *argv[])
 		case 'S':
 			run_as_daemon = 0;
 			break;
-		case 'f':
-			if (!strcmp(optarg, "ipv4"))
-				host_iface.adrfam = AF_INET;
-			else if (!strcmp(optarg, "ipv6"))
-				host_iface.adrfam = AF_INET6;
-			else {
-				print_err("Invalid address family '%s'\n",
-					  optarg);
-				return 1;
-			}
-			break;
-		case 'a':
-			strncpy(host_iface.address, optarg,
-				sizeof(host_iface.address));
+		case 'i':
+			get_iface(optarg);
 			break;
 		case 's':
 			errno = 0;
-			host_iface.port_num = strtoul(optarg, &eptr, 10);
-			if (errno || host_iface.port_num > LONG_MAX) {
+			if (port_max >= 16) {
+				print_err("Too many port numbers specified");
+				return 1;
+			}
+			port_num[port_max] = strtoul(optarg, &eptr, 10);
+			if (errno || port_num[port_max] > LONG_MAX) {
 				print_err("Invalid port number '%s'",
 					  optarg);
 				return 1;
 			}
+			port_max++;
 			break;
 		case 'n':
 			if (open_namespace(optarg) < 0)
@@ -216,6 +295,17 @@ help:
 	if (optind < argc) {
 		print_info("Extra arguments");
 		goto help;
+	}
+
+	if (list_empty(&iface_linked_list))
+		get_iface("lo");
+
+	for (idx = 0; idx < port_max; idx++)
+		add_host_port(port_num[idx]);
+
+	if (list_empty(&iface_linked_list)) {
+		print_err("invalid host interface configuration");
+		return 1;
 	}
 
 	if (run_as_daemon) {
@@ -241,9 +331,22 @@ void free_devices(void)
 	}
 }
 
+void free_interfaces(void)
+{
+	struct host_iface *iface, *_iface;
+
+	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node) {
+		if (iface->pthread)
+			pthread_join(iface->pthread, NULL);
+		list_del(&iface->node);
+		free(iface);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	int ret = 1;
+	struct host_iface *iface;
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
@@ -254,8 +357,24 @@ int main(int argc, char *argv[])
 
 	signalled = stopped = 0;
 
-	ret = run_host_interface(&host_iface);
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		pthread_attr_t pthread_attr;
+
+		pthread_attr_init(&pthread_attr);
+
+		ret = pthread_create(&iface->pthread, &pthread_attr,
+				     run_host_interface, iface);
+		if (ret) {
+			iface->pthread = 0;
+			print_err("failed to start iface thread");
+			print_errno("pthread_create failed", ret);
+		}
+		pthread_attr_destroy(&pthread_attr);
+	}
+
+	free_interfaces();
 
 	free_devices();
+
 	return ret;
 }

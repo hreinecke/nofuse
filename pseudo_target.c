@@ -185,8 +185,9 @@ out:
 	return NULL;
 }
 
-int run_host_interface(struct host_iface *iface)
+void *run_host_interface(void *arg)
 {
+	struct host_iface *iface = arg;
 	struct endpoint *ep, *_ep;
 	int id;
 	pthread_attr_t pthread_attr;
@@ -194,8 +195,9 @@ int run_host_interface(struct host_iface *iface)
 
 	ret = start_pseudo_target(iface);
 	if (ret) {
-		print_err("failed to start pseudo target");
-		return ret;
+		print_err("failed to start pseudo target, error %d", ret);
+		pthread_exit(NULL);
+		return NULL;
 	}
 
 	signal(SIGTERM, SIG_IGN);
@@ -227,7 +229,7 @@ int run_host_interface(struct host_iface *iface)
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	print_info("destroy listener");
+	print_info("iface %d: destroy listener", iface->portid);
 
 	iface->ops->destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);
@@ -239,5 +241,6 @@ int run_host_interface(struct host_iface *iface)
 		free(ep);
 	}
 	pthread_mutex_unlock(&iface->ep_mutex);
-	return ret;
+	pthread_exit(NULL);
+	return NULL;
 }
