@@ -10,9 +10,6 @@
 #include "nvme.h"
 #include "tcp.h"
 
-#define NVME_DISC_CTRL 1
-#define NVME_IO_CTRL   2
-
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
 static int nvmf_discovery_genctr = 1;
@@ -170,10 +167,10 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 			ctrl->subsys = subsys;
 			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
 				     MAX_NQN_SIZE)) {
-				ctrl->ctrl_type = NVME_DISC_CTRL;
+				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
 				ctrl->qsize = NVMF_DQ_DEPTH;
 			} else {
-				ctrl->ctrl_type = NVME_IO_CTRL;
+				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
 				ctrl->qsize = NVMF_SQ_DEPTH;
 			}
 			list_add(&ctrl->node, &subsys->ctrl_list);
@@ -217,6 +214,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */
 
+	id.cntrtltype = ep->ctrl->ctrl_type;
 	if (ep->ctrl->ctrl_type == NVME_DISC_CTRL) {
 		strcpy(id.subnqn, NVME_DISC_SUBSYS_NAME);
 		id.maxcmd = htole16(NVMF_DQ_DEPTH);

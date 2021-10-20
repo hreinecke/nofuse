@@ -225,6 +225,13 @@ enum nvme_ctrl_attr {
 	NVME_CTRL_ATTR_TBKAS		= (1 << 6),
 };
 
+enum {
+	NVME_CTRL_CNTRLTYPE_NOT_REPORTED = 0,
+	NVME_CTRL_CNTRLTYPE_IO		 = 1,
+	NVME_CTRL_CNTRLTYPE_DISC	 = 2,
+	NVME_CTRL_CNTRLTYPE_ADMIN	 = 3,
+};
+
 struct nvme_id_ctrl {
 	__u16			vid;
 	__u16			ssvid;
@@ -241,7 +248,10 @@ struct nvme_id_ctrl {
 	__u32			rtd3e;
 	__u32			oaes;
 	__u32			ctratt;
-	__u8			rsvd100[28];
+	__u16			rrls;
+	__u8			rsvd102[9];
+	__u8			cntrltype;
+	__u8			fguid[16];
 	__u16			crdt1;
 	__u16			crdt2;
 	__u16			crdt3;
