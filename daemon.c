@@ -211,7 +211,7 @@ int get_iface(const char *ifname)
 		}
 		iface = new_host_iface(host, ifa->ifa_addr->sa_family, 8009);
 		if (iface)
-			list_add(&iface->node, &iface_linked_list);
+			list_add_tail(&iface->node, &iface_linked_list);
         }
 	freeifaddrs(ifaddrs);
 	return 0;
@@ -228,12 +228,12 @@ static int add_host_port(int port)
 			continue;
 		new = new_host_iface(iface->address, iface->adrfam, port);
 		if (new) {
-			list_add(&new->node, &tmp_iface_list);
+			list_add_tail(&new->node, &tmp_iface_list);
 			iface_num++;
 		}
 	}
 
-	list_splice(&tmp_iface_list, &iface_linked_list);
+	list_splice_tail(&tmp_iface_list, &iface_linked_list);
 	return iface_num;
 }
 
