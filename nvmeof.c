@@ -352,12 +352,14 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
+static int format_disc_log(void *data, u64 data_offset,
+			   u64 data_len, struct endpoint *ep)
 {
 	struct subsystem *subsys;
 	struct host_iface *iface;
 	struct nvmf_disc_rsp_page_hdr hdr;
 	struct nvmf_disc_rsp_page_entry entry;
+	u8 *log_buf, *log_ptr;
 	u64 log_len = data_len;
 
 	hdr.genctr = nvmf_discovery_genctr;
@@ -367,21 +369,24 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		list_for_each_entry(iface, &iface_linked_list, node) {
-			if (iface->port_type == NVME_NQN_NVM) {
-				hdr.numrec++;
-			}
+			hdr.numrec++;
 		}
 	}
-	print_info("Found %llu subsystems", hdr.numrec);
+	print_info("Found %llu entries", hdr.numrec);
 
-	if (data_len < sizeof(hdr)) {
-		memcpy(data, &hdr, data_len);
-		return data_len;
-	}
-	memcpy(data, &hdr, sizeof(hdr));
+	log_len = sizeof(hdr) + hdr.numrec * sizeof(entry);
+	if (data_len > log_len)
+		log_len = data_len;
+	log_buf = malloc(log_len);
+	if (!log_buf)
+		return log_len;
 
-	data_len -= sizeof(hdr);
-	data += sizeof(hdr);
+	memset(log_buf, 0, log_len);
+	memcpy(log_buf, &hdr, sizeof(hdr));
+	log_ptr = log_buf;
+	log_len -= sizeof(hdr);
+	log_ptr += sizeof(hdr);
+
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
 		char trsvcid[NVMF_TRSVCID_SIZE + 1];
 
@@ -405,19 +410,16 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 			memcpy(entry.trsvcid, trsvcid, NVMF_TRSVCID_SIZE);
 			memcpy(entry.traddr, iface->address, NVMF_TRADDR_SIZE);
 			strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
-			if (data_len < sizeof(entry)) {
-				memcpy(data, &entry, data_len);
-				data_len = 0;
-				break;
-			}
-			memcpy(data, &entry, sizeof(entry));
-			data += sizeof(entry);
-			data_len -= sizeof(entry);
+			memcpy(log_ptr, &entry, sizeof(entry));
+			log_ptr += sizeof(entry);
+			log_len -= sizeof(entry);
 		}
 	}
-	print_info("Returning %llu entries len %llu", hdr.numrec,
-		   log_len - data_len);
-	return log_len - data_len;
+	memcpy(data, (u8 *)log_buf + data_offset, data_len);
+	print_info("Returning %llu entries offset %llu len %llu",
+		   hdr.numrec, data_offset, data_len);
+	free(log_buf);
+	return data_len;
 }
 
 static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
@@ -425,12 +427,13 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 {
 	int ret = 0;
 	u16 cid = cmd->get_log_page.command_id;
+	u64 offset = le64toh(cmd->get_log_page.lpo);
 	u8 *log_buf;
 
 #ifdef DEBUG_COMMANDS
-	print_debug("nvme_get_log_page opcode %02x lid %02x len %lu",
+	print_debug("nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
 		    cmd->get_log_page.opcode, cmd->get_log_page.lid,
-		    (unsigned long)len);
+		    (unsigned long)offset, (unsigned long)len);
 #endif
 	log_buf = malloc(len);
 	if (!log_buf)
@@ -443,7 +446,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		break;
 	case 0x70:
 		/* Discovery log */
-		len = format_disc_log(log_buf, len, ep);
+		len = format_disc_log(log_buf, offset, len, ep);
 		break;
 	default:
 		print_err("get_log_page: lid %02x not supported",
@@ -452,7 +455,7 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ret = ep->ops->rma_write(ep, log_buf, 0, len, cid, true);
+	ret = ep->ops->rma_write(ep, log_buf, offset, len, cid, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
