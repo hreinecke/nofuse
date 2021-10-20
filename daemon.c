@@ -73,33 +73,6 @@ static void show_help(char *app)
 	print_info("  -s - transport service id (e.g. 4444 - not 4420 if used by NVMe-oF ctrl)");
 }
 
-static int validate_host_iface(void)
-{
-	int			 ret = 0;
-
-	host_iface.ep.ops = tcp_register_ops();
-	if (!host_iface.ep.ops)
-		goto out;
-
-	switch (host_iface.adrfam) {
-	case NVMF_ADDR_FAMILY_IP4:
-		ret = inet_pton(AF_INET, host_iface.address, host_iface.addr);
-		break;
-	case NVMF_ADDR_FAMILY_IP6:
-		ret = inet_pton(AF_INET6, host_iface.address, host_iface.addr);
-		break;
-	}
-
-	if (ret < 1) {
-		print_info("Invalid traddr");
-		goto out;
-	}
-
-	ret = 1;
-out:
-	return ret;
-}
-
 static int open_namespace(char *filename)
 {
 	struct nsdev *ns;
@@ -170,7 +143,7 @@ static int init_subsys(void)
 
 static void init_host_iface()
 {
-	host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
+	host_iface.adrfam = AF_INET;
 	host_iface.portid = 1;
 	strcpy(host_iface.address, "127.0.0.1");
 	host_iface.port_num = 8009;
@@ -206,9 +179,9 @@ static int init_args(int argc, char *argv[])
 			break;
 		case 'f':
 			if (!strcmp(optarg, "ipv4"))
-				host_iface.adrfam = NVMF_ADDR_FAMILY_IP4;
+				host_iface.adrfam = AF_INET;
 			else if (!strcmp(optarg, "ipv6"))
-				host_iface.adrfam = NVMF_ADDR_FAMILY_IP6;
+				host_iface.adrfam = AF_INET6;
 			else {
 				print_err("Invalid address family '%s'\n",
 					  optarg);
@@ -243,11 +216,6 @@ help:
 	if (optind < argc) {
 		print_info("Extra arguments");
 		goto help;
-	}
-
-	if (!validate_host_iface()) {
-		print_err("invalid in-band address info");
-		return 1;
 	}
 
 	if (run_as_daemon) {

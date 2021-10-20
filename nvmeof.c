@@ -386,7 +386,10 @@ static int format_disc_log(void *data, u64 data_len, struct endpoint *ep)
 			continue;
 		memset(&entry, 0, sizeof(struct nvmf_disc_rsp_page_entry));
 		entry.trtype = NVMF_TRTYPE_TCP;
-		entry.adrfam = ep->iface->adrfam;
+		if (ep->iface->adrfam == AF_INET)
+			entry.adrfam = NVMF_ADDR_FAMILY_IP4;
+		else
+			entry.adrfam = NVMF_ADDR_FAMILY_IP6;
 		entry.treq = 0;
 		entry.portid = ep->iface->portid;
 		entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);

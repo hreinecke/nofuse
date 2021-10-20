@@ -107,26 +107,39 @@ void tcp_release_tag(struct endpoint *ep, u16 tag)
 static int tcp_init_listener(struct host_iface *iface)
 {
 	struct sockaddr_in addr;
+	struct sockaddr_in6 addr6;
 	int listenfd;
 	int ret;
 
-	memset(&addr, 0, sizeof(addr));
-
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(iface->port_num);
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-	listenfd = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);
+	listenfd = socket(iface->adrfam, SOCK_STREAM|SOCK_NONBLOCK, 0);
 	if (listenfd < 0) {
 		print_err("Socket error %d", errno);
 		return -errno;
 	}
 
-	ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
-	if (ret < 0) {
-		print_err("Socket bind error %d", errno);
-		ret = -errno;
-		goto err;
+	memset(&addr, 0, sizeof(addr));
+	if (iface->adrfam == AF_INET) {
+		addr.sin_family = iface->adrfam;
+		addr.sin_port = htons(iface->port_num);
+		inet_pton(AF_INET, iface->address, &addr.sin_addr);
+
+		ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
+		if (ret < 0) {
+			print_err("Socket bind error %d", errno);
+			ret = -errno;
+			goto err;
+		}
+	} else {
+		addr6.sin6_family = iface->adrfam;
+		addr6.sin6_port = htons(iface->port_num);
+		inet_pton(AF_INET6, iface->address, &addr6.sin6_addr);
+
+		ret = bind(listenfd, (struct sockaddr *) &addr6, sizeof(addr6));
+		if (ret < 0) {
+			print_err("Socket bind error %d", errno);
+			ret = -errno;
+			goto err;
+		}
 	}
 
 	ret = listen(listenfd, BACKLOG);
