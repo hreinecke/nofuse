@@ -15,7 +15,6 @@
 int null_ns_read(struct endpoint *ep, struct nsdev *ns, u16 tag, u16 ccid)
 {
 	struct ep_qe *qe;
-	u8 *buf;
 	int ret;
 
 	qe = ep->ops->get_tag(ep, tag);
@@ -24,18 +23,12 @@ int null_ns_read(struct endpoint *ep, struct nsdev *ns, u16 tag, u16 ccid)
 		return NVME_SC_NS_NOT_READY;
 	}
 
-	buf = malloc(qe->len);
-	if (!buf) {
-		ep->ops->release_tag(ep, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
-
-	ret = ep->ops->rma_read(ep, buf, qe->len);
+	ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 	if (ret < 0) {
 		print_errno("rma_read failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-	free(buf);
+
 	ep->ops->release_tag(ep, tag);
 	return ret;
 }
@@ -43,7 +36,6 @@ int null_ns_read(struct endpoint *ep, struct nsdev *ns, u16 tag, u16 ccid)
 int null_ns_write(struct endpoint *ep, struct nsdev *ns, u16 tag, u16 ccid)
 {
 	struct ep_qe *qe;
-	u8 *buf;
 	int ret;
 
 	qe = ep->ops->get_tag(ep, tag);
@@ -52,18 +44,12 @@ int null_ns_write(struct endpoint *ep, struct nsdev *ns, u16 tag, u16 ccid)
 		return NVME_SC_NS_NOT_READY;
 	}
 
-	buf = malloc(qe->len);
-	if (!buf) {
-		ep->ops->release_tag(ep, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
-
-	ret = ep->ops->rma_write(ep, buf, 0, qe->len, ccid, true);
+	ret = ep->ops->rma_write(ep, qe->iovec.iov_base, 0,
+				 qe->iovec.iov_len, ccid, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-	free(buf);
 	ep->ops->release_tag(ep, tag);
 	return ret;
 }

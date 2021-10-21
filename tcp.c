@@ -76,11 +76,18 @@ int tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 	int i;
 
 	for (i = 0; i < NVMF_SQ_DEPTH; i++) {
-		if (!ep->qes[i].busy) {
-			ep->qes[i].busy = true;
-			ep->qes[i].pos = pos;
-			ep->qes[i].offset = 0;
-			ep->qes[i].len = len;
+		struct ep_qe *qe = &ep->qes[i];
+
+		if (!qe->busy) {
+			qe->busy = true;
+			qe->pos = pos;
+			qe->offset = 0;
+			qe->iovec.iov_base = malloc(len);
+			if (!qe->iovec.iov_base) {
+				print_err("Error allocating iovec base");
+				return -1;
+			}
+			ep->qes[i].iovec.iov_len = len;
 			ep->qes[i].remaining = len;
 			memcpy(&ep->qes[i].pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
@@ -102,6 +109,9 @@ void tcp_release_tag(struct endpoint *ep, u16 tag)
 	if (tag >= NVMF_SQ_DEPTH)
 		return;
 	ep->qes[tag].busy = false;
+	free(ep->qes[tag].iovec.iov_base);
+	ep->qes[tag].iovec.iov_base = NULL;
+	ep->qes[tag].iovec.iov_len = 0;
 }
 
 static int tcp_init_listener(struct host_iface *iface)

@@ -61,9 +61,9 @@ struct ep_qe {
 	int idx;
 	struct endpoint *ep;
 	union nvme_tcp_pdu pdu;
+	struct iovec iovec;
 	u64 pos;
 	u64 offset;
-	u64 len;
 	u64 remaining;
 	bool busy;
 };
