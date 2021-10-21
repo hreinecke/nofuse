@@ -122,8 +122,14 @@ static void *endpoint_thread(void *arg)
 					   ep->qid, ret);
 			}
 		} else {
-			print_err("endpoint %d: invalid cqe handle", ep->qid);
-			continue;
+			struct ep_qe *qe = io_uring_cqe_get_data(cqe);
+			if (!qe) {
+				print_err("ctrl %d qid %d empty cqe",
+					  ep->ctrl ? ep->ctrl->cntlid : -1,
+					  ep->qid);
+				ret = -EAGAIN;
+			}
+			ret = qe->ns->ops->ns_handle_qe(ep, qe, cqe->res);
 		}
 		if (ret == -EAGAIN)
 			if (--ep->kato_countdown > 0)

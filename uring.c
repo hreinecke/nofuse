@@ -83,52 +83,56 @@ out_put:
 	return ret;
 }
 
-static int uring_handle_cqe(struct endpoint *ep, struct io_uring_cqe *cqe)
+static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 {
-	struct ep_qe *qe;
-	
-	qe = io_uring_cqe_get_data(cqe);
-	if (!qe) {
-		print_err("ctrl %d qid %d empty cqe",
-			  ep->ctrl->cntlid, ep->qid);
-		return 0;
-	}
+	int ret = 0;
+	u16 ccid = qe->ccid, tag = qe->tag;
+	struct nvme_completion resp;
+
 	print_info("ctrl %d qid %d got cqe",
 		   ep->ctrl->cntlid, ep->qid);
 	if (qe->opcode != nvme_cmd_write &&
 	    qe->opcode != nvme_cmd_read) {
-		print_err("ctrl %d qid %d unhandled opcode %d\n",
-			  ep->ctrl->cntlid, ep->qid,
-			  qe->opcode);
-		return NVME_SC_INVALID_OPCODE;
+		print_err("ctrl %d qid %d tag %#x unhandled opcode %d",
+			  ep->ctrl->cntlid, ep->qid, qe->tag, qe->opcode);
+		ret = NVME_SC_INVALID_OPCODE;
+		goto out_rsp;
 	}
-	if (cqe->res < 0) {
-		if (cqe->res != -EAGAIN)
-			return cqe->res;
-		print_info("ctrl %d qid %d retry",
-			   ep->ctrl->cntlid, ep->qid);
+	if (res < 0) {
+		if (res != -EAGAIN)
+			return res;
+		print_info("ctrl %d qid %d tag %#x retry",
+			   ep->ctrl->cntlid, ep->qid, qe->tag);
 		if (qe->opcode == nvme_cmd_write)
-			return uring_submit_read(ep, qe->tag);
+			ret = uring_submit_read(ep, qe->tag);
 		else
-			return uring_submit_write(ep, qe->tag);
+			ret = uring_submit_write(ep, qe->tag);
+		goto out_rsp;
 	}
-	if (qe->opcode == nvme_cmd_read)
-		return ep->ops->rma_write(ep, qe->iovec.iov_base,
-					  qe->pos, qe->iovec.iov_len,
-					  qe->ccid, true);
-	if ((size_t)cqe->res != qe->iovec.iov_len) {
-		qe->pos += cqe->res;
-		qe->iovec.iov_base += cqe->res;
-		qe->iovec.iov_len -= cqe->res;
-		return uring_submit_read(ep, qe->tag);
+	if (qe->opcode == nvme_cmd_read) {
+		ret = ep->ops->rma_write(ep, qe->iovec.iov_base,
+					 qe->pos, qe->iovec.iov_len,
+					 qe->ccid, true);
+	} else if (res != qe->iovec.iov_len) {
+		qe->pos += res;
+		qe->iovec.iov_base += res;
+		qe->iovec.iov_len -= res;
+		ret = uring_submit_read(ep, qe->tag);
 	}
-	return 0;
+out_rsp:
+	if (ret < 0)
+		return ret;
+	ep->ops->release_tag(ep, tag);
+	memset(&resp, 0, sizeof(resp));
+	if (ret)
+		resp.status = (NVME_SC_DNR | ret) << 1;
+	return ep->ops->send_rsp(ep, ccid, &resp);
 }
 
 static struct ns_ops uring_ops = {
 	.ns_read = uring_submit_read,
 	.ns_write = uring_submit_write,
-	.ns_handle_cqe = uring_handle_cqe,
+	.ns_handle_qe = uring_handle_qe,
 };
 
 struct ns_ops *uring_register_ops(void)

@@ -30,7 +30,7 @@ struct ns_ops {
 	int (*ns_read)(struct endpoint *ep, u16 tag);
 	int (*ns_write)(struct endpoint *ep, u16 tag);
 	int (*ns_prep_read)(struct endpoint *ep, u16 tag);
-	int (*ns_handle_cqe)(struct endpoint *ep, struct io_uring_cqe *cqe);
+	int (*ns_handle_qe)(struct endpoint *ep, struct ep_qe *qe, int res);
 };
 
 struct ns_ops *null_register_ops(void);
