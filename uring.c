@@ -19,6 +19,7 @@ int uring_submit_read(struct endpoint *ep, u16 tag)
 		print_err("endpoint %d: invalid tag %u", ep->qid, tag);
 		return NVME_SC_NS_NOT_READY;
 	}
+	qe->opcode = nvme_cmd_write;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
 		print_err("No SQEs available");
@@ -59,7 +60,7 @@ int uring_submit_write(struct endpoint *ep, u16 tag)
 		print_err("endpoint %d: invalid tag %u", ep->qid, tag);
 		return NVME_SC_NS_NOT_READY;
 	}
-	
+	qe->opcode = nvme_cmd_read;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
 		print_err("No SQEs available");

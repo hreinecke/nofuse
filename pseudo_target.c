@@ -84,6 +84,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep)
 static void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
+	struct io_uring_sqe *poll_sqe = NULL;
 	sigset_t set;
 	int ret;
 
@@ -99,12 +100,13 @@ static void *endpoint_thread(void *arg)
 	}
 
 	while (!stopped) {
-		struct io_uring_sqe *poll_sqe;
 		struct io_uring_cqe *cqe;
 
-		poll_sqe = endpoint_submit_poll(ep);
-		if (!poll_sqe)
-			break;
+		if (!poll_sqe) {
+			poll_sqe = endpoint_submit_poll(ep);
+			if (!poll_sqe)
+				break;
+		}
 
 		ret = io_uring_wait_cqe(&ep->uring, &cqe);
 		if (ret < 0) {
@@ -115,6 +117,7 @@ static void *endpoint_thread(void *arg)
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
 		if (io_uring_cqe_get_data(cqe) == poll_sqe) {
+			poll_sqe = NULL;
 			ret = ep->ops->read_msg(ep);
 			if (!ret) {
 				ret = ep->ops->handle_msg(ep);
