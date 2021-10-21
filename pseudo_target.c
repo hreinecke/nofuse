@@ -94,15 +94,12 @@ static void *endpoint_thread(void *arg)
 	}
 
 	while (!stopped) {
-		struct timeval timeval;
 		struct io_uring_sqe *poll_sqe;
 		struct io_uring_cqe *cqe;
 
 		poll_sqe = endpoint_submit_poll(ep);
 		if (!poll_sqe)
 			break;
-
-		gettimeofday(&timeval, NULL);
 
 		ret = io_uring_wait_cqe(&ep->uring, &cqe);
 		if (ret < 0) {
@@ -118,7 +115,6 @@ static void *endpoint_thread(void *arg)
 				ret = ep->ops->handle_msg(ep);
 				if (!ret && ep->ctrl) {
 					ep->kato_countdown = ep->ctrl->kato;
-					ep->timeval = timeval;
 					continue;
 				}
 				print_info("ctrl %d qid %d handle msg error %d",

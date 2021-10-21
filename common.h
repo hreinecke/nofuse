@@ -83,7 +83,6 @@ struct endpoint {
 	int			 qid;
 	int			 kato_countdown;
 	int			 kato_interval;
-	struct timeval		 timeval;
 	int			 sockfd;
 	int			 maxr2t;
 	int			 maxh2cdata;
