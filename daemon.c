@@ -16,10 +16,11 @@ LINKED_LIST(subsys_linked_list);
 LINKED_LIST(iface_linked_list);
 static LINKED_LIST(device_linked_list);
 
-int					 stopped;
-int					 debug;
-static int				 signalled;
-struct linked_list			*devices = &device_linked_list;
+struct linked_list *devices = &device_linked_list;
+
+int stopped;
+int debug;
+static int signalled;
 
 static int nsdevs = 1;
 static int nvmf_portid = 1;
@@ -56,27 +57,46 @@ static int daemonize(void)
 		return -1;
 	}
 
-	freopen("/var/log/dem_em_debug.log", "a", stdout);
-	freopen("/var/log/dem_em.log", "a", stderr);
+	freopen("/var/log/nofuse_debug.log", "a", stdout);
+	freopen("/var/log/nofuse.log", "a", stderr);
 
 	return 0;
 }
 
-static void show_help(char *app)
+static int open_file_ns(char *filename)
 {
-	const char		*arg_list = "{-d} {-S}";
+	struct nsdev *ns;
+	struct stat st;
 
-	print_info("Usage: %s %s", app, arg_list);
+	ns = malloc(sizeof(struct nsdev));
+	if (!ns) {
+		errno = ENOMEM;
+		return -1;
+	}
 
-	print_info("  -d - enable debug prints in log files");
-	print_info("  -S - run as a standalone process (default is daemon)");
-	print_info("  In-Band (NVMe-oF) interface:");
-	print_info("  -f - address family [ ipv4, ipv6 ]");
-	print_info("  -a - transport address (e.g. 192.168.1.1)");
-	print_info("  -s - transport service id (e.g. 4444 - not 4420 if used by NVMe-oF ctrl)");
+	ns->fd = open(filename, O_RDWR | O_EXCL);
+	if (ns->fd < 0) {
+		perror("open");
+		free(ns);
+		return -1;
+	}
+	if (fstat(ns->fd, &st) < 0) {
+		perror("fstat");
+		close(ns->fd);
+		free(ns);
+		return -1;
+	}
+	ns->size = st.st_size;
+	ns->blksize = st.st_blksize;
+	ns->ops = uring_register_ops();
+
+	ns->nsid = nsdevs++;
+	uuid_generate(ns->uuid);
+	list_add_tail(&ns->node, devices);
+	return 0;
 }
 
-static int open_namespace(char *filename)
+static int open_ram_ns(size_t size)
 {
 	struct nsdev *ns;
 
@@ -85,30 +105,11 @@ static int open_namespace(char *filename)
 		errno = ENOMEM;
 		return -1;
 	}
-	if (filename) {
-		struct stat st;
+	ns->size = size * 1024 * 1024; /* size in MB */
+	ns->blksize = 4096;
+	ns->fd = -1;
+	ns->ops = null_register_ops();
 
-		ns->fd = open(filename, O_RDWR | O_EXCL);
-		if (ns->fd < 0) {
-			perror("open");
-			free(ns);
-			return -1;
-		}
-		if (fstat(ns->fd, &st) < 0) {
-			perror("fstat");
-			close(ns->fd);
-			free(ns);
-			return -1;
-		}
-		ns->size = st.st_size;
-		ns->blksize = st.st_blksize;
-		ns->ops = uring_register_ops();
-	} else {
-		ns->size = (off_t)128 * 1024 * 1024 * 1024; /* 128 MB */
-		ns->blksize = 4096;
-		ns->fd = -1;
-		ns->ops = null_register_ops();
-	}
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
 	list_add_tail(&ns->node, devices);
@@ -239,12 +240,27 @@ static int add_host_port(int port)
 	return iface_num;
 }
 
+static void show_help(char *app)
+{
+	const char *arg_list = "{-d} {-S}";
+
+	print_info("Usage: %s %s", app, arg_list);
+
+	print_info("  -d - enable debug prints in log files");
+	print_info("  -S - run as a standalone process (default is daemon)");
+	print_info("  -i - interface to use (default: 'lo')");
+	print_info("  -s - transport service id (e.g. 4420)");
+	print_info("  -f - use file as namespace");
+	print_info("  -r - create internal ramdisk with given size (in MB)");
+}
+
 static int init_args(int argc, char *argv[])
 {
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	const char *opt_list = "?dSu:r:c:t:f:a:s:n:i:";
+	const char *opt_list = "?dSi:s:f:r:";
+	unsigned long size;
 	int port_num[16];
 	int port_max = 0, port, idx;
 	int iface_num = 0;
@@ -254,8 +270,6 @@ static int init_args(int argc, char *argv[])
 
 	if (init_subsys())
 		return 1;
-
-	open_namespace(NULL);
 
 	debug = 0;
 	run_as_daemon = 1;
@@ -299,8 +313,18 @@ static int init_args(int argc, char *argv[])
 				port_max++;
 			}
 			break;
-		case 'n':
-			if (open_namespace(optarg) < 0)
+		case 'f':
+			if (open_file_ns(optarg) < 0)
+				return 1;
+			break;
+		case 'r':
+			size = strtoul(optarg, &eptr, 10);
+			if (errno || size == 0 || size > LONG_MAX) {
+				print_err("Invalid size '%s'",
+					  optarg);
+				return 1;
+			}
+			if (open_ram_ns(size) < 0)
 				return 1;
 			break;
 		case '?':
@@ -314,6 +338,13 @@ help:
 	if (optind < argc) {
 		print_info("Extra arguments");
 		goto help;
+	}
+
+	if (list_empty(devices)) {
+		if (open_ram_ns(128) < 0) {
+			print_err("Failed to create default namespace");
+			return 1;
+		}
 	}
 
 	if (list_empty(&iface_linked_list)) {
