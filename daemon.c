@@ -381,9 +381,9 @@ help:
 
 void free_devices(void)
 {
-	struct linked_list	*p;
-	struct linked_list	*n;
-	struct nsdev		*dev;
+	struct linked_list *p;
+	struct linked_list *n;
+	struct nsdev *dev;
 
 	list_for_each_safe(p, n, devices) {
 		list_del(p);
