@@ -87,14 +87,15 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 {
 	int ret = 0;
 	u16 ccid = qe->ccid, tag = qe->tag;
+	int cntlid = ep->ctrl ? ep->ctrl->cntlid : -1;
 	struct nvme_completion resp;
 
 	print_info("ctrl %d qid %d tag %#x ccid %#x handle qe res %d",
-		   ep->ctrl->cntlid, ep->qid, tag, ccid, res);
+		   cntlid, ep->qid, tag, ccid, res);
 	if (qe->opcode != nvme_cmd_write &&
 	    qe->opcode != nvme_cmd_read) {
 		print_err("ctrl %d qid %d tag %#x unhandled opcode %d",
-			  ep->ctrl->cntlid, ep->qid, qe->tag, qe->opcode);
+			  cntlid, ep->qid, qe->tag, qe->opcode);
 		ret = NVME_SC_INVALID_OPCODE;
 		goto out_rsp;
 	}
@@ -102,7 +103,7 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 		if (res != -EAGAIN)
 			return res;
 		print_info("ctrl %d qid %d tag %#x retry",
-			   ep->ctrl->cntlid, ep->qid, qe->tag);
+			   cntlid, ep->qid, qe->tag);
 		if (qe->opcode == nvme_cmd_write)
 			ret = uring_submit_read(ep, qe->tag);
 		else
