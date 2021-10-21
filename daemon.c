@@ -111,7 +111,7 @@ static int open_namespace(char *filename)
 	}
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
-	list_add(&ns->node, devices);
+	list_add_tail(&ns->node, devices);
 	return 0;
 }
 

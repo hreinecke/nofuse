@@ -277,12 +277,12 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 
 	memset(ns_list, 0, len);
 	list_for_each_entry(ns, devices, node) {
-		u16 nsid = htole16(ns->nsid);
-		if (len < 2)
+		u32 nsid = htole32(ns->nsid);
+		if (len < 4)
 			break;
-		memcpy(ns_list, &nsid, 2);
-		ns_list += 2;
-		len -= 2;
+		memcpy(ns_list, &nsid, 4);
+		ns_list += 4;
+		len -= 4;
 	}
 	return id_len;
 }
