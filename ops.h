@@ -34,5 +34,6 @@ struct ns_ops {
 };
 
 struct ns_ops *null_register_ops(void);
+struct ns_ops *uring_register_ops(void);
 
 #endif /* __OPS_H__ */

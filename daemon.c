@@ -102,6 +102,7 @@ static int open_namespace(char *filename)
 		}
 		ns->size = st.st_size;
 		ns->blksize = st.st_blksize;
+		ns->ops = uring_register_ops();
 	} else {
 		ns->size = (off_t)128 * 1024 * 1024 * 1024; /* 128 MB */
 		ns->blksize = 4096;

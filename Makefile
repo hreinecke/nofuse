@@ -1,6 +1,6 @@
 
 CFLAGS = -Wall -g -DDEBUG_COMMANDS
-OBJS := daemon.o nvmeof.o pseudo_target.o tcp.o null.o
+OBJS := daemon.o nvmeof.o pseudo_target.o tcp.o null.o uring.o
 
 all: nofuse
 
