@@ -254,7 +254,7 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 
 	memset(&id, 0, sizeof(id));
 
-	id.nsze = ns->size / ns->blksize;
+	id.nsze = (u64)ns->size / ns->blksize;
 	id.ncap = id.nsze;
 	id.nlbaf = 1;
 	id.flbas = 0;
@@ -299,17 +299,19 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_
 			break;
 		}
 	}
-	if (ns) {
-		desc_list[0] = 3;
-		desc_list[1] = 0x10;
-		memcpy(&desc_list[2], ns->uuid, 0x10);
-		desc_list += 0x12;
-		len -= 0x12;
-		desc_list[0] = 4;
-		desc_list[1] = 1;
-		desc_list[2] = 0;
-		len -= 3;
-	}
+	if (!ns)
+		return -ENODEV;
+
+	desc_list[0] = 3;
+	desc_list[1] = 0x10;
+	memcpy(&desc_list[2], ns->uuid, 0x10);
+	desc_list += 0x12;
+	len -= 0x12;
+	desc_list[0] = 4;
+	desc_list[1] = 1;
+	desc_list[2] = 0;
+	len -= 3;
+
 	return desc_len;
 }
 
@@ -323,7 +325,8 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 	int ret = 0, id_len;
 
 #ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_identify cns %d", cns);
+	print_debug("cid %#x nvme_fabrics_identify cns %d len %llu",
+		    cid, cns, len);
 #endif
 
 	id_buf = malloc(len);
@@ -347,6 +350,9 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		print_err("unexpected identify command cns %u", cns);
 		ret = NVME_SC_BAD_ATTRIBUTES;
 	}
+
+	if (id_len < 0)
+		return NVME_SC_INVALID_NS;
 
 	if (!ret) {
 		ret = ep->ops->rma_write(ep, id_buf, 0, id_len, cid, true);

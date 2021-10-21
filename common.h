@@ -111,7 +111,7 @@ struct nsdev {
 	int			 devid;
 	int			 nsid;
 	int			 fd;
-	off_t			 size;
+	size_t			 size;
 	unsigned int		 blksize;
 	uuid_t			 uuid;
 };
