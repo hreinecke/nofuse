@@ -129,8 +129,8 @@ static int tcp_init_listener(struct host_iface *iface)
 		return -errno;
 	}
 
-	memset(&addr, 0, sizeof(addr));
 	if (iface->adrfam == AF_INET) {
+		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = iface->adrfam;
 		addr.sin_port = htons(iface->port_num);
 		inet_pton(AF_INET, iface->address, &addr.sin_addr);
@@ -142,6 +142,7 @@ static int tcp_init_listener(struct host_iface *iface)
 			goto err;
 		}
 	} else {
+		memset(&addr6, 0, sizeof(addr6));
 		addr6.sin6_family = iface->adrfam;
 		addr6.sin6_port = htons(iface->port_num);
 		inet_pton(AF_INET6, iface->address, &addr6.sin6_addr);
@@ -198,6 +199,11 @@ static int tcp_accept_connection(struct endpoint *ep)
 	if (icreq->hdr.type == 0) {
 		len = icreq->hdr.hlen - hdr_len;
 		ret = read(ep->sockfd, (u8 *)icreq + hdr_len, len);
+		if (ret < 0) {
+			print_err("icreq read error %d", errno);
+			ret = -errno;
+			goto out_free;
+		}
 		if (ret != len) {
 			print_err("icreq short read, %d bytes missing",
 				  len - ret);

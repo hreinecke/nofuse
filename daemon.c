@@ -370,8 +370,19 @@ void free_interfaces(void)
 	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node) {
 		if (iface->pthread)
 			pthread_join(iface->pthread, NULL);
+		pthread_mutex_destroy(&iface->ep_mutex);
 		list_del(&iface->node);
 		free(iface);
+	}
+}
+
+void free_subsys(void)
+{
+	struct subsystem *subsys, *_subsys;
+
+	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
+		pthread_mutex_destroy(&subsys->ctrl_mutex);
+		free(subsys);
 	}
 }
 
@@ -407,6 +418,8 @@ int main(int argc, char *argv[])
 	free_interfaces();
 
 	free_devices();
+
+	free_subsys();
 
 	return ret;
 }

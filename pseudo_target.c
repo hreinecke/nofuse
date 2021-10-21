@@ -84,7 +84,12 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep)
 static void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
+	sigset_t set;
 	int ret;
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGPIPE);
+	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
 	ret = io_uring_queue_init(32, &ep->uring, 0);
 	if (ret) {
@@ -201,9 +206,14 @@ void *run_host_interface(void *arg)
 {
 	struct host_iface *iface = arg;
 	struct endpoint *ep, *_ep;
+	sigset_t set;
 	int id;
 	pthread_attr_t pthread_attr;
 	int ret;
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGPIPE);
+	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
 	ret = start_pseudo_target(iface);
 	if (ret) {

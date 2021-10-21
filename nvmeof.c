@@ -348,7 +348,8 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		break;
 	default:
 		print_err("unexpected identify command cns %u", cns);
-		ret = NVME_SC_BAD_ATTRIBUTES;
+		free(id_buf);
+		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
 	if (id_len < 0)
