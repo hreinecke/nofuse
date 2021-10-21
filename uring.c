@@ -89,8 +89,8 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 	u16 ccid = qe->ccid, tag = qe->tag;
 	struct nvme_completion resp;
 
-	print_info("ctrl %d qid %d got cqe",
-		   ep->ctrl->cntlid, ep->qid);
+	print_info("ctrl %d qid %d tag %#x ccid %#x handle qe res %d",
+		   ep->ctrl->cntlid, ep->qid, tag, ccid, res);
 	if (qe->opcode != nvme_cmd_write &&
 	    qe->opcode != nvme_cmd_read) {
 		print_err("ctrl %d qid %d tag %#x unhandled opcode %d",
