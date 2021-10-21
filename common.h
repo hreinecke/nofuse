@@ -126,7 +126,6 @@ struct host_iface {
 	int			 adrfam;
 	int			 portid;
 	int			 listenfd;
-	struct endpoint		 ep;
 	struct xp_ops		*ops;
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
