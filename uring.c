@@ -125,9 +125,10 @@ out_rsp:
 		return ret;
 	ep->ops->release_tag(ep, tag);
 	memset(&resp, 0, sizeof(resp));
+	resp.command_id = ccid;
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
-	return ep->ops->send_rsp(ep, ccid, &resp);
+	return ep->ops->send_rsp(ep, &resp);
 }
 
 static struct ns_ops uring_ops = {

@@ -447,15 +447,14 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	return -EPROTO;
 }
 
-static int tcp_send_rsp(struct endpoint *ep, u16 command_id,
-			struct nvme_completion *comp)
+static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 {
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
 
 	print_info("ctrl %d qid %d rsp tag %#x status %04x",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   command_id, comp->status);
+		   comp->command_id, comp->status);
 
 	pdu->hdr.type = nvme_tcp_rsp;
 	pdu->hdr.flags = 0;
@@ -535,9 +534,10 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	return tcp_send_r2t(ep, qe->tag);
 out_rsp:
 	memset(&resp, 0, sizeof(resp));
+	resp.command_id = pdu->data.command_id;
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
-	return tcp_send_rsp(ep, pdu->data.command_id, &resp);
+	return tcp_send_rsp(ep, &resp);
 }
 
 static int tcp_read_msg(struct endpoint *ep)

@@ -641,5 +641,5 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
 
-	return ep->ops->send_rsp(ep, cmd->common.command_id, &resp);
+	return ep->ops->send_rsp(ep, &resp);
 }

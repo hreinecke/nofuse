@@ -18,8 +18,7 @@ struct xp_ops {
 	int (*rma_write)(struct endpoint *ep, void *buf, u32 offset, u32 len,
 			 u16 cid, bool last);
 	int (*prep_rma_read)(struct endpoint *ep, u16 ttag);
-	int (*send_rsp)(struct endpoint *ep, u16 command_id,
-			struct nvme_completion *comp);
+	int (*send_rsp)(struct endpoint *ep, struct nvme_completion *comp);
 	int (*read_msg)(struct endpoint *ep);
 	int (*handle_msg)(struct endpoint *ep);
 };
