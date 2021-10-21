@@ -147,7 +147,7 @@ static void *endpoint_thread(void *arg)
 		 * is closed; that shouldn't count as an error.
 		 */
 		if (ret == -ENODATA)
-			break;
+			continue;
 		if (ret < 0) {
 			print_err("ctrl %d qid %d error %d retry %d",
 				  ep->ctrl ? ep->ctrl->cntlid : -1,
