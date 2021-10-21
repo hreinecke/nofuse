@@ -76,37 +76,6 @@ static void show_help(char *app)
 	print_info("  -s - transport service id (e.g. 4444 - not 4420 if used by NVMe-oF ctrl)");
 }
 
-static struct host_iface *new_host_iface(const char *ifaddr,
-					 int adrfam, int port)
-{
-	struct host_iface *iface;
-
-	iface = malloc(sizeof(*iface));
-	if (!iface)
-		return NULL;
-	strcpy(iface->address, ifaddr);
-	iface->adrfam = adrfam;
-	if (iface->adrfam != AF_INET && iface->adrfam != AF_INET6) {
-		print_err("invalid address family %d", adrfam);
-		free(iface);
-		return NULL;
-	}
-	iface->portid = nvmf_portid++;
-	iface->port_num = port;
-	if (port == 8009)
-		iface->port_type = NVME_NQN_CUR;
-	else
-		iface->port_type = NVME_NQN_NVM;
-	pthread_mutex_init(&iface->ep_mutex, NULL);
-	INIT_LINKED_LIST(&iface->ep_list);
-	print_info("iface %d: listening on %s address %s port %d",
-		   iface->portid,
-		   iface->adrfam == AF_INET ? "ipv4" : "ipv6",
-		   iface->address, iface->port_num);
-
-	return iface;
-}
-
 static int open_namespace(char *filename)
 {
 	struct nsdev *ns;
@@ -175,7 +144,39 @@ static int init_subsys(void)
 	return 0;
 }
 
-int get_iface(const char *ifname)
+static struct host_iface *new_host_iface(const char *ifaddr,
+					 int adrfam, int port)
+{
+	struct host_iface *iface;
+
+	iface = malloc(sizeof(*iface));
+	if (!iface)
+		return NULL;
+	memset(iface, 0, sizeof(*iface));
+	strcpy(iface->address, ifaddr);
+	iface->adrfam = adrfam;
+	if (iface->adrfam != AF_INET && iface->adrfam != AF_INET6) {
+		print_err("invalid address family %d", adrfam);
+		free(iface);
+		return NULL;
+	}
+	iface->portid = nvmf_portid++;
+	iface->port_num = port;
+	if (port == 8009)
+		iface->port_type = (1 << NVME_NQN_CUR);
+	else
+		iface->port_type = (1 << NVME_NQN_NVM);
+	pthread_mutex_init(&iface->ep_mutex, NULL);
+	INIT_LINKED_LIST(&iface->ep_list);
+	print_info("iface %d: listening on %s address %s port %d",
+		   iface->portid,
+		   iface->adrfam == AF_INET ? "ipv4" : "ipv6",
+		   iface->address, iface->port_num);
+
+	return iface;
+}
+
+static int get_iface(const char *ifname)
 {
 	struct ifaddrs *ifaddrs, *ifa;
 
@@ -245,6 +246,7 @@ static int init_args(int argc, char *argv[])
 	const char *opt_list = "?dSu:r:c:t:f:a:s:n:i:";
 	int port_num[16];
 	int port_max = 0, port, idx;
+	int iface_num = 0;
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
@@ -257,9 +259,6 @@ static int init_args(int argc, char *argv[])
 	debug = 0;
 	run_as_daemon = 1;
 
-	port_num[0] = 8009;
-	port_max++;
-
 	while ((opt = getopt(argc, argv, opt_list)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -269,7 +268,12 @@ static int init_args(int argc, char *argv[])
 			run_as_daemon = 0;
 			break;
 		case 'i':
-			get_iface(optarg);
+			if (get_iface(optarg) < 0) {
+				print_err("Invalid interface %s\n",
+					  optarg);
+				return 1;
+			}
+			iface_num++;
 			break;
 		case 's':
 			errno = 0;
@@ -311,9 +315,22 @@ help:
 		goto help;
 	}
 
-	if (list_empty(&iface_linked_list))
-		get_iface("lo");
+	if (list_empty(&iface_linked_list)) {
+		if (get_iface("lo") < 0) {
+			print_err("Failed to initialize iface 'lo'");
+			return 1;
+		}
+		iface_num++;
+	}
 
+	if (!port_max) {
+		struct host_iface *iface;
+
+		/* No port specified; use 8009 as I/O port, too */
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			iface->port_type |= (1 << NVME_NQN_NVM);
+		}
+	}
 	for (idx = 0; idx < port_max; idx++)
 		add_host_port(port_num[idx]);
 

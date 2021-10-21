@@ -146,6 +146,13 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
+	if (!(ep->iface->port_type & (1 << subsys->type))) {
+		print_err("non-matching subsystem '%s' type %x on port %d",
+			  subsys->nqn, ep->iface->port_type,
+			  ep->iface->portid);
+		return NVME_SC_CONNECT_INVALID_HOST;
+	}
+
 	pthread_mutex_lock(&subsys->ctrl_mutex);
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 		if (!strncmp(connect.hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
@@ -369,7 +376,8 @@ static int format_disc_log(void *data, u64 data_offset,
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		list_for_each_entry(iface, &iface_linked_list, node) {
-			hdr.numrec++;
+			if (iface->port_type & (1 << NVME_NQN_NVM))
+				hdr.numrec++;
 		}
 	}
 	print_info("Found %llu entries", hdr.numrec);
@@ -393,6 +401,8 @@ static int format_disc_log(void *data, u64 data_offset,
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		list_for_each_entry(iface, &iface_linked_list, node) {
+			if (!(iface->port_type & (1 << NVME_NQN_NVM)))
+				continue;
 			memset(&entry, 0,
 			       sizeof(struct nvmf_disc_rsp_page_entry));
 			entry.trtype = NVMF_TRTYPE_TCP;
