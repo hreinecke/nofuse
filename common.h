@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <uuid/uuid.h>
+#include <liburing.h>
 
 #include "utils.h"
 #include "nvme.h"
@@ -71,6 +72,7 @@ struct ep_qe {
 struct endpoint {
 	struct linked_list	 node;
 	pthread_t		 pthread;
+	struct io_uring		 uring;
 	struct xp_ops		*ops;
 	struct host_iface	*iface;
 	struct ctrl_conn	*ctrl;

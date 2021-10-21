@@ -5,7 +5,7 @@ OBJS := daemon.o nvmeof.o pseudo_target.o tcp.o null.o
 all: nofuse
 
 nofuse: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lpthread -luuid
+	$(CC) $(CFLAGS) -o $@ $^ -luring -lpthread -luuid
 
 %.o: %.c common.h utils.h ops.h
 	$(CC) $(CFLAGS) -c -o $@ $<
