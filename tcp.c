@@ -64,14 +64,14 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 		return -ENOMEM;
 	}
 	for (i = 0; i < NVMF_SQ_DEPTH; i++) {
-		ep->qes[i].idx = i;
+		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
 	}
 	return 0;
 }
 
 int tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
-		    u64 pos, u64 len)
+		    struct nsdev *ns, u16 ccid, u64 pos, u64 len)
 {
 	int i;
 
@@ -80,6 +80,8 @@ int tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 
 		if (!qe->busy) {
 			qe->busy = true;
+			qe->ns = ns;
+			qe->ccid = ccid;
 			qe->pos = pos;
 			qe->offset = 0;
 			qe->iovec.iov_base = malloc(len);
@@ -345,7 +347,7 @@ static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
 	return 0;
 }
 
-static int tcp_send_r2t(struct endpoint *ep, u16 tag, u16 ccid)
+static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 {
 	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
 	struct ep_qe *qe;
@@ -361,7 +363,7 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag, u16 ccid)
 
 	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %llu len %llu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   ccid, tag, qe->offset, qe->remaining);
+		   qe->ccid, qe->tag, qe->offset, qe->remaining);
 
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_r2t;
@@ -369,8 +371,8 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag, u16 ccid)
 	pdu->hdr.pdo = 0;
 	pdu->hdr.hlen = sizeof(struct nvme_tcp_r2t_pdu);
 	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
-	pdu->ttag = tag;
-	pdu->command_id = ccid;
+	pdu->ttag = qe->tag;
+	pdu->command_id = qe->ccid;
 	pdu->r2t_offset = htole32(qe->offset);
 	pdu->r2t_length = htole32(qe->remaining);
 
@@ -478,8 +480,8 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 
 	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
-	qe = &ep->qes[ttag];
-	if (!qe->busy) {
+	qe = tcp_get_tag(ep, ttag);
+	if (!qe) {
 		print_err("ctrl %d qid %d h2c invalid ttag %#x",
 			  ep->ctrl->cntlid, ep->qid, ttag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
@@ -524,7 +526,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		goto out_rsp;
 	}
 
-	return tcp_send_r2t(ep, ttag, pdu->data.command_id);
+	return tcp_send_r2t(ep, qe->tag);
 out_rsp:
 	memset(&resp, 0, sizeof(resp));
 	if (ret)

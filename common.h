@@ -59,13 +59,16 @@ extern int stopped;
 
 struct ep_qe {
 	struct linked_list node;
-	int idx;
+	int tag;
 	struct endpoint *ep;
+	struct nsdev *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
 	u64 pos;
 	u64 offset;
 	u64 remaining;
+	int ccid;
+	int opcode;
 	bool busy;
 };
 
