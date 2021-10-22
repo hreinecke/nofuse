@@ -84,14 +84,16 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 			qe->ccid = ccid;
 			qe->pos = pos;
 			qe->offset = 0;
-			qe->iovec.iov_base = malloc(len);
-			if (!qe->iovec.iov_base) {
+			qe->data = malloc(len);
+			if (!qe->data) {
 				print_err("Error allocating iovec base");
 				return NULL;
 			}
-			ep->qes[i].iovec.iov_len = len;
-			ep->qes[i].remaining = len;
-			memcpy(&ep->qes[i].pdu, pdu,
+			qe->data_len = len;
+			qe->iovec.iov_base = qe->data;
+			qe->iovec.iov_len = len;
+			qe->remaining = len;
+			memcpy(&qe->pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
 			return qe;
 		}
@@ -114,7 +116,9 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 		return;
 
 	qe->busy = false;
-	free(qe->iovec.iov_base);
+	free(qe->data);
+	qe->data = NULL;
+	qe->data_len = 0;
 	qe->iovec.iov_base = NULL;
 	qe->iovec.iov_len = 0;
 }
