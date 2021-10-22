@@ -237,6 +237,7 @@ void *run_host_interface(void *arg)
 
 	sigemptyset(&set);
 	sigaddset(&set, SIGPIPE);
+	sigaddset(&set, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
 	ret = start_pseudo_target(iface);
@@ -245,8 +246,6 @@ void *run_host_interface(void *arg)
 		pthread_exit(NULL);
 		return NULL;
 	}
-
-	signal(SIGTERM, SIG_IGN);
 
 	while (!stopped) {
 		id = iface->ops->wait_for_connection(iface);
