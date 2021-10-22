@@ -193,7 +193,8 @@ static int tcp_accept_connection(struct endpoint *ep)
 	hdr_len = sizeof(struct nvme_tcp_hdr);
 	ret = read(ep->sockfd, icreq, hdr_len);
 	if (ret < 0) {
-		print_errno("icreq header read", errno);
+		if (errno != EAGAIN)
+			print_errno("icreq header read", errno);
 		return -errno;
 	}
 	if (ret != hdr_len) {
