@@ -555,7 +555,7 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 	print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x read pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, ccid, data_pos, data_len);
 
-	return ns->ops->ns_write(ep, qe);
+	return ns->ops->ns_read(ep, qe);
 }
 
 static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
@@ -596,7 +596,7 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
 			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, ccid,
 			   data_pos, data_len);
-		return ns->ops->ns_read(ep, qe);
+		return ns->ops->ns_write(ep, qe);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		print_err("Invalid sgl type %x", sgl_type);

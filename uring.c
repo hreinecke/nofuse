@@ -8,7 +8,7 @@
 #include "nvme.h"
 #include "ops.h"
 
-int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
+int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -38,7 +38,7 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 	return -1;
 }
 
-int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
+int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
 	int ret;

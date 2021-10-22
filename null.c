@@ -12,7 +12,7 @@
 #include "nvme.h"
 #include "ops.h"
 
-int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
+int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
 {
 	int ret;
 
@@ -26,7 +26,7 @@ int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 	return ret;
 }
 
-int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
+int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 {
 	int ret;
 
