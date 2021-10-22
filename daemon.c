@@ -229,6 +229,8 @@ static int add_host_port(int port)
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		if (iface->port_num == port)
 			continue;
+		if (iface->port_num != 8009)
+			continue;
 		new = new_host_iface(iface->address, iface->adrfam, port);
 		if (new) {
 			list_add_tail(&new->node, &tmp_iface_list);
