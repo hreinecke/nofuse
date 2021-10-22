@@ -8,17 +8,11 @@
 #include "nvme.h"
 #include "ops.h"
 
-int uring_submit_read(struct endpoint *ep, u16 tag)
+int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
-	struct ep_qe *qe;
 	int ret;
 
-	qe = ep->ops->get_tag(ep, tag);
-	if (!qe) {
-		print_err("endpoint %d: invalid tag %u", ep->qid, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
 	qe->opcode = nvme_cmd_write;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
@@ -36,24 +30,19 @@ int uring_submit_read(struct endpoint *ep, u16 tag)
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret < 0) {
-		print_errno("io_uring_submit failed", errno);
+		print_err("endpoint %d tag %d: io_uring_submit error %d",
+			  ep->qid, qe->tag, errno);
 		return NVME_SC_INTERNAL;
 	}
 	
 	return -1;
 }
 
-int uring_submit_write(struct endpoint *ep, u16 tag)
+int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 {
-	struct ep_qe *qe;
 	struct io_uring_sqe *sqe;
 	int ret;
 
-	qe = ep->ops->get_tag(ep, tag);
-	if (!qe) {
-		print_err("endpoint %d: invalid tag %u", ep->qid, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
 	qe->opcode = nvme_cmd_read;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
@@ -67,7 +56,7 @@ int uring_submit_write(struct endpoint *ep, u16 tag)
 	ret = io_uring_submit(&ep->uring);
 	if (ret < 0) {
 		print_err("endpoint %d tag %d: io_uring_submit error %d",
-			  ep->qid, tag, errno);
+			  ep->qid, qe->tag, errno);
 		return NVME_SC_INTERNAL;
 	}
 	return -1;
@@ -95,9 +84,9 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 		print_info("ctrl %d qid %d tag %#x retry",
 			   cntlid, ep->qid, qe->tag);
 		if (qe->opcode == nvme_cmd_write)
-			status = uring_submit_read(ep, qe->tag);
+			status = uring_submit_read(ep, qe);
 		else
-			status = uring_submit_write(ep, qe->tag);
+			status = uring_submit_write(ep, qe);
 		if (!status)
 			return 0;
 		goto out_rsp;
@@ -114,12 +103,12 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 		qe->pos += res;
 		qe->iovec.iov_base += res;
 		qe->iovec.iov_len -= res;
-		status = uring_submit_read(ep, qe->tag);
+		status = uring_submit_read(ep, qe);
 		if (!status)
 			return 0;
 	}
 out_rsp:
-	ep->ops->release_tag(ep, tag);
+	ep->ops->release_tag(ep, qe);
 	memset(&resp, 0, sizeof(resp));
 	resp.command_id = ccid;
 	if (status)

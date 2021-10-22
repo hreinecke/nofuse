@@ -70,8 +70,8 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 	return 0;
 }
 
-int tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
-		    struct nsdev *ns, u16 ccid, u64 pos, u64 len)
+struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
+			      struct nsdev *ns, u16 ccid, u64 pos, u64 len)
 {
 	int i;
 
@@ -87,16 +87,16 @@ int tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 			qe->iovec.iov_base = malloc(len);
 			if (!qe->iovec.iov_base) {
 				print_err("Error allocating iovec base");
-				return -1;
+				return NULL;
 			}
 			ep->qes[i].iovec.iov_len = len;
 			ep->qes[i].remaining = len;
 			memcpy(&ep->qes[i].pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
-			return i;
+			return qe;
 		}
 	}
-	return -1;
+	return NULL;
 }
 
 struct ep_qe *tcp_get_tag(struct endpoint *ep, u16 tag)
@@ -106,14 +106,17 @@ struct ep_qe *tcp_get_tag(struct endpoint *ep, u16 tag)
 	return &ep->qes[tag];
 }
 
-void tcp_release_tag(struct endpoint *ep, u16 tag)
+void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 {
-	if (tag >= NVMF_SQ_DEPTH)
+	if (!qe)
 		return;
-	ep->qes[tag].busy = false;
-	free(ep->qes[tag].iovec.iov_base);
-	ep->qes[tag].iovec.iov_base = NULL;
-	ep->qes[tag].iovec.iov_len = 0;
+	if (&ep->qes[qe->tag] != qe)
+		return;
+
+	qe->busy = false;
+	free(qe->iovec.iov_base);
+	qe->iovec.iov_base = NULL;
+	qe->iovec.iov_len = 0;
 }
 
 static int tcp_init_listener(struct host_iface *iface)
@@ -485,7 +488,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 
 	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
-	qe = tcp_get_tag(ep, ttag);
+	qe = ep->ops->get_tag(ep, ttag);
 	if (!qe) {
 		print_err("ctrl %d qid %d h2c invalid ttag %#x",
 			  ep->ctrl->cntlid, ep->qid, ttag);

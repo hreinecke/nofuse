@@ -12,17 +12,9 @@
 #include "nvme.h"
 #include "ops.h"
 
-int null_ns_read(struct endpoint *ep, u16 tag)
+int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 {
-	struct ep_qe *qe;
 	int ret;
-
-	qe = ep->ops->get_tag(ep, tag);
-	if (!qe) {
-		print_err("endpoint %d: invalid tag %u",
-			  ep->qid, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
 
 	ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 	if (ret < 0) {
@@ -30,21 +22,13 @@ int null_ns_read(struct endpoint *ep, u16 tag)
 		ret = NVME_SC_WRITE_FAULT;
 	}
 
-	ep->ops->release_tag(ep, tag);
+	ep->ops->release_tag(ep, qe);
 	return ret;
 }
 
-int null_ns_write(struct endpoint *ep, u16 tag)
+int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
 {
-	struct ep_qe *qe;
 	int ret;
-
-	qe = ep->ops->get_tag(ep, tag);
-	if (!qe) {
-		print_err("endpoint %d: invalid tag %u",
-			  ep->qid, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
 
 	ret = ep->ops->rma_write(ep, qe->iovec.iov_base, 0,
 				 qe->iovec.iov_len, qe->ccid, true);
@@ -52,20 +36,12 @@ int null_ns_write(struct endpoint *ep, u16 tag)
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-	ep->ops->release_tag(ep, tag);
+	ep->ops->release_tag(ep, qe);
 	return ret;
 }
 
-int null_ns_prep_read(struct endpoint *ep, u16 tag)
+int null_ns_prep_read(struct endpoint *ep, struct ep_qe *qe)
 {
-	struct ep_qe *qe = NULL;
-
-	qe = ep->ops->get_tag(ep, tag);
-	if (!qe) {
-		print_err("endpoint %d: invalid tag %u", ep->qid, tag);
-		return NVME_SC_NS_NOT_READY;
-	}
-
 	return ep->ops->prep_rma_read(ep, qe->tag);
 }
 
