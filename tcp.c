@@ -62,7 +62,8 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 		ep->send_pdu = NULL;
 		return -ENOMEM;
 	}
-	for (i = 0; i < NVMF_SQ_DEPTH; i++) {
+	ep->qsize = NVMF_SQ_DEPTH;
+	for (i = 0; i < ep->qsize; i++) {
 		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
 	}
@@ -74,7 +75,7 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 {
 	int i;
 
-	for (i = 0; i < NVMF_SQ_DEPTH; i++) {
+	for (i = 0; i < ep->qsize; i++) {
 		struct ep_qe *qe = &ep->qes[i];
 
 		if (!qe->busy) {
@@ -100,7 +101,7 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 
 struct ep_qe *tcp_get_tag(struct endpoint *ep, u16 tag)
 {
-	if (tag >= NVMF_SQ_DEPTH || !ep->qes[tag].busy)
+	if (tag >= ep->qsize || !ep->qes[tag].busy)
 		return NULL;
 	return &ep->qes[tag];
 }

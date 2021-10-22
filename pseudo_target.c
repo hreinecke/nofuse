@@ -75,6 +75,24 @@ retry:
 	return 0;
 }
 
+int endpoint_update_qdepth(struct endpoint *ep, int qsize)
+{
+	struct ep_qe *qes;
+	int i;
+
+	qes = calloc(qsize + 1, sizeof(struct ep_qe));
+	if (!qes)
+		return -1;
+	free(ep->qes);
+	ep->qes = qes;
+	for (i = 0; i <= qsize; i++) {
+		ep->qes[i].tag = i;
+		ep->qes[i].ep = ep;
+	}
+	ep->qsize = qsize + 1;
+	return 0;
+}
+
 static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep)
 {
 	struct io_uring_sqe *sqe;

@@ -152,6 +152,13 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 			  ep->ctrl->cntlid, qid);
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
+	if (qid == 0) {
+		ep->qsize = NVMF_SQ_DEPTH;
+	} else if (endpoint_update_qdepth(ep, sqsize) < 0) {
+		print_err("ctrl %d qid %d failed to increase sqsize %d",
+			  cntlid, qid, sqsize);
+		return NVME_SC_INTERNAL;
+	}
 
 	ep->qid = qid;
 
@@ -200,10 +207,9 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
 				     MAX_NQN_SIZE)) {
 				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
-				ctrl->qsize = NVMF_DQ_DEPTH;
+				ep->qsize = NVMF_DQ_DEPTH;
 			} else {
 				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
-				ctrl->qsize = NVMF_SQ_DEPTH;
 			}
 			list_add(&ctrl->node, &subsys->ctrl_list);
 		}
@@ -255,7 +261,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 		id.maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
 		strcpy(id.subnqn, ep->ctrl->subsys->nqn);
-		id.maxcmd = htole16(ep->ctrl->qsize);
+		id.maxcmd = htole16(ep->qsize);
 	}
 
 	if (len > sizeof(id))

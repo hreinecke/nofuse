@@ -73,22 +73,23 @@ struct ep_qe {
 };
 
 struct endpoint {
-	struct linked_list	 node;
-	pthread_t		 pthread;
-	struct io_uring		 uring;
-	struct xp_ops		*ops;
-	struct host_iface	*iface;
-	struct ctrl_conn	*ctrl;
-	struct ep_qe		*qes;
-	union nvme_tcp_pdu	*recv_pdu;
-	union nvme_tcp_pdu	*send_pdu;
-	int			 state;
-	int			 qid;
-	int			 kato_countdown;
-	int			 kato_interval;
-	int			 sockfd;
-	int			 maxr2t;
-	int			 maxh2cdata;
+	struct linked_list node;
+	pthread_t pthread;
+	struct io_uring uring;
+	struct xp_ops *ops;
+	struct host_iface *iface;
+	struct ctrl_conn *ctrl;
+	struct ep_qe *qes;
+	union nvme_tcp_pdu *recv_pdu;
+	union nvme_tcp_pdu *send_pdu;
+	int qsize;
+	int state;
+	int qid;
+	int kato_countdown;
+	int kato_interval;
+	int sockfd;
+	int maxr2t;
+	int maxh2cdata;
 };
 
 struct ctrl_conn {
@@ -98,7 +99,6 @@ struct ctrl_conn {
 	int			 cntlid;
 	int			 ctrl_type;
 	int			 kato;
-	int			 qsize;
 	int			 num_endpoints;
 	int			 max_endpoints;
 	int			 aen_mask;
@@ -146,5 +146,6 @@ extern struct linked_list iface_linked_list;
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 void *run_host_interface(void *arg);
+int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
 #endif
