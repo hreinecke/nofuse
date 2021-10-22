@@ -145,6 +145,7 @@ extern struct linked_list subsys_linked_list;
 extern struct linked_list iface_linked_list;
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
+int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 

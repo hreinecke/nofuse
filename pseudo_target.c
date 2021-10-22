@@ -175,7 +175,7 @@ static void *endpoint_thread(void *arg)
 					  ep->qid);
 				ret = -EAGAIN;
 			}
-			ret = qe->ns->ops->ns_handle_qe(ep, qe, cqe->res);
+			ret = handle_data(ep, qe, cqe->res);
 		}
 		if (ret == -EAGAIN)
 			if (--ep->kato_countdown > 0)
