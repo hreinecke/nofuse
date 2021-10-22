@@ -93,52 +93,49 @@ struct endpoint {
 };
 
 struct ctrl_conn {
-	struct linked_list	 node;
-	struct subsystem	*subsys;
-	char			 nqn[MAX_NQN_SIZE + 1];
-	int			 cntlid;
-	int			 ctrl_type;
-	int			 kato;
-	int			 num_endpoints;
-	int			 max_endpoints;
-	int			 aen_mask;
-	u64			 csts;
-	u64			 cc;
+	struct linked_list node;
+	struct subsystem *subsys;
+	char nqn[MAX_NQN_SIZE + 1];
+	int cntlid;
+	int ctrl_type;
+	int kato;
+	int num_endpoints;
+	int max_endpoints;
+	int aen_mask;
+	u64 csts;
+	u64 cc;
 };
 
 struct nsdev {
-	struct linked_list	 node;
+	struct linked_list node;
 	struct ns_ops *ops;
-	int			 devid;
-	int			 nsid;
-	int			 fd;
-	size_t			 size;
-	unsigned int		 blksize;
-	uuid_t			 uuid;
+	int nsid;
+	int fd;
+	size_t size;
+	unsigned int blksize;
+	uuid_t uuid;
 };
 
 struct host_iface {
-	struct linked_list	 node;
-	pthread_t		 pthread;
-	char			 address[41];
-	struct sockaddr		 addr;
-	int			 port_num;
-	int			 port_type;
-	int			 adrfam;
-	int			 portid;
-	int			 listenfd;
-	struct xp_ops		*ops;
+	struct linked_list node;
+	pthread_t pthread;
+	struct xp_ops *ops;
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
+	char address[41];
+	int port_num;
+	int port_type;
+	int adrfam;
+	int portid;
+	int listenfd;
 };
 
 struct subsystem {
-	struct linked_list	 node;
-	struct linked_list	 host_list;
-	struct linked_list	 ctrl_list;
+	struct linked_list node;
+	struct linked_list ctrl_list;
 	pthread_mutex_t ctrl_mutex;
-	char			 nqn[MAX_NQN_SIZE + 1];
-	int			 type;
+	char nqn[MAX_NQN_SIZE + 1];
+	int type;
 };
 
 extern struct linked_list subsys_linked_list;
