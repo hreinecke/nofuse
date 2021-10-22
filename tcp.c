@@ -127,7 +127,8 @@ static int tcp_init_listener(struct host_iface *iface)
 
 	listenfd = socket(iface->adrfam, SOCK_STREAM|SOCK_NONBLOCK, 0);
 	if (listenfd < 0) {
-		print_err("Socket error %d", errno);
+		print_err("iface %d: socket error %d",
+			  iface->portid, errno);
 		return -errno;
 	}
 
@@ -139,7 +140,8 @@ static int tcp_init_listener(struct host_iface *iface)
 
 		ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
 		if (ret < 0) {
-			print_err("Socket bind error %d", errno);
+			print_err("iface %d: socket bind error %d",
+				  iface->portid, errno);
 			ret = -errno;
 			goto err;
 		}
@@ -151,7 +153,8 @@ static int tcp_init_listener(struct host_iface *iface)
 
 		ret = bind(listenfd, (struct sockaddr *) &addr6, sizeof(addr6));
 		if (ret < 0) {
-			print_err("Socket bind error %d", errno);
+			print_err("iface %d: socket bind error %d",
+				  iface->portid, errno);
 			ret = -errno;
 			goto err;
 		}
@@ -159,7 +162,8 @@ static int tcp_init_listener(struct host_iface *iface)
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		print_err("Socket listen error %d", errno);
+		print_err("iface %d: socket listen error %d",
+			  iface->portid, errno);
 		ret = -errno;
 		goto err;
 	}
