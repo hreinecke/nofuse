@@ -14,16 +14,8 @@
 
 int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
 {
-	int ret;
-
-	ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
-	if (ret < 0) {
-		print_errno("rma_read failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
-	}
-
 	ep->ops->release_tag(ep, qe);
-	return ret;
+	return 0;
 }
 
 int null_ns_read(struct endpoint *ep, struct ep_qe *qe)

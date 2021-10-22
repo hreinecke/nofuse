@@ -596,6 +596,12 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
 			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, ccid,
 			   data_pos, data_len);
+		ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
+		if (ret < 0) {
+			print_err("ctrl %d qid %d tag %#x rma_read error %d",
+				  ep->ctrl->cntlid, ep->qid, qe->tag, ret);
+			ret = NVME_SC_WRITE_FAULT;
+		}
 		return ns->ops->ns_write(ep, qe);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
