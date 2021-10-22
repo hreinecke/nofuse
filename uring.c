@@ -23,15 +23,13 @@ int uring_submit_read(struct endpoint *ep, u16 tag)
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
 		print_err("No SQEs available");
-		ret = NVME_SC_QUEUE_SIZE;
-		goto out_put;
+		return NVME_SC_QUEUE_SIZE;
 	}
 
 	ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 	if (ret < 0) {
 		print_errno("rma_read failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
-		goto out_put;
+		return NVME_SC_WRITE_FAULT;
 	}
 	io_uring_prep_writev(sqe, qe->ns->fd, &qe->iovec, 1, qe->pos);
 	io_uring_sqe_set_data(sqe, qe);
@@ -39,14 +37,10 @@ int uring_submit_read(struct endpoint *ep, u16 tag)
 	ret = io_uring_submit(&ep->uring);
 	if (ret < 0) {
 		print_errno("io_uring_submit failed", errno);
-		ret = NVME_SC_INTERNAL;
-		goto out_put;
+		return NVME_SC_INTERNAL;
 	}
 	
 	return -1;
-out_put:
-	ep->ops->release_tag(ep, tag);
-	return ret;
 }
 
 int uring_submit_write(struct endpoint *ep, u16 tag)
@@ -64,8 +58,7 @@ int uring_submit_write(struct endpoint *ep, u16 tag)
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
 		print_err("No SQEs available");
-		ret = NVME_SC_QUEUE_SIZE;
-		goto out_put;
+		return NVME_SC_QUEUE_SIZE;
 	}
 	io_uring_prep_readv(sqe, qe->ns->fd, &qe->iovec, 1,
 			    qe->pos);
@@ -75,13 +68,9 @@ int uring_submit_write(struct endpoint *ep, u16 tag)
 	if (ret < 0) {
 		print_err("endpoint %d tag %d: io_uring_submit error %d",
 			  ep->qid, tag, errno);
-		ret = NVME_SC_INTERNAL;
-		goto out_put;
+		return NVME_SC_INTERNAL;
 	}
 	return -1;
-out_put:
-	ep->ops->release_tag(ep, tag);
-	return ret;
 }
 
 static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
