@@ -30,7 +30,7 @@ extern struct linked_list	*interfaces;
 #define NVMF_UUID_FMT		"nqn.2014-08.org.nvmexpress:uuid:%s"
 
 #define NVMF_DQ_DEPTH		2
-#define NVMF_SQ_DEPTH		32
+#define NVMF_SQ_DEPTH		128
 #define NVMF_NUM_QUEUES		8
 
 #define MAX_NQN_SIZE		256

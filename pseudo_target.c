@@ -80,6 +80,9 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize)
 	struct ep_qe *qes;
 	int i;
 
+	if (qsize + 1 == ep->qsize)
+		return 0;
+
 	qes = calloc(qsize + 1, sizeof(struct ep_qe));
 	if (!qes)
 		return -1;
