@@ -487,7 +487,6 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	u32 data_offset = le32toh(pdu->data.data_offset);
 	u32 data_len = le32toh(pdu->data.data_length);
 	struct ep_qe *qe;
-	char *buf;
 	int ret;
 	struct nvme_completion resp;
 
@@ -518,20 +517,13 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 
-	buf = malloc(data_len);
-	if (!buf) {
-		print_errno("malloc failed", errno);
-		ret = NVME_SC_INTERNAL;
-		goto out_rsp;
-	}
-	ret = tcp_rma_read(ep, buf, data_len);
+	ret = tcp_rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 	if (ret < 0) {
 		print_err("ctrl %d qid %d h2c data read failed, error %d",
 			  ep->ctrl->cntlid, ep->qid, errno);
 		ret = NVME_SC_SGL_INVALID_DATA;
 		goto out_rsp;
 	}
-	free(buf);
 	qe->remaining -= data_len;
 	qe->offset += data_len;
 	if (!qe->remaining) {
