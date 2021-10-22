@@ -75,7 +75,7 @@ int uring_submit_write(struct endpoint *ep, u16 tag)
 
 static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 {
-	int ret = 0;
+	int status = 0;
 	u16 ccid = qe->ccid, tag = qe->tag;
 	int cntlid = ep->ctrl ? ep->ctrl->cntlid : -1;
 	struct nvme_completion resp;
@@ -86,7 +86,7 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 	    qe->opcode != nvme_cmd_read) {
 		print_err("ctrl %d qid %d tag %#x unhandled opcode %d",
 			  cntlid, ep->qid, qe->tag, qe->opcode);
-		ret = NVME_SC_INVALID_OPCODE;
+		status = NVME_SC_INVALID_OPCODE;
 		goto out_rsp;
 	}
 	if (res < 0) {
@@ -95,29 +95,35 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 		print_info("ctrl %d qid %d tag %#x retry",
 			   cntlid, ep->qid, qe->tag);
 		if (qe->opcode == nvme_cmd_write)
-			ret = uring_submit_read(ep, qe->tag);
+			status = uring_submit_read(ep, qe->tag);
 		else
-			ret = uring_submit_write(ep, qe->tag);
+			status = uring_submit_write(ep, qe->tag);
+		if (!status)
+			return 0;
 		goto out_rsp;
 	}
 	if (qe->opcode == nvme_cmd_read) {
+		int ret;
+
 		ret = ep->ops->rma_write(ep, qe->iovec.iov_base,
 					 qe->pos, qe->iovec.iov_len,
 					 qe->ccid, true);
+		if (ret < 0)
+			status = NVME_SC_DATA_XFER_ERROR;
 	} else if (res != qe->iovec.iov_len) {
 		qe->pos += res;
 		qe->iovec.iov_base += res;
 		qe->iovec.iov_len -= res;
-		ret = uring_submit_read(ep, qe->tag);
+		status = uring_submit_read(ep, qe->tag);
+		if (!status)
+			return 0;
 	}
 out_rsp:
-	if (ret < 0)
-		return ret;
 	ep->ops->release_tag(ep, tag);
 	memset(&resp, 0, sizeof(resp));
 	resp.command_id = ccid;
-	if (ret)
-		resp.status = (NVME_SC_DNR | ret) << 1;
+	if (status)
+		resp.status = (NVME_SC_DNR | status) << 1;
 	return ep->ops->send_rsp(ep, &resp);
 }
 
