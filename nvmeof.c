@@ -157,6 +157,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 		if (!strncmp(connect.hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
 			ep->ctrl = ctrl;
+			ctrl->num_endpoints++;
 			break;
 		}
 	}
@@ -171,6 +172,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 			ctrl->max_endpoints = NVMF_NUM_QUEUES;
 			ctrl->kato = RETRY_COUNT;
 			ep->ctrl = ctrl;
+			ctrl->num_endpoints = 1;
 			ctrl->subsys = subsys;
 			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
 				     MAX_NQN_SIZE)) {
@@ -199,7 +201,10 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 			  connect.cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
-	print_info("ctrl %d qid %d connected", ep->ctrl->cntlid, ep->qid);
+	if (!ret) {
+		print_info("ctrl %d qid %d connected",
+			   ep->ctrl->cntlid, ep->qid);
+	}
 out:
 	return ret;
 }

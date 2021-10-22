@@ -11,9 +11,26 @@
 
 void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
+	struct ctrl_conn *ctrl = ep->ctrl;
+
 	ep->ops->destroy_endpoint(ep);
 
 	ep->state = DISCONNECTED;
+
+	if (ctrl) {
+		struct subsystem *subsys = ctrl->subsys;
+
+		pthread_mutex_lock(&subsys->ctrl_mutex);
+		ctrl->num_endpoints--;
+		ep->ctrl = NULL;
+		if (!ctrl->num_endpoints) {
+			print_info("ctrl %d: deleting controller",
+				   ctrl->cntlid);
+			list_del(&ctrl->node);
+			free(ctrl);
+		}
+		pthread_mutex_unlock(&subsys->ctrl_mutex);
+	}
 }
 
 int start_pseudo_target(struct host_iface *iface)

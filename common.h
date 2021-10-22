@@ -99,6 +99,7 @@ struct ctrl_conn {
 	int			 ctrl_type;
 	int			 kato;
 	int			 qsize;
+	int			 num_endpoints;
 	int			 max_endpoints;
 	int			 aen_mask;
 	u64			 csts;
