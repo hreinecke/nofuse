@@ -109,15 +109,24 @@ static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_connect(struct endpoint *ep, int qid, u64 len)
+static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
+			  u64 len)
 {
 	struct subsystem *subsys = NULL, *_subsys;
 	struct ctrl_conn *ctrl;
 	struct nvmf_connect_data connect;
+	u16 sqsize;
+	u16 cntlid, qid;
+	u32 kato;
 	int ret;
 
+	qid = le16toh(cmd->connect.qid);
+	sqsize = le16toh(cmd->connect.sqsize);
+	kato = le32toh(cmd->connect.kato);
+
 #ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_connect");
+	print_debug("nvme_fabrics_connect qid %u sqsize %u kato %u",
+		    qid, sqsize, kato);
 #endif
 
 	ret = ep->ops->rma_read(ep, &connect, len);
@@ -126,9 +135,21 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 		return ret;
 	}
 
+	cntlid = le16toh(connect.cntlid);
+
+	if (qid == 0 && cntlid != 0xFFFF) {
+		print_err("bad controller id %x, expecting %x",
+			  connect.cntlid, 0xffff);
+		return NVME_SC_CONNECT_INVALID_PARAM;
+	}
+	if (!sqsize) {
+		print_err("ctrl %d qid %d invalid sqsize",
+			  cntlid, qid);
+		return NVME_SC_CONNECT_INVALID_PARAM;
+	}
 	if (ep->ctrl) {
 		print_err("ctrl %d qid %d already connected",
-			  ep->ctrl->cntlid, ep->qid);
+			  ep->ctrl->cntlid, qid);
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
 
@@ -156,6 +177,8 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 	pthread_mutex_lock(&subsys->ctrl_mutex);
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 		if (!strncmp(connect.hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
+			if (qid == 0 || ctrl->cntlid != cntlid)
+				continue;
 			ep->ctrl = ctrl;
 			ctrl->num_endpoints++;
 			break;
@@ -170,7 +193,7 @@ static int handle_connect(struct endpoint *ep, int qid, u64 len)
 			memset(ctrl, 0, sizeof(*ctrl));
 			strncpy(ctrl->nqn, connect.hostnqn, MAX_NQN_SIZE);
 			ctrl->max_endpoints = NVMF_NUM_QUEUES;
-			ctrl->kato = RETRY_COUNT;
+			ctrl->kato = kato / ep->kato_interval;
 			ep->ctrl = ctrl;
 			ctrl->num_endpoints = 1;
 			ctrl->subsys = subsys;
@@ -608,7 +631,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			ret = handle_property_get(cmd, &resp, ep);
 			break;
 		case nvme_fabrics_type_connect:
-			ret = handle_connect(ep, cmd->connect.qid, len);
+			ret = handle_connect(ep, cmd, len);
 			if (!ret)
 				resp.result.u16 = htole16(ep->ctrl->cntlid);
 			break;
@@ -628,9 +651,13 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		}
 	} else if (cmd->common.opcode == nvme_admin_identify)
 		ret = handle_identify(ep, cmd, len);
-	else if (cmd->common.opcode == nvme_admin_keep_alive)
+	else if (cmd->common.opcode == nvme_admin_keep_alive) {
+#ifdef DEBUG_COMMANDS
+		print_debug("nvme_keep_alive ctrl %d qid %d",
+			    ep->ctrl->cntlid, ep->qid);
+#endif
 		ret = 0;
-	else if (cmd->common.opcode == nvme_admin_get_log_page)
+	} else if (cmd->common.opcode == nvme_admin_get_log_page)
 		ret = handle_get_log_page(ep, cmd, len);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
 		ret = handle_set_features(ep, cmd, &resp);
