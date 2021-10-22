@@ -2,7 +2,6 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <poll.h>
 
 #include "common.h"
