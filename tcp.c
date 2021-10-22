@@ -552,11 +552,21 @@ static int tcp_read_msg(struct endpoint *ep)
 {
 	int len, msg_len;
 
+	ep->recv_pdu_len = 0;
 	len = read(ep->sockfd, ep->recv_pdu, sizeof(struct nvme_tcp_hdr));
-	if (len != sizeof(struct nvme_tcp_hdr)) {
-		if (len < 0)
-			print_errno("failed to read msg hdr", errno);
-		return (len < 0) ? -errno : -ENODATA;
+	if (len < 0) {
+		print_errno("failed to read msg hdr", errno);
+		return -errno;
+	}
+	/* No data received, disconnected */
+	if (!len)
+		return -ENODATA;
+
+	ep->recv_pdu_len += len;
+	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
+		print_err("short msg hdr read, %lu bytes missing",
+			  sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len);
+		return -ENODATA;
 	}
 	if (!ep->recv_pdu->common.hlen) {
 		print_err("corrupt hdr, hlen %d size %ld",
@@ -566,9 +576,9 @@ static int tcp_read_msg(struct endpoint *ep)
 					offset_of(struct nvme_tcp_hdr, hlen),
 					0, false, NULL, 0);
 	}
-	msg_len = ep->recv_pdu->common.hlen - sizeof(struct nvme_tcp_hdr);
+	msg_len = ep->recv_pdu->common.hlen - ep->recv_pdu_len;
 	if (msg_len) {
-		u8 *msg = (u8 *)ep->recv_pdu + sizeof(struct nvme_tcp_hdr);
+		u8 *msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 
 		len = read(ep->sockfd, msg, msg_len);
 		if (len == 0)
@@ -577,9 +587,10 @@ static int tcp_read_msg(struct endpoint *ep)
 			print_errno("failed to read msg payload", errno);
 			return -errno;
 		}
-		if (len != msg_len)
-			print_err("short msg payload read, %d bytes missing",
-				  msg_len - len);
+		ep->recv_pdu_len += len;
+		if (ep->recv_pdu_len < ep->recv_pdu->common.hlen)
+			print_err("short msg payload read, %u bytes missing",
+				  ep->recv_pdu->common.hlen - ep->recv_pdu_len);
 	}
 	return 0;
 }
