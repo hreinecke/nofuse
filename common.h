@@ -64,6 +64,7 @@ struct ep_qe {
 	struct nsdev *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
+	struct nvme_tcp_rsp_pdu rsp_pdu;
 	void *data;
 	u64 data_len;
 	u64 pos;

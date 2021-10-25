@@ -692,5 +692,5 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res)
 {
-    return qe->ns->ops->ns_handle_qe(ep, qe, res);
+	return qe->ns->ops->ns_handle_qe(ep, qe, res);
 }

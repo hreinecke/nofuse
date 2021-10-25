@@ -139,6 +139,7 @@ static void *endpoint_thread(void *arg)
 
 	while (!stopped) {
 		struct io_uring_cqe *cqe;
+		void *cqe_data;
 
 		if (!poll_sqe) {
 			poll_sqe = endpoint_submit_poll(ep);
@@ -154,7 +155,8 @@ static void *endpoint_thread(void *arg)
 			break;
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
-		if (io_uring_cqe_get_data(cqe) == poll_sqe) {
+		cqe_data = io_uring_cqe_get_data(cqe);
+		if (cqe_data == poll_sqe) {
 			poll_sqe = NULL;
 			ret = ep->ops->read_msg(ep);
 			if (!ret) {
@@ -168,7 +170,7 @@ static void *endpoint_thread(void *arg)
 					   ep->qid, ret);
 			}
 		} else {
-			struct ep_qe *qe = io_uring_cqe_get_data(cqe);
+			struct ep_qe *qe = cqe_data;
 			if (!qe) {
 				print_err("ctrl %d qid %d empty cqe",
 					  ep->ctrl ? ep->ctrl->cntlid : -1,
