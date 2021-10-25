@@ -469,45 +469,40 @@ static int format_disc_log(void *data, u64 data_offset,
 	return data_len;
 }
 
-static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
-			       u64 len)
+static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
+			       struct nvme_command *cmd)
 {
 	int ret = 0;
-	u16 cid = cmd->get_log_page.command_id;
 	u64 offset = le64toh(cmd->get_log_page.lpo);
-	u8 *log_buf;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
 		    cmd->get_log_page.opcode, cmd->get_log_page.lid,
-		    (unsigned long)offset, (unsigned long)len);
+		    (unsigned long)offset, (unsigned long)qe->data_len);
 #endif
-	log_buf = malloc(len);
-	if (!log_buf)
-		return NVME_SC_INTERNAL;
+	qe->data_pos = offset;
 
 	switch (cmd->get_log_page.lid) {
 	case 0x02:
 		/* SMART Log */
-		memset(log_buf, 0, len);
+		memset(qe->data, 0, qe->data_len);
 		break;
 	case 0x70:
 		/* Discovery log */
-		len = format_disc_log(log_buf, offset, len, ep);
+		qe->iovec.iov_len = format_disc_log(qe->data, qe->data_pos,
+						    qe->data_len, ep);
 		break;
 	default:
 		print_err("get_log_page: lid %02x not supported",
 			  cmd->get_log_page.lid);
-		free(log_buf);
 		return NVME_SC_INVALID_FIELD;
 	}
-
-	ret = ep->ops->rma_write(ep, log_buf, offset, len, cid, true);
+	ret = ep->ops->rma_write(ep, qe->iovec.iov_base, qe->data_pos,
+				 qe->iovec.iov_len, qe->ccid, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-	free(log_buf);
 	return ret;
 }
 
@@ -652,7 +647,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 #endif
 		ret = 0;
 	} else if (cmd->common.opcode == nvme_admin_get_log_page)
-		ret = handle_get_log_page(ep, cmd, len);
+		ret = handle_get_log_page(ep, qe, cmd);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
 		ret = handle_set_features(ep, cmd, &qe->resp);
 		if (ret)
