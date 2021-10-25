@@ -109,12 +109,12 @@ static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
-			  u64 len)
+static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
+			  struct nvme_command *cmd)
 {
 	struct subsystem *subsys = NULL, *_subsys;
 	struct ctrl_conn *ctrl;
-	struct nvmf_connect_data connect;
+	struct nvmf_connect_data *connect = qe->data;
 	u16 sqsize;
 	u16 cntlid, qid;
 	u32 kato;
@@ -129,17 +129,17 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 		    qid, sqsize, kato);
 #endif
 
-	ret = ep->ops->rma_read(ep, &connect, len);
+	ret = ep->ops->rma_read(ep, connect, qe->data_len);
 	if (ret) {
 		print_errno("rma_read failed", ret);
 		return ret;
 	}
 
-	cntlid = le16toh(connect.cntlid);
+	cntlid = le16toh(connect->cntlid);
 
 	if (qid == 0 && cntlid != 0xFFFF) {
 		print_err("bad controller id %x, expecting %x",
-			  connect.cntlid, 0xffff);
+			  cntlid, 0xffff);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!sqsize) {
@@ -163,14 +163,14 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 	ep->qid = qid;
 
 	list_for_each_entry(_subsys, &subsys_linked_list, node) {
-		if (!strcmp(connect.subsysnqn, _subsys->nqn)) {
+		if (!strcmp(connect->subsysnqn, _subsys->nqn)) {
 			subsys = _subsys;
 			break;
 		}
 	}
 	if (!subsys) {
 		print_err("subsystem '%s' not found",
-			  connect.subsysnqn);
+			  connect->subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
@@ -183,7 +183,7 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 
 	pthread_mutex_lock(&subsys->ctrl_mutex);
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
-		if (!strncmp(connect.hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
+		if (!strncmp(connect->hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
 			if (qid == 0 || ctrl->cntlid != cntlid)
 				continue;
 			ep->ctrl = ctrl;
@@ -192,18 +192,20 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 		}
 	}
 	if (!ep->ctrl) {
-		print_info("Allocating new controller '%s'", connect.hostnqn);
+		print_info("Allocating new controller '%s'",
+			   connect->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
 			print_err("Out of memory allocating controller");
 		} else {
 			memset(ctrl, 0, sizeof(*ctrl));
-			strncpy(ctrl->nqn, connect.hostnqn, MAX_NQN_SIZE);
+			strncpy(ctrl->nqn, connect->hostnqn, MAX_NQN_SIZE);
 			ctrl->max_endpoints = NVMF_NUM_QUEUES;
 			ctrl->kato = kato / ep->kato_interval;
 			ep->ctrl = ctrl;
 			ctrl->num_endpoints = 1;
 			ctrl->subsys = subsys;
+			ctrl->cntlid = nvmf_ctrl_id++;
 			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
 				     MAX_NQN_SIZE)) {
 				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
@@ -215,26 +217,16 @@ static int handle_connect(struct endpoint *ep, struct nvme_command *cmd,
 		}
 	}
 	pthread_mutex_unlock(&subsys->ctrl_mutex);
-	if (!ctrl)
-		goto out;
-
-	if (qid == 0) {
-		if (le16toh(connect.cntlid) != 0xffff) {
-			print_err("bad controller id %x, expecting %x",
-				  connect.cntlid, 0xffff);
-			ret = NVME_SC_CONNECT_INVALID_PARAM;
-		}
-		ctrl->cntlid = nvmf_ctrl_id++;
-	} else if (le16toh(connect.cntlid) != ctrl->cntlid) {
+	if (!ep->ctrl) {
 		print_err("bad controller id %x for queue %d, expecting %x",
-			  connect.cntlid, qid, ctrl->cntlid);
+			  cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!ret) {
 		print_info("ctrl %d qid %d connected",
 			   ep->ctrl->cntlid, ep->qid);
+		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 	}
-out:
 	return ret;
 }
 
@@ -620,9 +612,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			ret = handle_property_get(ep, cmd, &qe->resp);
 			break;
 		case nvme_fabrics_type_connect:
-			ret = handle_connect(ep, cmd, len);
-			if (!ret)
-				qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
+			ret = handle_connect(ep, qe, cmd);
 			break;
 		default:
 			print_err("unknown fctype %d", cmd->fabrics.fctype);
