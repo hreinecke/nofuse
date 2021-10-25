@@ -20,7 +20,7 @@ int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 		return NVME_SC_QUEUE_SIZE;
 	}
 
-	io_uring_prep_writev(sqe, qe->ns->fd, &qe->iovec, 1, qe->pos);
+	io_uring_prep_writev(sqe, qe->ns->fd, &qe->iovec, 1, qe->data_pos);
 	io_uring_sqe_set_data(sqe, qe);
 
 	ret = io_uring_submit(&ep->uring);
@@ -45,7 +45,7 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 		return NVME_SC_QUEUE_SIZE;
 	}
 	io_uring_prep_readv(sqe, qe->ns->fd, &qe->iovec, 1,
-			    qe->pos);
+			    qe->data_pos);
 	io_uring_sqe_set_data(sqe, qe);
 
 	ret = io_uring_submit(&ep->uring);
@@ -90,12 +90,11 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 		int ret;
 
 		ret = ep->ops->rma_write(ep, qe->iovec.iov_base,
-					 qe->pos, qe->iovec.iov_len,
+					 qe->data_pos, qe->iovec.iov_len,
 					 qe->ccid, true);
 		if (ret < 0)
 			status = NVME_SC_DATA_XFER_ERROR;
 	} else if (res != qe->iovec.iov_len) {
-		qe->pos += res;
 		qe->iovec.iov_base += res;
 		qe->iovec.iov_len -= res;
 		status = uring_submit_read(ep, qe);

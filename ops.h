@@ -12,8 +12,7 @@ struct xp_ops {
 	int (*accept_connection)(struct endpoint *ep);
 	struct ep_qe *(*acquire_tag)(struct endpoint *ep,
 				     union nvme_tcp_pdu *pdu,
-				     struct nsdev *ns, u16 ccid,
-				     u64 pos, u64 len);
+				     u16 ccid, u64 pos, u64 len);
 	struct ep_qe *(*get_tag)(struct endpoint *ep, u16 tag);
 	void (*release_tag)(struct endpoint *ep, struct ep_qe *qe);
 	int (*rma_read)(struct endpoint *ep, void *buf, u64 len);

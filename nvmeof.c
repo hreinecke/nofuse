@@ -515,23 +515,19 @@ static int handle_get_log_page(struct endpoint *ep, struct nvme_command *cmd,
 	return ret;
 }
 
-static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
-		       u64 len)
+static int handle_read(struct endpoint *ep, struct ep_qe *qe,
+		       struct nvme_command *cmd)
 {
-	struct nsdev *ns = NULL, *_ns;
-	struct ep_qe *qe;
+	struct nsdev *ns;
 	int nsid = le32toh(cmd->rw.nsid);
-	/* ccid is considered opaque; no endian conversion */
-	u16 ccid = cmd->rw.command_id;
-	u64 data_pos, data_len;
 
-	list_for_each_entry(_ns, devices, node) {
-		if (_ns->nsid == nsid) {
-			ns = _ns;
+	list_for_each_entry(ns, devices, node) {
+		if (ns->nsid == nsid) {
+			qe->ns = ns;
 			break;
 		}
 	}
-	if (!ns) {
+	if (!qe->ns) {
 		print_err("Invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
@@ -542,60 +538,41 @@ static int handle_read(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	data_pos = le64toh(cmd->rw.slba) * ns->blksize;
-	data_len = le64toh(cmd->rw.dptr.sgl.length);
-
-	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ns, ccid,
-				  data_pos, data_len);
-	if (!qe) {
-		print_err("nsid %d busy", nsid);
-		return NVME_SC_NS_NOT_READY;
-	}
+	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
 
 	print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x read pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, ccid, data_pos, data_len);
+		   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
+		   qe->data_pos, qe->data_len);
 
 	return ns->ops->ns_read(ep, qe);
 }
 
-static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
-			u64 len)
+static int handle_write(struct endpoint *ep, struct ep_qe *qe,
+			struct nvme_command *cmd)
 {
-	struct nsdev *ns = NULL, *_ns;
-	struct ep_qe *qe;
+	struct nsdev *ns;
 	u8 sgl_type = cmd->rw.dptr.sgl.type;
 	int nsid = le32toh(cmd->rw.nsid);
-	/* ccid is considered opaque; no endian conversion */
-	u16 ccid = cmd->rw.command_id;
-	u64 data_pos, data_len;
 	int ret;
 
-	list_for_each_entry(_ns, devices, node) {
-		if (_ns->nsid == nsid) {
-			ns = _ns;
+	list_for_each_entry(ns, devices, node) {
+		if (ns->nsid == nsid) {
+			qe->ns = ns;
 			break;
 		}
 	}
-	if (!ns) {
+	if (!qe->ns) {
 		print_err("Invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
-	data_pos = le64toh(cmd->rw.slba) * ns->blksize;
-	data_len = le64toh(cmd->rw.dptr.sgl.length);
-
-	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ns, ccid,
-				  data_pos, data_len);
-	if (!qe) {
-		print_err("nsid %d busy", nsid);
-		return NVME_SC_NS_NOT_READY;
-	}
+	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
 		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
-			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, ccid,
-			   data_pos, data_len);
+			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
+			   qe->data_pos, qe->data_len);
 		ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 		if (ret < 0) {
 			print_err("ctrl %d qid %d tag %#x rma_read error %d",
@@ -606,19 +583,17 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		print_err("Invalid sgl type %x", sgl_type);
-		ep->ops->release_tag(ep, qe);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
 	ret = ns->ops->ns_prep_read(ep, qe);
 	if (ret) {
 		print_errno("prep_rma_read failed", ret);
-		ep->ops->release_tag(ep, qe);
 		ret = NVME_SC_WRITE_FAULT;
 	} else
 		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x write pos %llu len %llu",
-			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, ccid,
-			   data_pos, data_len);
+			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
+			   qe->data_pos, qe->data_len);
 
 	return ret ? ret : -1;
 }
@@ -626,14 +601,24 @@ static int handle_write(struct endpoint *ep, struct nvme_command *cmd,
 int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 {
 	struct nvme_completion resp;
+	struct ep_qe *qe;
 	u32 len;
+	u16 ccid;
 	int ret;
 
 	memset(&resp, 0, sizeof(resp));
 
 	len = le32toh(cmd->common.dptr.sgl.length);
-	resp.command_id = cmd->common.command_id;
-
+	/* ccid is considered opaque; no endian conversion */
+	ccid = cmd->common.command_id;
+	resp.command_id = ccid;
+	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
+	if (!qe) {
+		print_err("endpoint %d ccid %#x queue busy",
+			  ep->qid, ccid);
+		ret = NVME_SC_NS_NOT_READY;
+		goto out;
+	}
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
@@ -653,9 +638,9 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		}
 	} else if (ep->qid != 0) {
 		if (cmd->common.opcode == nvme_cmd_read) {
-			ret = handle_read(ep, cmd, len);
+			ret = handle_read(ep, qe, cmd);
 		} else if (cmd->common.opcode == nvme_cmd_write) {
-			ret = handle_write(ep, cmd, len);
+			ret = handle_write(ep, qe, cmd);
 		} else {
 			print_err("unknown nvme I/O opcode %d",
 				  cmd->common.opcode);
@@ -683,7 +668,8 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	if (ret < 0)
 		/* Internal return; response is sent separately */
 		return 0;
-
+	ep->ops->release_tag(ep, qe);
+out:
 	if (ret)
 		resp.status = (NVME_SC_DNR | ret) << 1;
 

@@ -71,7 +71,7 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 }
 
 struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
-			      struct nsdev *ns, u16 ccid, u64 pos, u64 len)
+			      u16 ccid, u64 pos, u64 len)
 {
 	int i;
 
@@ -80,21 +80,24 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 
 		if (!qe->busy) {
 			qe->busy = true;
-			qe->ns = ns;
 			qe->ccid = ccid;
-			qe->pos = pos;
-			qe->offset = 0;
-			qe->data = malloc(len);
-			if (!qe->data) {
-				print_err("Error allocating iovec base");
-				return NULL;
+			if (len) {
+				qe->offset = 0;
+				qe->data = malloc(len);
+				if (!qe->data) {
+					print_err("Error allocating iovec base");
+					return NULL;
+				}
+				qe->data_pos = pos;
+				qe->data_len = len;
+				qe->iovec.iov_base = qe->data;
+				qe->iovec.iov_len = len;
+				qe->remaining = len;
 			}
-			qe->data_len = len;
-			qe->iovec.iov_base = qe->data;
-			qe->iovec.iov_len = len;
-			qe->remaining = len;
 			memcpy(&qe->pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
+			print_info("endpoint %d acquire tag %#x",
+				   ep->qid, qe->tag);
 			return qe;
 		}
 	}
@@ -121,6 +124,7 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 	qe->data_len = 0;
 	qe->iovec.iov_base = NULL;
 	qe->iovec.iov_len = 0;
+	print_info("endpoint %d release tag %#x", ep->qid, qe->tag);
 }
 
 static int tcp_init_listener(struct host_iface *iface)

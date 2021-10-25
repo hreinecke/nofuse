@@ -67,7 +67,7 @@ struct ep_qe {
 	struct nvme_tcp_rsp_pdu rsp_pdu;
 	void *data;
 	u64 data_len;
-	u64 pos;
+	u64 data_pos;
 	u64 offset;
 	u64 remaining;
 	int ccid;
