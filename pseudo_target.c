@@ -174,15 +174,8 @@ static void *endpoint_thread(void *arg)
 			ret = ep->ops->read_msg(ep);
 			if (!ret) {
 				ret = ep->ops->handle_msg(ep);
-				if (!ret && ep->ctrl) {
-					if (!list_empty(&ep->qe_cq_list))
-						poll_flags = POLLIN | POLLOUT;
+				if (!ret && ep->ctrl)
 					ep->kato_countdown = ep->ctrl->kato;
-					continue;
-				}
-				print_info("ctrl %d qid %d handle msg error %d",
-					   ep->ctrl ? ep->ctrl->cntlid : -1,
-					   ep->qid, ret);
 			}
 		} else {
 			struct ep_qe *qe = cqe_data;
