@@ -96,7 +96,8 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize)
 	return 0;
 }
 
-static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep)
+static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
+						 int poll_flags)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -107,7 +108,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep)
 		return NULL;
 	}
 
-	io_uring_prep_poll_add(sqe, ep->sockfd, POLLIN);
+	io_uring_prep_poll_add(sqe, ep->sockfd, poll_flags);
 	io_uring_sqe_set_data(sqe, sqe);
 
 	ret = io_uring_submit(&ep->uring);
@@ -124,7 +125,7 @@ static void *endpoint_thread(void *arg)
 	struct endpoint *ep = arg;
 	struct io_uring_sqe *poll_sqe = NULL;
 	sigset_t set;
-	int ret;
+	int ret, poll_flags = POLLIN;
 
 	sigemptyset(&set);
 	sigaddset(&set, SIGPIPE);
@@ -142,7 +143,7 @@ static void *endpoint_thread(void *arg)
 		void *cqe_data;
 
 		if (!poll_sqe) {
-			poll_sqe = endpoint_submit_poll(ep);
+			poll_sqe = endpoint_submit_poll(ep, poll_flags);
 			if (!poll_sqe)
 				break;
 		}
@@ -158,10 +159,24 @@ static void *endpoint_thread(void *arg)
 		cqe_data = io_uring_cqe_get_data(cqe);
 		if (cqe_data == poll_sqe) {
 			poll_sqe = NULL;
+			ret = handle_rsp(ep);
+			if (ret > 0) {
+				if (poll_flags & POLLOUT) {
+					poll_flags = POLLIN;
+					continue;
+				}
+			} else if (ret < 0) {
+				print_err("ctrl %d qid %d handle rsp error %d",
+					  ep->ctrl ? ep->ctrl->cntlid : -1,
+					  ep->qid, ret);
+				break;
+			}
 			ret = ep->ops->read_msg(ep);
 			if (!ret) {
 				ret = ep->ops->handle_msg(ep);
 				if (!ret && ep->ctrl) {
+					if (!list_empty(&ep->qe_cq_list))
+						poll_flags = POLLIN | POLLOUT;
 					ep->kato_countdown = ep->ctrl->kato;
 					continue;
 				}
@@ -178,6 +193,10 @@ static void *endpoint_thread(void *arg)
 				ret = -EAGAIN;
 			}
 			ret = handle_data(ep, qe, cqe->res);
+		}
+		if (!list_empty(&ep->qe_cq_list)) {
+			poll_flags = POLLIN | POLLOUT;
+			continue;
 		}
 		if (ret == -EAGAIN)
 			if (--ep->kato_countdown > 0)
@@ -232,6 +251,7 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
+	INIT_LINKED_LIST(&ep->qe_cq_list);
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {
