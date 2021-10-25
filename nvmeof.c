@@ -15,9 +15,10 @@
 static int nvmf_discovery_genctr = 1;
 static int nvmf_ctrl_id = 1;
 
-static int handle_property_set(struct nvme_command *cmd, struct endpoint *ep)
+static int handle_property_set(struct endpoint *ep,
+			       struct nvme_command *cmd)
 {
-	int			 ret = 0;
+	int ret = 0;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_fabrics_type_property_set %x = %llx",
@@ -39,11 +40,10 @@ static int handle_property_set(struct nvme_command *cmd, struct endpoint *ep)
 	return ret;
 }
 
-static int handle_property_get(struct nvme_command *cmd,
-			       struct nvme_completion *resp,
-			       struct endpoint *ep)
+static int handle_property_get(struct endpoint *ep, struct nvme_command *cmd,
+			       struct nvme_completion *resp)
 {
-	u64			 value;
+	u64 value;
 
 	if (cmd->prop_get.offset == NVME_REG_CSTS)
 		value = ep->ctrl->csts;
@@ -614,10 +614,10 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
-			ret = handle_property_set(cmd, ep);
+			ret = handle_property_set(ep, cmd);
 			break;
 		case nvme_fabrics_type_property_get:
-			ret = handle_property_get(cmd, &qe->resp, ep);
+			ret = handle_property_get(ep, cmd, &qe->resp);
 			break;
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, cmd, len);
