@@ -349,40 +349,35 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_
 	return desc_len;
 }
 
-static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
-			   u64 len)
+static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
+			   struct nvme_command *cmd)
 {
 	int cns = cmd->identify.cns;
 	int nsid = le32toh(cmd->identify.nsid);
 	u16 cid = cmd->identify.command_id;
-	u8 *id_buf;
 	int ret = 0, id_len;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("cid %#x nvme_fabrics_identify cns %d len %llu",
-		    cid, cns, len);
+		    cid, cns, qe->data_len);
 #endif
-
-	id_buf = malloc(len);
-	if (!id_buf)
-		return NVME_SC_INTERNAL;
 
 	switch (cns) {
 	case NVME_ID_CNS_NS:
-		id_len = handle_identify_ns(ep, nsid, id_buf, len);
+		id_len = handle_identify_ns(ep, nsid, qe->data, qe->data_len);
 		break;
 	case NVME_ID_CNS_CTRL:
-		id_len = handle_identify_ctrl(ep, id_buf, len);
+		id_len = handle_identify_ctrl(ep, qe->data, qe->data_len);
 		break;
 	case NVME_ID_CNS_NS_ACTIVE_LIST:
-		id_len = handle_identify_active_ns(ep, id_buf, len);
+		id_len = handle_identify_active_ns(ep, qe->data, qe->data_len);
 		break;
 	case NVME_ID_CNS_NS_DESC_LIST:
-		id_len = handle_identify_ns_desc_list(ep, nsid, id_buf, len);
+		id_len = handle_identify_ns_desc_list(ep, nsid,
+						      qe->data, qe->data_len);
 		break;
 	default:
 		print_err("unexpected identify command cns %u", cns);
-		free(id_buf);
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
@@ -390,13 +385,14 @@ static int handle_identify(struct endpoint *ep, struct nvme_command *cmd,
 		return NVME_SC_INVALID_NS;
 
 	if (!ret) {
-		ret = ep->ops->rma_write(ep, id_buf, 0, id_len, cid, true);
+		qe->iovec.iov_len = id_len;
+		ret = ep->ops->rma_write(ep, qe->iovec.iov_base, 0,
+					 qe->iovec.iov_len, cid, true);
 		if (ret) {
 			print_errno("rma_write failed", ret);
 			ret = NVME_SC_WRITE_FAULT;
 		}
 	}
-	free(id_buf);
 	return ret;
 }
 
@@ -600,37 +596,38 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 {
-	struct nvme_completion resp;
+	struct nvme_completion *resp, _resp;
 	struct ep_qe *qe;
 	u32 len;
 	u16 ccid;
 	int ret;
 
-	memset(&resp, 0, sizeof(resp));
-
 	len = le32toh(cmd->common.dptr.sgl.length);
 	/* ccid is considered opaque; no endian conversion */
 	ccid = cmd->common.command_id;
-	resp.command_id = ccid;
 	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
 	if (!qe) {
+		resp = &_resp;
 		print_err("endpoint %d ccid %#x queue busy",
 			  ep->qid, ccid);
 		ret = NVME_SC_NS_NOT_READY;
 		goto out;
 	}
+	resp = &qe->resp;
+	memset(resp, 0, sizeof(qe->resp));
+	resp->command_id = qe->ccid;
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
 			ret = handle_property_set(cmd, ep);
 			break;
 		case nvme_fabrics_type_property_get:
-			ret = handle_property_get(cmd, &resp, ep);
+			ret = handle_property_get(cmd, &qe->resp, ep);
 			break;
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, cmd, len);
 			if (!ret)
-				resp.result.u16 = htole16(ep->ctrl->cntlid);
+				qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 			break;
 		default:
 			print_err("unknown fctype %d", cmd->fabrics.fctype);
@@ -647,7 +644,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			ret = NVME_SC_INVALID_OPCODE;
 		}
 	} else if (cmd->common.opcode == nvme_admin_identify)
-		ret = handle_identify(ep, cmd, len);
+		ret = handle_identify(ep, qe, cmd);
 	else if (cmd->common.opcode == nvme_admin_keep_alive) {
 #ifdef DEBUG_COMMANDS
 		print_debug("nvme_keep_alive ctrl %d qid %d",
@@ -657,7 +654,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	} else if (cmd->common.opcode == nvme_admin_get_log_page)
 		ret = handle_get_log_page(ep, cmd, len);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
-		ret = handle_set_features(ep, cmd, &resp);
+		ret = handle_set_features(ep, cmd, &qe->resp);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else {
@@ -668,12 +665,14 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	if (ret < 0)
 		/* Internal return; response is sent separately */
 		return 0;
-	ep->ops->release_tag(ep, qe);
 out:
 	if (ret)
-		resp.status = (NVME_SC_DNR | ret) << 1;
+		resp->status = (NVME_SC_DNR | ret) << 1;
 
-	return ep->ops->send_rsp(ep, &resp);
+	ret = ep->ops->send_rsp(ep, resp);
+	if (qe)
+		ep->ops->release_tag(ep, qe);
+	return ret;
 }
 
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res)
