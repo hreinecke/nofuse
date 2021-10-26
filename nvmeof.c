@@ -376,6 +376,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	if (id_len < 0)
 		return NVME_SC_INVALID_NS;
 
+	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = id_len;
 	qe->iovec_offset = 0;
 	qe->data_remaining = id_len;
@@ -490,6 +491,7 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 			  cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
+	qe->iovec.iov_base = qe->data;
 	qe->iovec_offset = 0;
 	qe->data_pos = 0;
 	qe->data_remaining = qe->iovec.iov_len;
@@ -526,6 +528,8 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 	}
 
 	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	qe->iovec.iov_base = qe->data;
+	qe->iovec.iov_len = qe->data_len;
 
 	print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x read pos %llu len %llu",
 		   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
@@ -554,6 +558,8 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 	}
 
 	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	qe->iovec.iov_base = qe->data;
+	qe->iovec.iov_len = qe->data_len;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */

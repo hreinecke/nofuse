@@ -89,10 +89,10 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 				}
 				qe->data_pos = pos;
 				qe->data_len = len;
-				qe->iovec.iov_base = qe->data;
-				qe->iovec.iov_len = len;
+				qe->iovec.iov_base = NULL;
+				qe->iovec.iov_len = 0;
 				qe->iovec_offset = 0;
-				qe->data_remaining = len;
+				qe->data_remaining = 0;
 			}
 			memcpy(&qe->pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
