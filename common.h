@@ -68,8 +68,8 @@ struct ep_qe {
 	void *data;
 	u64 data_len;
 	u64 data_pos;
-	u64 offset;
-	u64 remaining;
+	u64 data_remaining;
+	u64 iovec_offset;
 	int ccid;
 	int opcode;
 	bool busy;
@@ -86,6 +86,7 @@ struct endpoint {
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
+	int send_pdu_len;
 	struct linked_list qe_cq_list;
 	int qsize;
 	int state;

@@ -378,8 +378,11 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 
 	if (!ret) {
 		qe->iovec.iov_len = id_len;
-		ret = ep->ops->rma_write(ep, qe->iovec.iov_base, 0,
-					 qe->iovec.iov_len, cid, true);
+		qe->iovec_offset = 0;
+		qe->data_remaining = id_len;
+		qe->data_pos = 0;
+		ep->send_pdu_len = 0;
+		ret = ep->ops->rma_write(ep, qe, true);
 		if (ret) {
 			print_errno("rma_write failed", ret);
 			ret = NVME_SC_WRITE_FAULT;
@@ -489,8 +492,11 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 			  cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
-	ret = ep->ops->rma_write(ep, qe->iovec.iov_base, qe->data_pos,
-				 qe->iovec.iov_len, qe->ccid, true);
+	qe->iovec_offset = 0;
+	qe->data_pos = 0;
+	qe->data_remaining = qe->iovec.iov_len;
+	ep->send_pdu_len = 0;
+	ret = ep->ops->rma_write(ep, qe, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;

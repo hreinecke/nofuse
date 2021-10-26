@@ -22,8 +22,7 @@ int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 {
 	int ret;
 
-	ret = ep->ops->rma_write(ep, qe->iovec.iov_base, 0,
-				 qe->iovec.iov_len, qe->ccid, true);
+	ret = ep->ops->rma_write(ep, qe, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;

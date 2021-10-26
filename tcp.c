@@ -82,7 +82,6 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 			qe->busy = true;
 			qe->ccid = ccid;
 			if (len) {
-				qe->offset = 0;
 				qe->data = malloc(len);
 				if (!qe->data) {
 					print_err("Error allocating iovec base");
@@ -92,7 +91,8 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 				qe->data_len = len;
 				qe->iovec.iov_base = qe->data;
 				qe->iovec.iov_len = len;
-				qe->remaining = len;
+				qe->iovec_offset = 0;
+				qe->data_remaining = len;
 			}
 			memcpy(&qe->pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
@@ -325,46 +325,73 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 	return 0;
 }
 
-static int tcp_rma_write(struct endpoint *ep, void *buf, u32 _offset, u32 _len,
-			 u16 cid, bool last)
+static int tcp_rma_write(struct endpoint *ep, struct ep_qe *qe, bool last)
 {
 	int len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
-	print_info("ctrl %d qid %d write cid %x offset %u len %u",
+	print_info("ctrl %d qid %d write cid %x offset %llu len %lu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   cid, _offset, _len);
+		   qe->ccid, qe->data_pos, qe->iovec.iov_len);
 
-	memset(pdu, 0, sizeof(*pdu));
-	pdu->hdr.type = nvme_tcp_c2h_data;
-	pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
-	pdu->hdr.pdo = 0;
-	pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
-	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) + _len);
-	pdu->data_offset = htole32(_offset);
-	pdu->data_length = htole32(_len);
-	pdu->command_id = cid;
-
-	len = write(ep->sockfd, pdu, sizeof(struct nvme_tcp_data_pdu));
-	if (len < 0) {
-		print_err("header write returned %d", errno);
-		return -errno;
+	if (ep->send_pdu_len == 0) {
+		memset(pdu, 0, sizeof(*pdu));
+		pdu->hdr.type = nvme_tcp_c2h_data;
+		pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
+		pdu->hdr.pdo = 0;
+		pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
+		pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) +
+					qe->iovec.iov_len);
+		pdu->data_offset = htole32(qe->data_pos);
+		pdu->data_length = htole32(qe->iovec.iov_len);
+		pdu->command_id = qe->ccid;
+		print_info("c2h hdr init %u/%u bytes",
+			   pdu->hdr.hlen, pdu->hdr.plen);
 	}
-	if (len != sizeof(struct nvme_tcp_data_pdu)) {
+	if (ep->send_pdu_len < pdu->hdr.hlen) {
+		u8 *data = (u8 *)pdu + ep->send_pdu_len;
+		u64 data_len = pdu->hdr.hlen - ep->send_pdu_len;
+
+		len = write(ep->sockfd, data, data_len);
+		if (len < 0) {
+			print_err("c2h hdr write returned %d", errno);
+			return -errno;
+		}
+		if (len == 0) {
+			print_err("c2h hdr write connection closed");
+			return -ENODATA;
+		}
+		ep->send_pdu_len += len;
+		print_info("c2h hdr wrote %d bytes", len);
+	}
+	if (ep->send_pdu_len < pdu->hdr.hlen) {
 		print_err("short header write, %d bytes missing",
-			  (int)sizeof(pdu) - len);
+			  (int)pdu->hdr.hlen - ep->send_pdu_len);
 		return -EAGAIN;
 	}
+	if (qe->iovec.iov_len) {
+		u8 *data = qe->iovec.iov_base;
 
-	len = write(ep->sockfd, buf, _len);
-	if (len < 0) {
-		print_err("data write returned %d", errno);
-		return -errno;
-	}
-	if (len != _len) {
-		print_err("short data write, %d bytes missing",
-			  (int)_len - len);
-		return -EAGAIN;
+		len = write(ep->sockfd, data, qe->iovec.iov_len);
+		if (len < 0) {
+			print_err("c2h data write returned %d", errno);
+			return -errno;
+		}
+		if (len == 0) {
+			print_err("c2h data write connection closed");
+			return -ENODATA;
+		}
+		qe->data_remaining -= len;
+		data += len;
+		qe->iovec.iov_base = data;
+		qe->iovec.iov_len -= len;
+		qe->iovec_offset += len;
+		if (qe->iovec.iov_len) {
+			print_err("c2h short data write, %u bytes missing",
+				  (unsigned int)qe->iovec.iov_len);
+			return -EAGAIN;
+		}
+		print_info("c2h data wrote %d bytes", len);
 	}
 
 	return 0;
@@ -384,9 +411,10 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 		return -EINVAL;
 	}
 
-	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %llu len %llu",
+	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %llu len %lu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   qe->ccid, qe->tag, qe->offset, qe->remaining);
+		   qe->ccid, qe->tag, qe->iovec_offset,
+		   qe->iovec.iov_len);
 
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_r2t;
@@ -396,8 +424,8 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_r2t_pdu));
 	pdu->ttag = qe->tag;
 	pdu->command_id = qe->ccid;
-	pdu->r2t_offset = htole32(qe->offset);
-	pdu->r2t_length = htole32(qe->remaining);
+	pdu->r2t_offset = htole32(qe->iovec_offset);
+	pdu->r2t_length = htole32(qe->iovec.iov_len);
 
 	memcpy(&qe->pdu, pdu, sizeof(*pdu));
 
@@ -495,6 +523,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	u16 ttag = le16toh(pdu->data.ttag);
 	u32 data_offset = le32toh(pdu->data.data_offset);
 	u32 data_len = le32toh(pdu->data.data_length);
+	u8 *data;
 	struct ep_qe *qe;
 	int ret;
 	struct nvme_completion resp;
@@ -509,18 +538,18 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 				offset_of(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
-	if (data_offset != qe->offset) {
+	if (data_offset != qe->iovec_offset) {
 		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %llu",
 			  ep->ctrl->cntlid, ep->qid,
-			  data_offset, qe->offset);
+			  data_offset, qe->iovec_offset);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 				offset_of(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
-	if (data_len > qe->remaining) {
+	if (data_len > qe->iovec.iov_len) {
 		print_err("ctrl %d qid %d h2c len overflow, is %u exp %llu",
 			  ep->ctrl->cntlid, ep->qid,
-			  data_len, qe->remaining);
+			  data_len, qe->data_remaining);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 				offset_of(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
@@ -533,9 +562,13 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		ret = NVME_SC_SGL_INVALID_DATA;
 		goto out_rsp;
 	}
-	qe->remaining -= data_len;
-	qe->offset += data_len;
-	if (!qe->remaining) {
+	qe->data_remaining -= ret;
+	qe->iovec_offset += ret;
+	data = qe->iovec.iov_base;
+	data += ret;
+	qe->iovec.iov_base = data;
+	qe->iovec.iov_len -= ret;
+	if (!qe->data_remaining) {
 		ret = 0;
 		goto out_rsp;
 	}
