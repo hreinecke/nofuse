@@ -677,8 +677,12 @@ int handle_rsp(struct endpoint *ep)
 		list_del(&qe->node);
 		ret = ep->ops->send_rsp(ep, &qe->resp);
 		ep->ops->release_tag(ep, qe);
-		if (ret < 0)
+		if (ret < 0) {
+			print_err("ctrl %d qid %d handle rsp error %d",
+				  ep->ctrl ? ep->ctrl->cntlid : -1,
+				  ep->qid, ret);
 			return ret;
+		}
 		num_rsp++;
 	}
 	return num_rsp;

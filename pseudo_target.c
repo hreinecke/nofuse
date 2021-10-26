@@ -162,9 +162,8 @@ static void *endpoint_thread(void *arg)
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
-		if (cqe_data == pollin_sqe) {
+		if (cqe_data == pollin_sqe || cqe_data == pollout_sqe) {
 			ret = cqe->res;
-			pollin_sqe = NULL;
 			if (ret < 0) {
 				print_err("ctrl %d qid %d poll error %d",
 					  ep->ctrl ? ep->ctrl->cntlid : -1,
@@ -178,34 +177,19 @@ static void *endpoint_thread(void *arg)
 					   ep->qid);
 				break;
 			}
-			ret = ep->ops->read_msg(ep);
-			if (!ret) {
-				ret = ep->ops->handle_msg(ep);
-				if (!ret && ep->ctrl)
-					ep->kato_countdown = ep->ctrl->kato;
-			}
-		} else if (cqe_data == pollout_sqe) {
-			ret = cqe->res;
-			pollout_sqe = NULL;
-			if (ret < 0) {
-				print_err("ctrl %d qid %d poll error %d",
-					  ep->ctrl ? ep->ctrl->cntlid : -1,
-					  ep->qid, ret);
-				break;
-			}
-			if (ret & POLLERR) {
-				ret = -ENODATA;
-				print_info("ctrl %d qid %d poll conn closed",
-					   ep->ctrl ? ep->ctrl->cntlid : -1,
-					   ep->qid);
-				break;
-			}
-			ret = handle_rsp(ep);
-			if (ret < 0) {
-				print_err("ctrl %d qid %d handle rsp error %d",
-					  ep->ctrl ? ep->ctrl->cntlid : -1,
-					  ep->qid, ret);
-				break;
+			if (cqe_data == pollin_sqe) {
+				pollin_sqe = NULL;
+				ret = ep->ops->read_msg(ep);
+				if (!ret) {
+					ret = ep->ops->handle_msg(ep);
+					if (!ret && ep->ctrl)
+						ep->kato_countdown = ep->ctrl->kato;
+				}
+			} else {
+				pollout_sqe = NULL;
+				ret = handle_rsp(ep);
+				if (ret < 0)
+					break;
 			}
 		} else {
 			struct ep_qe *qe = cqe_data;
