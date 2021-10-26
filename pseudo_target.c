@@ -158,7 +158,21 @@ static void *endpoint_thread(void *arg)
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
 		if (cqe_data == poll_sqe) {
+			ret = cqe->res;
 			poll_sqe = NULL;
+			if (ret < 0) {
+				print_err("ctrl %d qid %d poll error %d",
+					  ep->ctrl ? ep->ctrl->cntlid : -1,
+					  ep->qid, ret);
+				break;
+			}
+			if (ret & POLLERR) {
+				ret = -ENODATA;
+				print_info("ctrl %d qid %d poll conn closed",
+					   ep->ctrl ? ep->ctrl->cntlid : -1,
+					   ep->qid);
+				break;
+			}
 			ret = handle_rsp(ep);
 			if (ret > 0) {
 				if (poll_flags & POLLOUT) {
