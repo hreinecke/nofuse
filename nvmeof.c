@@ -347,7 +347,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	int cns = cmd->identify.cns;
 	int nsid = le32toh(cmd->identify.nsid);
 	u16 cid = cmd->identify.command_id;
-	int ret = 0, id_len;
+	int ret, id_len;
 
 #ifdef DEBUG_COMMANDS
 	print_debug("cid %#x nvme_fabrics_identify cns %d len %llu",
@@ -376,17 +376,15 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	if (id_len < 0)
 		return NVME_SC_INVALID_NS;
 
-	if (!ret) {
-		qe->iovec.iov_len = id_len;
-		qe->iovec_offset = 0;
-		qe->data_remaining = id_len;
-		qe->data_pos = 0;
-		ep->send_pdu_len = 0;
-		ret = ep->ops->rma_write(ep, qe, true);
-		if (ret) {
-			print_errno("rma_write failed", ret);
-			ret = NVME_SC_WRITE_FAULT;
-		}
+	qe->iovec.iov_len = id_len;
+	qe->iovec_offset = 0;
+	qe->data_remaining = id_len;
+	qe->data_pos = 0;
+	ep->send_pdu_len = 0;
+	ret = ep->ops->rma_write(ep, qe, true);
+	if (ret) {
+		print_errno("rma_write failed", ret);
+		ret = NVME_SC_WRITE_FAULT;
 	}
 	return ret;
 }
