@@ -123,9 +123,9 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 static void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
-	struct io_uring_sqe *poll_sqe = NULL;
+	struct io_uring_sqe *pollin_sqe = NULL, *pollout_sqe = NULL;
 	sigset_t set;
-	int ret, poll_flags = POLLIN;
+	int ret;
 
 	sigemptyset(&set);
 	sigaddset(&set, SIGPIPE);
@@ -142,9 +142,14 @@ static void *endpoint_thread(void *arg)
 		struct io_uring_cqe *cqe;
 		void *cqe_data;
 
-		if (!poll_sqe) {
-			poll_sqe = endpoint_submit_poll(ep, poll_flags);
-			if (!poll_sqe)
+		if (!pollin_sqe) {
+			pollin_sqe = endpoint_submit_poll(ep, POLLIN);
+			if (!pollin_sqe)
+				break;
+		}
+		if (!pollout_sqe && !list_empty(&ep->qe_cq_list)) {
+			pollout_sqe = endpoint_submit_poll(ep, POLLOUT);
+			if (!pollout_sqe)
 				break;
 		}
 
@@ -157,9 +162,31 @@ static void *endpoint_thread(void *arg)
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
-		if (cqe_data == poll_sqe) {
+		if (cqe_data == pollin_sqe) {
 			ret = cqe->res;
-			poll_sqe = NULL;
+			pollin_sqe = NULL;
+			if (ret < 0) {
+				print_err("ctrl %d qid %d poll error %d",
+					  ep->ctrl ? ep->ctrl->cntlid : -1,
+					  ep->qid, ret);
+				break;
+			}
+			if (ret & POLLERR) {
+				ret = -ENODATA;
+				print_info("ctrl %d qid %d poll conn closed",
+					   ep->ctrl ? ep->ctrl->cntlid : -1,
+					   ep->qid);
+				break;
+			}
+			ret = ep->ops->read_msg(ep);
+			if (!ret) {
+				ret = ep->ops->handle_msg(ep);
+				if (!ret && ep->ctrl)
+					ep->kato_countdown = ep->ctrl->kato;
+			}
+		} else if (cqe_data == pollout_sqe) {
+			ret = cqe->res;
+			pollout_sqe = NULL;
 			if (ret < 0) {
 				print_err("ctrl %d qid %d poll error %d",
 					  ep->ctrl ? ep->ctrl->cntlid : -1,
@@ -174,22 +201,11 @@ static void *endpoint_thread(void *arg)
 				break;
 			}
 			ret = handle_rsp(ep);
-			if (ret > 0) {
-				if (poll_flags & POLLOUT) {
-					poll_flags = POLLIN;
-					continue;
-				}
-			} else if (ret < 0) {
+			if (ret < 0) {
 				print_err("ctrl %d qid %d handle rsp error %d",
 					  ep->ctrl ? ep->ctrl->cntlid : -1,
 					  ep->qid, ret);
 				break;
-			}
-			ret = ep->ops->read_msg(ep);
-			if (!ret) {
-				ret = ep->ops->handle_msg(ep);
-				if (!ret && ep->ctrl)
-					ep->kato_countdown = ep->ctrl->kato;
 			}
 		} else {
 			struct ep_qe *qe = cqe_data;
@@ -200,10 +216,6 @@ static void *endpoint_thread(void *arg)
 				ret = -EAGAIN;
 			}
 			ret = handle_data(ep, qe, cqe->res);
-		}
-		if (!list_empty(&ep->qe_cq_list)) {
-			poll_flags = POLLIN | POLLOUT;
-			continue;
 		}
 		if (ret == -EAGAIN)
 			if (--ep->kato_countdown > 0)
