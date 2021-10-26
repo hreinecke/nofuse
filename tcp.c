@@ -526,7 +526,6 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	u8 *data;
 	struct ep_qe *qe;
 	int ret;
-	struct nvme_completion resp;
 
 	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
 		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
@@ -575,11 +574,11 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 
 	return tcp_send_r2t(ep, qe->tag);
 out_rsp:
-	memset(&resp, 0, sizeof(resp));
-	resp.command_id = pdu->data.command_id;
+	memset(&qe->resp, 0, sizeof(qe->resp));
+	qe->resp.command_id = pdu->data.command_id;
 	if (ret)
-		resp.status = (NVME_SC_DNR | ret) << 1;
-	return tcp_send_rsp(ep, &resp);
+		qe->resp.status = (NVME_SC_DNR | ret) << 1;
+	return tcp_send_rsp(ep, &qe->resp);
 }
 
 static int tcp_read_msg(struct endpoint *ep)
