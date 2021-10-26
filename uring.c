@@ -62,7 +62,6 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 	int status = 0;
 	u16 ccid = qe->ccid, tag = qe->tag;
 	int cntlid = ep->ctrl ? ep->ctrl->cntlid : -1;
-	struct nvme_completion resp;
 
 	print_info("ctrl %d qid %d tag %#x ccid %#x handle qe res %d",
 		   cntlid, ep->qid, tag, ccid, res);
@@ -101,11 +100,11 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 	}
 out_rsp:
 	ep->ops->release_tag(ep, qe);
-	memset(&resp, 0, sizeof(resp));
-	resp.command_id = ccid;
+	memset(&qe->resp, 0, sizeof(qe->resp));
+	qe->resp.command_id = ccid;
 	if (status)
-		resp.status = (NVME_SC_DNR | status) << 1;
-	return ep->ops->send_rsp(ep, &resp);
+		qe->resp.status = (NVME_SC_DNR | status) << 1;
+	return ep->ops->send_rsp(ep, &qe->resp);
 }
 
 static struct ns_ops uring_ops = {
