@@ -14,7 +14,6 @@
 
 int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
 {
-	ep->ops->release_tag(ep, qe);
 	return 0;
 }
 
@@ -22,12 +21,12 @@ int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 {
 	int ret;
 
+	ep->send_pdu_len = 0;
 	ret = ep->ops->rma_write(ep, qe, true);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
-	ep->ops->release_tag(ep, qe);
 	return ret;
 }
 
