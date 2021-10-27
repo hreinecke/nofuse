@@ -327,7 +327,7 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 
 static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 {
-	int len;
+	int len, send_pdu_len = 0;
 	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
@@ -348,10 +348,9 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	print_info("c2h hdr init %u/%u bytes",
 		   pdu->hdr.hlen, pdu->hdr.plen);
 
-	ep->send_pdu_len = 0;
-	while (ep->send_pdu_len < pdu->hdr.hlen) {
-		u8 *data = (u8 *)pdu + ep->send_pdu_len;
-		u64 data_len = pdu->hdr.hlen - ep->send_pdu_len;
+	while (send_pdu_len < pdu->hdr.hlen) {
+		u8 *data = (u8 *)pdu + send_pdu_len;
+		u64 data_len = pdu->hdr.hlen - send_pdu_len;
 
 		len = write(ep->sockfd, data, data_len);
 		if (len < 0) {
@@ -362,7 +361,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 			print_err("c2h hdr write connection closed");
 			return -ENODATA;
 		}
-		ep->send_pdu_len += len;
+		send_pdu_len += len;
 		print_info("c2h hdr wrote %d bytes", len);
 	}
 	while (qe->iovec.iov_len) {

@@ -86,7 +86,6 @@ struct endpoint {
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
-	int send_pdu_len;
 	struct linked_list qe_cq_list;
 	int qsize;
 	int state;
