@@ -655,32 +655,12 @@ out:
 	if (ret)
 		resp->status = (NVME_SC_DNR | ret) << 1;
 
-	list_add(&qe->node, &ep->qe_cq_list);
+	ret = ep->ops->send_rsp(ep, resp);
+	ep->ops->release_tag(ep, qe);
 	return ret;
 }
 
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res)
 {
 	return qe->ns->ops->ns_handle_qe(ep, qe, res);
-}
-
-int handle_rsp(struct endpoint *ep)
-{
-	struct ep_qe *qe, *_qe;
-	int num_rsp = 0;
-	int ret;
-
-	list_for_each_entry_safe(qe, _qe, &ep->qe_cq_list, node) {
-		list_del(&qe->node);
-		ret = ep->ops->send_rsp(ep, &qe->resp);
-		ep->ops->release_tag(ep, qe);
-		if (ret < 0) {
-			print_err("ctrl %d qid %d handle rsp error %d",
-				  ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret);
-			return ret;
-		}
-		num_rsp++;
-	}
-	return num_rsp;
 }

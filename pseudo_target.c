@@ -123,7 +123,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 static void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
-	struct io_uring_sqe *pollin_sqe = NULL, *pollout_sqe = NULL;
+	struct io_uring_sqe *pollin_sqe = NULL;
 	sigset_t set;
 	int ret;
 
@@ -147,11 +147,6 @@ static void *endpoint_thread(void *arg)
 			if (!pollin_sqe)
 				break;
 		}
-		if (!pollout_sqe && !list_empty(&ep->qe_cq_list)) {
-			pollout_sqe = endpoint_submit_poll(ep, POLLOUT);
-			if (!pollout_sqe)
-				break;
-		}
 
 		ret = io_uring_wait_cqe(&ep->uring, &cqe);
 		if (ret < 0) {
@@ -162,7 +157,7 @@ static void *endpoint_thread(void *arg)
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
-		if (cqe_data == pollin_sqe || cqe_data == pollout_sqe) {
+		if (cqe_data == pollin_sqe) {
 			ret = cqe->res;
 			if (ret < 0) {
 				print_err("ctrl %d qid %d poll error %d",
@@ -177,19 +172,12 @@ static void *endpoint_thread(void *arg)
 					   ep->qid);
 				break;
 			}
-			if (cqe_data == pollin_sqe) {
-				pollin_sqe = NULL;
-				ret = ep->ops->read_msg(ep);
-				if (!ret) {
-					ret = ep->ops->handle_msg(ep);
-					if (!ret && ep->ctrl)
-						ep->kato_countdown = ep->ctrl->kato;
-				}
-			} else {
-				pollout_sqe = NULL;
-				ret = handle_rsp(ep);
-				if (ret < 0)
-					break;
+			pollin_sqe = NULL;
+			ret = ep->ops->read_msg(ep);
+			if (!ret) {
+				ret = ep->ops->handle_msg(ep);
+				if (!ret && ep->ctrl)
+					ep->kato_countdown = ep->ctrl->kato;
 			}
 		} else {
 			struct ep_qe *qe = cqe_data;
@@ -254,7 +242,6 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
-	INIT_LINKED_LIST(&ep->qe_cq_list);
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {

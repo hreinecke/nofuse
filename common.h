@@ -86,7 +86,6 @@ struct endpoint {
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
-	struct linked_list qe_cq_list;
 	int qsize;
 	int state;
 	int qid;
@@ -149,7 +148,6 @@ extern struct linked_list iface_linked_list;
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
-int handle_rsp(struct endpoint *ep);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
