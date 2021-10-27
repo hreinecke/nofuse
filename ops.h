@@ -16,7 +16,7 @@ struct xp_ops {
 	struct ep_qe *(*get_tag)(struct endpoint *ep, u16 tag);
 	void (*release_tag)(struct endpoint *ep, struct ep_qe *qe);
 	int (*rma_read)(struct endpoint *ep, void *buf, u64 len);
-	int (*rma_write)(struct endpoint *ep, struct ep_qe *qe);
+	int (*rma_write)(struct endpoint *ep, struct ep_qe *qe, u64 len);
 	int (*prep_rma_read)(struct endpoint *ep, u16 ttag);
 	int (*send_rsp)(struct endpoint *ep, struct nvme_completion *comp);
 	int (*read_msg)(struct endpoint *ep);

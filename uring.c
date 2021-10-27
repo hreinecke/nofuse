@@ -88,8 +88,7 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 	if (qe->opcode == nvme_cmd_read) {
 		int ret;
 
-		ep->send_pdu_len = 0;
-		ret = ep->ops->rma_write(ep, qe);
+		ret = ep->ops->rma_write(ep, qe, qe->data_len);
 		if (ret < 0)
 			status = NVME_SC_DATA_XFER_ERROR;
 	} else if (res != qe->iovec.iov_len) {

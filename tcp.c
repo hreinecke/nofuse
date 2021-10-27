@@ -331,7 +331,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
-	print_info("ctrl %d qid %d write cid %x offset %llu len %lu",
+	print_info("ctrl %d qid %d c2h data cid %x offset %llu len %lu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   qe->ccid, qe->data_pos, qe->iovec.iov_len);
 
@@ -643,6 +643,19 @@ int tcp_handle_msg(struct endpoint *ep)
 	return handle_request(ep, &pdu->cmd.cmd);
 }
 
+static int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len)
+{
+	print_info("ctrl %d qid %d write cid %x offset %llu len %llu",
+		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		   qe->ccid, qe->data_pos, data_len);
+
+	qe->data_remaining = data_len;
+	qe->iovec.iov_base = qe->data;
+	qe->iovec.iov_len = data_len;
+	qe->iovec_offset = 0;
+	return tcp_send_c2h_data(ep, qe);
+}
+
 static struct xp_ops tcp_ops = {
 	.create_endpoint	= tcp_create_endpoint,
 	.destroy_endpoint	= tcp_destroy_endpoint,
@@ -654,7 +667,7 @@ static struct xp_ops tcp_ops = {
 	.get_tag		= tcp_get_tag,
 	.release_tag		= tcp_release_tag,
 	.rma_read		= tcp_rma_read,
-	.rma_write		= tcp_send_c2h_data,
+	.rma_write		= tcp_send_data,
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
 	.read_msg		= tcp_read_msg,
