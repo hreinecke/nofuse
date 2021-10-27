@@ -15,7 +15,7 @@
 static int nvmf_discovery_genctr = 1;
 static int nvmf_ctrl_id = 1;
 
-static int handle_property_set(struct endpoint *ep,
+static int handle_property_set(struct endpoint *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	int ret = 0;
@@ -40,8 +40,8 @@ static int handle_property_set(struct endpoint *ep,
 	return ret;
 }
 
-static int handle_property_get(struct endpoint *ep, struct nvme_command *cmd,
-			       struct nvme_completion *resp)
+static int handle_property_get(struct endpoint *ep, struct ep_qe *qe,
+			       struct nvme_command *cmd)
 {
 	u64 value;
 
@@ -65,13 +65,13 @@ static int handle_property_get(struct endpoint *ep, struct nvme_command *cmd,
 	print_debug("nvme_fabrics_type_property_get %x: %llx",
 		    cmd->prop_get.offset, value);
 #endif
-	resp->result.u64 = htole64(value);
+	qe->resp.result.u64 = htole64(value);
 
 	return 0;
 }
 
-static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
-			       struct nvme_completion *resp)
+static int handle_set_features(struct endpoint *ep, struct ep_qe *qe,
+			       struct nvme_command *cmd)
 {
 	u32 cdw10 = le32toh(cmd->common.cdw10);
 	u32 cdw11 = le32toh(cmd->common.cdw11);
@@ -93,8 +93,8 @@ static int handle_set_features(struct endpoint *ep, struct nvme_command *cmd,
 		if (nsqr < ep->ctrl->max_endpoints) {
 			ep->ctrl->max_endpoints = nsqr;
 		}
-		resp->result.u32 = htole32(ep->ctrl->max_endpoints << 16 |
-					   ep->ctrl->max_endpoints);
+		qe->resp.result.u32 = htole32(ep->ctrl->max_endpoints << 16 |
+					      ep->ctrl->max_endpoints);
 		break;
 	case NVME_FEAT_ASYNC_EVENT:
 		ep->ctrl->aen_mask = cdw11;
@@ -611,10 +611,10 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
-			ret = handle_property_set(ep, cmd);
+			ret = handle_property_set(ep, qe, cmd);
 			break;
 		case nvme_fabrics_type_property_get:
-			ret = handle_property_get(ep, cmd, &qe->resp);
+			ret = handle_property_get(ep, qe, cmd);
 			break;
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, qe, cmd);
@@ -644,7 +644,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	} else if (cmd->common.opcode == nvme_admin_get_log_page)
 		ret = handle_get_log_page(ep, qe, cmd);
 	else if (cmd->common.opcode == nvme_admin_set_features) {
-		ret = handle_set_features(ep, cmd, &qe->resp);
+		ret = handle_set_features(ep, qe, cmd);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else {
