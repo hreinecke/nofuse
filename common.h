@@ -95,6 +95,7 @@ struct endpoint {
 	int sockfd;
 	int maxr2t;
 	int maxh2cdata;
+	int mdts;
 };
 
 struct ctrl_conn {

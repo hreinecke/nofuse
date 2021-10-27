@@ -331,10 +331,16 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
-	print_info("ctrl %d qid %d c2h data cid %x offset %llu len %lu",
+	print_info("ctrl %d qid %d c2h data cid %x offset %llu len %lu/%llu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   qe->ccid, qe->data_pos, qe->iovec.iov_len);
+		   qe->ccid, qe->data_pos, qe->iovec.iov_len,
+		   qe->data_remaining);
 
+	if (!qe->data_remaining) {
+		print_err("Nothing to send, %lu bytes left",
+			  qe->iovec.iov_len);
+		return 0;
+	}
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_c2h_data;
 	pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
@@ -650,9 +656,18 @@ static int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len)
 
 	qe->data_remaining = data_len;
 	qe->iovec.iov_base = qe->data;
-	qe->iovec.iov_len = data_len;
+	qe->iovec.iov_len = (ep->mdts && data_len > ep->mdts) ?
+		ep->mdts : data_len;
 	qe->iovec_offset = 0;
-	return tcp_send_c2h_data(ep, qe);
+	while (qe->data_remaining) {
+		int ret = tcp_send_c2h_data(ep, qe);
+		if (ret < 0)
+			return ret;
+		data_len = qe->data_remaining;
+		qe->iovec.iov_len = (ep->mdts && data_len > ep->mdts) ?
+			ep->mdts : data_len;
+	}
+	return 0;
 }
 
 static struct xp_ops tcp_ops = {
