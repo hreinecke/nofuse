@@ -97,6 +97,7 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 			memcpy(&qe->pdu, pdu,
 			       sizeof(union nvme_tcp_pdu));
 			memset(&qe->resp, 0, sizeof(qe->resp));
+			qe->resp.command_id = 0xffff;
 			print_info("endpoint %d acquire tag %#x",
 				   ep->qid, qe->tag);
 			return qe;
