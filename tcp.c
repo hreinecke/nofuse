@@ -571,9 +571,7 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	return tcp_send_r2t(ep, qe->tag);
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
-	qe->resp.command_id = pdu->data.command_id;
-	if (ret)
-		qe->resp.status = (NVME_SC_DNR | ret) << 1;
+	set_response(&qe->resp, qe->ccid, ret, true);
 	return tcp_send_rsp(ep, &qe->resp);
 }
 

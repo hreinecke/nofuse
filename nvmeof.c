@@ -656,8 +656,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		/* Internal return; response is sent separately */
 		return 0;
 out:
-	if (ret)
-		resp->status = (NVME_SC_DNR | ret) << 1;
+	set_response(resp, ccid, ret, true);
 
 	ret = ep->ops->send_rsp(ep, resp);
 	ep->ops->release_tag(ep, qe);

@@ -59,7 +59,7 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 
 static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 {
-	int status = 0;
+	int status = 0, ret;
 	u16 ccid = qe->ccid, tag = qe->tag;
 	int cntlid = ep->ctrl ? ep->ctrl->cntlid : -1;
 
@@ -96,12 +96,11 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 			return 0;
 	}
 out_rsp:
-	ep->ops->release_tag(ep, qe);
 	memset(&qe->resp, 0, sizeof(qe->resp));
-	qe->resp.command_id = ccid;
-	if (status)
-		qe->resp.status = (NVME_SC_DNR | status) << 1;
-	return ep->ops->send_rsp(ep, &qe->resp);
+	set_response(&qe->resp, ccid, status, true);
+	ret = ep->ops->send_rsp(ep, &qe->resp);
+	ep->ops->release_tag(ep, qe);
+	return ret;
 }
 
 static struct ns_ops uring_ops = {

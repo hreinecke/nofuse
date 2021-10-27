@@ -146,6 +146,15 @@ struct subsystem {
 extern struct linked_list subsys_linked_list;
 extern struct linked_list iface_linked_list;
 
+static inline void set_response(struct nvme_completion *resp,
+				u16 ccid, u16 status, bool dnr)
+{
+	if (!status)
+		dnr = false;
+	resp->command_id = ccid;
+	resp->status = ((dnr ? NVME_SC_DNR : 0) | status) << 1;
+}
+
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
