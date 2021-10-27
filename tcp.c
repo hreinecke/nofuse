@@ -343,7 +343,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	}
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_c2h_data;
-	pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
+	pdu->hdr.flags = last ? (NVME_TCP_F_DATA_LAST | NVME_TCP_F_DATA_SUCCESS) : 0;
 	pdu->hdr.pdo = 0;
 	pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
 	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) +
@@ -661,12 +661,15 @@ static int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len)
 	qe->iovec_offset = 0;
 	while (qe->data_remaining) {
 		int ret = tcp_send_c2h_data(ep, qe);
-		if (ret < 0)
+		if (ret < 0) {
+			ep->ops->release_tag(ep, qe);
 			return ret;
+		}
 		data_len = qe->data_remaining;
 		qe->iovec.iov_len = (ep->mdts && data_len > ep->mdts) ?
 			ep->mdts : data_len;
 	}
+	ep->ops->release_tag(ep, qe);
 	return 0;
 }
 

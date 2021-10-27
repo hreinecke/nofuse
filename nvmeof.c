@@ -378,7 +378,9 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 
 	qe->data_pos = 0;
 	ret = ep->ops->rma_write(ep, qe, id_len);
-	if (ret) {
+	if (!ret)
+		ret = -1;
+	else {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
@@ -488,10 +490,12 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_FIELD;
 	}
 	ret = ep->ops->rma_write(ep, qe, log_len);
-	if (ret) {
+	if (!ret)
+		ret = -1;
+	else {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
-}
+	}
 	return ret;
 }
 
