@@ -22,7 +22,7 @@ int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 	int ret;
 
 	ep->send_pdu_len = 0;
-	ret = ep->ops->rma_write(ep, qe, true);
+	ret = ep->ops->rma_write(ep, qe);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;

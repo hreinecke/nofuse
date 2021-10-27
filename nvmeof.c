@@ -382,7 +382,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	qe->data_remaining = id_len;
 	qe->data_pos = 0;
 	ep->send_pdu_len = 0;
-	ret = ep->ops->rma_write(ep, qe, true);
+	ret = ep->ops->rma_write(ep, qe);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
@@ -496,7 +496,7 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 	qe->data_pos = 0;
 	qe->data_remaining = qe->iovec.iov_len;
 	ep->send_pdu_len = 0;
-	ret = ep->ops->rma_write(ep, qe, true);
+	ret = ep->ops->rma_write(ep, qe);
 	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;

@@ -325,30 +325,31 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 	return 0;
 }
 
-static int tcp_rma_write(struct endpoint *ep, struct ep_qe *qe, bool last)
+static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 {
 	int len;
+	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
 	print_info("ctrl %d qid %d write cid %x offset %llu len %lu",
 		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		   qe->ccid, qe->data_pos, qe->iovec.iov_len);
 
-	if (ep->send_pdu_len == 0) {
-		memset(pdu, 0, sizeof(*pdu));
-		pdu->hdr.type = nvme_tcp_c2h_data;
-		pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
-		pdu->hdr.pdo = 0;
-		pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
-		pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) +
-					qe->iovec.iov_len);
-		pdu->data_offset = htole32(qe->data_pos);
-		pdu->data_length = htole32(qe->iovec.iov_len);
-		pdu->command_id = qe->ccid;
-		print_info("c2h hdr init %u/%u bytes",
-			   pdu->hdr.hlen, pdu->hdr.plen);
-	}
-	if (ep->send_pdu_len < pdu->hdr.hlen) {
+	memset(pdu, 0, sizeof(*pdu));
+	pdu->hdr.type = nvme_tcp_c2h_data;
+	pdu->hdr.flags = last ? NVME_TCP_F_DATA_LAST : 0;
+	pdu->hdr.pdo = 0;
+	pdu->hdr.hlen = sizeof(struct nvme_tcp_data_pdu);
+	pdu->hdr.plen = htole32(sizeof(struct nvme_tcp_data_pdu) +
+				qe->iovec.iov_len);
+	pdu->data_offset = htole32(qe->data_pos);
+	pdu->data_length = htole32(qe->iovec.iov_len);
+	pdu->command_id = qe->ccid;
+	print_info("c2h hdr init %u/%u bytes",
+		   pdu->hdr.hlen, pdu->hdr.plen);
+
+	ep->send_pdu_len = 0;
+	while (ep->send_pdu_len < pdu->hdr.hlen) {
 		u8 *data = (u8 *)pdu + ep->send_pdu_len;
 		u64 data_len = pdu->hdr.hlen - ep->send_pdu_len;
 
@@ -364,12 +365,7 @@ static int tcp_rma_write(struct endpoint *ep, struct ep_qe *qe, bool last)
 		ep->send_pdu_len += len;
 		print_info("c2h hdr wrote %d bytes", len);
 	}
-	if (ep->send_pdu_len < pdu->hdr.hlen) {
-		print_err("short header write, %d bytes missing",
-			  (int)pdu->hdr.hlen - ep->send_pdu_len);
-		return -EAGAIN;
-	}
-	if (qe->iovec.iov_len) {
+	while (qe->iovec.iov_len) {
 		u8 *data = qe->iovec.iov_base;
 
 		len = write(ep->sockfd, data, qe->iovec.iov_len);
@@ -386,11 +382,6 @@ static int tcp_rma_write(struct endpoint *ep, struct ep_qe *qe, bool last)
 		qe->iovec.iov_base = data;
 		qe->iovec.iov_len -= len;
 		qe->iovec_offset += len;
-		if (qe->iovec.iov_len) {
-			print_err("c2h short data write, %u bytes missing",
-				  (unsigned int)qe->iovec.iov_len);
-			return -EAGAIN;
-		}
 		print_info("c2h data wrote %d bytes", len);
 	}
 
@@ -663,7 +654,7 @@ static struct xp_ops tcp_ops = {
 	.get_tag		= tcp_get_tag,
 	.release_tag		= tcp_release_tag,
 	.rma_read		= tcp_rma_read,
-	.rma_write		= tcp_rma_write,
+	.rma_write		= tcp_send_c2h_data,
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
 	.read_msg		= tcp_read_msg,
