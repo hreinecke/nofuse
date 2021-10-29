@@ -173,12 +173,23 @@ static void *endpoint_thread(void *arg)
 				break;
 			}
 			pollin_sqe = NULL;
-			ret = ep->ops->read_msg(ep);
-			if (!ret) {
-				ret = ep->ops->handle_msg(ep);
-				if (!ret && ep->ctrl)
-					ep->kato_countdown = ep->ctrl->kato;
+			if (ep->recv_state == RECV_PDU) {
+				ret = ep->ops->read_msg(ep);
 			}
+			if (!ret && ep->recv_state == HANDLE_PDU) {
+				ret = ep->ops->handle_msg(ep);
+				if (!ret) {
+					ep->recv_pdu_len = 0;
+					ep->recv_state = RECV_PDU;
+				}
+			}
+			if (!ret || ret == -EAGAIN) {
+				if (ep->ctrl)
+					ep->kato_countdown = ep->ctrl->kato;
+				else
+					ep->kato_countdown = RETRY_COUNT;
+			}
+
 		} else {
 			struct ep_qe *qe = cqe_data;
 			if (!qe) {
@@ -242,6 +253,7 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
+	ep->recv_state = RECV_PDU;
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {

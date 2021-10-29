@@ -75,6 +75,8 @@ struct ep_qe {
 	bool busy;
 };
 
+enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
+
 struct endpoint {
 	struct linked_list node;
 	pthread_t pthread;
@@ -86,6 +88,7 @@ struct endpoint {
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
+	int recv_state;
 	int qsize;
 	int state;
 	int qid;

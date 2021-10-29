@@ -485,6 +485,10 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 			return -EAGAIN;
 		}
 	}
+
+	ep->recv_state = RECV_PDU;
+	ep->recv_pdu_len = 0;
+
 	/* Return -EPROTO to signal the connection should be dropped */
 	return -EPROTO;
 }
@@ -578,23 +582,27 @@ out_rsp:
 
 static int tcp_read_msg(struct endpoint *ep)
 {
+	u8 *msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 	int len, msg_len;
 
-	ep->recv_pdu_len = 0;
-	len = read(ep->sockfd, ep->recv_pdu, sizeof(struct nvme_tcp_hdr));
-	if (len < 0) {
-		print_errno("failed to read msg hdr", errno);
-		return -errno;
-	}
-	/* No data received, disconnected */
-	if (!len)
-		return -ENODATA;
-
-	ep->recv_pdu_len += len;
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
-		print_err("short msg hdr read, %lu bytes missing",
-			  sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len);
-		return -ENODATA;
+		msg_len = sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len;
+		len = read(ep->sockfd, msg, msg_len);
+		if (len < 0) {
+			print_errno("failed to read msg hdr", errno);
+			return -errno;
+		}
+		/* No data received, disconnected */
+		if (!len)
+			return -ENODATA;
+
+		ep->recv_pdu_len += len;
+		msg_len -= len;
+		if (msg_len) {
+			print_err("short msg hdr read, %lu bytes missing",
+				  sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len);
+			return -EAGAIN;
+		}
 	}
 	if (!ep->recv_pdu->common.hlen) {
 		print_err("corrupt hdr, hlen %d size %ld",
@@ -606,7 +614,7 @@ static int tcp_read_msg(struct endpoint *ep)
 	}
 	msg_len = ep->recv_pdu->common.hlen - ep->recv_pdu_len;
 	if (msg_len) {
-		u8 *msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
+		msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 
 		len = read(ep->sockfd, msg, msg_len);
 		if (len == 0)
@@ -616,9 +624,12 @@ static int tcp_read_msg(struct endpoint *ep)
 			return -errno;
 		}
 		ep->recv_pdu_len += len;
-		if (ep->recv_pdu_len < ep->recv_pdu->common.hlen)
-			print_err("short msg payload read, %u bytes missing",
-				  ep->recv_pdu->common.hlen - ep->recv_pdu_len);
+		msg_len -= len;
+		if (msg_len > 0) {
+			print_err("short msg payload read, %u bytes missing", msg_len);
+			return -EAGAIN;
+		}
+		ep->recv_state = HANDLE_PDU;
 	}
 	return 0;
 }
@@ -632,6 +643,8 @@ int tcp_handle_msg(struct endpoint *ep)
 		return tcp_handle_h2c_data(ep, pdu);
 
 	if (hdr->type == nvme_tcp_h2c_term) {
+		ep->recv_state = RECV_PDU;
+		ep->recv_pdu_len = 0;
 		print_info("ctrl %d qid %d h2c term, disconnecting",
 			   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid);
 		return -ENOTCONN;
