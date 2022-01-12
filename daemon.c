@@ -277,6 +277,7 @@ static int init_args(int argc, char *argv[])
 	if (init_subsys())
 		return 1;
 
+	hostnqn = NULL;
 	debug = 0;
 	run_as_daemon = 1;
 

@@ -26,6 +26,7 @@
 #include "tcp.h"
 
 extern int			 debug;
+extern char			*hostnqn;
 extern struct linked_list	*devices;
 extern struct linked_list	*interfaces;
 

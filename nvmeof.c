@@ -192,6 +192,10 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
+		if (hostnqn && memcmp(connect->hostnqn, hostnqn, strlen(hostnqn))) {
+			print_err("Rejecting host NQN '%s'\n", connect->hostnqn);
+			return NVME_SC_CONNECT_INVALID_HOST;
+		}
 		print_info("Allocating new controller '%s'",
 			   connect->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
