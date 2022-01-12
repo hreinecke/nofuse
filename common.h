@@ -148,6 +148,8 @@ struct subsystem {
 	struct linked_list ctrl_list;
 	pthread_mutex_t ctrl_mutex;
 	char nqn[MAX_NQN_SIZE + 1];
+	unsigned char *tls_key;
+	size_t tls_key_len;
 	int type;
 };
 

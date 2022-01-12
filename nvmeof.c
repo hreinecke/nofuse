@@ -438,7 +438,11 @@ static int format_disc_log(void *data, u64 data_offset,
 				entry.adrfam = NVMF_ADDR_FAMILY_IP4;
 			else
 				entry.adrfam = NVMF_ADDR_FAMILY_IP6;
-			entry.treq = 0;
+			if (subsys->tls_key) {
+				entry.tsas.tcp.sectype = NVMF_TCP_SECTYPE_TLS13;
+				entry.treq = NVMF_TREQ_NOT_REQUIRED;
+			} else
+				entry.treq = NVMF_TREQ_NOT_SPECIFIED;
 			entry.portid = iface->portid;
 			entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
 			entry.asqsz = 32;

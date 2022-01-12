@@ -11,6 +11,7 @@
 
 #include "common.h"
 #include "ops.h"
+#include "tls.h"
 
 LINKED_LIST(subsys_linked_list);
 LINKED_LIST(iface_linked_list);
@@ -398,7 +399,7 @@ help:
 		}
 		if (!subsys)
 			return 1;
-		if (tls_import_key(hostnqn, subsys->nqn, optarg) < 0)
+		if (tls_import_key(subsys, hostnqn, optarg) < 0)
 			return 1;
 	}
 	if (run_as_daemon) {
@@ -443,6 +444,8 @@ void free_subsys(void)
 
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
 		pthread_mutex_destroy(&subsys->ctrl_mutex);
+		if (subsys->tls_key)
+			free(subsys->tls_key);
 		free(subsys);
 	}
 }

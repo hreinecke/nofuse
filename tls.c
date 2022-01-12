@@ -18,13 +18,13 @@ static unsigned char psk_key[129];
 static size_t psk_len;
 static unsigned char psk_cipher[2];
 
-int tls_import_key(const char *hostnqn, const char *subsysnqn, const char *keystr)
+int tls_import_key(struct subsystem *subsys, const char *hostnqn, const char *keystr)
 {
 	EVP_PKEY_CTX *kctx;
 	const EVP_MD *md;
 	int hmac, err;
-	unsigned char decoded_key[64], *retained_key;
-	size_t decoded_len, retained_len;
+	unsigned char decoded_key[64];
+	size_t decoded_len;
 	unsigned int crc = 0, key_crc;
 
     	if (sscanf(keystr, "NVMeTLSkey-1:%02x:*s", &hmac) != 1) {
@@ -89,15 +89,16 @@ int tls_import_key(const char *hostnqn, const char *subsysnqn, const char *keyst
 	printf("Key is valid (HMAC %d, length %lu, CRC %08x)\n",
 	       hmac, decoded_len, crc);
 
-	retained_key = malloc(decoded_len);
-	if (!retained_key)
+	subsys->tls_key = malloc(decoded_len);
+	if (!subsys->tls_key)
 		return -ENOMEM;
-	retained_len = decoded_len;
+	subsys->tls_key_len = decoded_len;
 
 	/* HKDF functions as per NVMe-TCP v1.0a */
 	kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
 	if (!kctx) {
-		free(retained_key);
+		free(subsys->tls_key);
+		subsys->tls_key = NULL;
 		return -ENOMEM;
 	}
 
@@ -115,26 +116,26 @@ int tls_import_key(const char *hostnqn, const char *subsysnqn, const char *keyst
 	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, hostnqn, strlen(hostnqn)) <= 0)
 		goto out_free;
 
-	if (EVP_PKEY_derive(kctx, retained_key, &retained_len) <= 0) {
+	if (EVP_PKEY_derive(kctx, subsys->tls_key, &subsys->tls_key_len) <= 0) {
 		fprintf(stderr, "EVP_KDF_derive failed\n");
 		goto out_free;
 	}
 
-	psk_identity = malloc(strlen(hostnqn) + strlen(subsysnqn) + 12);
+	psk_identity = malloc(strlen(hostnqn) + strlen(subsys->nqn) + 12);
 	if (!psk_identity) {
 		err = -ENOMEM;
 		goto out_free;
 	}
 	sprintf(psk_identity, "NVMeR%02d %s %s", hmac,
-		hostnqn, subsysnqn);
+		hostnqn, subsys->nqn);
 
-	psk_len = retained_len;
+	psk_len = subsys->tls_key_len;
 	err = -ENOKEY;
 	if (EVP_PKEY_derive_init(kctx) <= 0)
 		goto out_free;
 	if (EVP_PKEY_CTX_set_hkdf_md(kctx, md) <= 0)
 		goto out_free;
-	if (EVP_PKEY_CTX_set1_hkdf_key(kctx, retained_key, retained_len) <= 0)
+	if (EVP_PKEY_CTX_set1_hkdf_key(kctx, subsys->tls_key, subsys->tls_key_len) <= 0)
 		goto out_free;
 	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "tls13 ", 6) <= 0)
 		goto out_free;
@@ -151,7 +152,6 @@ int tls_import_key(const char *hostnqn, const char *subsysnqn, const char *keyst
 
 out_free:
 	EVP_PKEY_CTX_free(kctx);
-	free(retained_key);
 
 	return err;
 }
