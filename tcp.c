@@ -19,6 +19,16 @@
 #define TCP_SYNCNT		7
 #define TCP_NODELAY		1
 
+static ssize_t tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
+{
+	return read(ep->sockfd, buf, buf_len);
+}
+
+static ssize_t tcp_ep_write(struct endpoint *ep, const void *buf, size_t buf_len)
+{
+	return write(ep->sockfd, buf, buf_len);
+}
+
 static void tcp_destroy_endpoint(struct endpoint *ep)
 {
 	free(ep->qes);
@@ -201,7 +211,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	memset(icreq, 0, sizeof(*icreq));
 
 	hdr_len = sizeof(struct nvme_tcp_hdr);
-	ret = read(ep->sockfd, icreq, hdr_len);
+	ret = tcp_ep_read(ep, icreq, hdr_len);
 	if (ret < 0) {
 		if (errno != EAGAIN)
 			print_errno("icreq header read", errno);
@@ -216,7 +226,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 
 	if (icreq->hdr.type == 0) {
 		len = icreq->hdr.hlen - hdr_len;
-		ret = read(ep->sockfd, (u8 *)icreq + hdr_len, len);
+		ret = tcp_ep_read(ep, (u8 *)icreq + hdr_len, len);
 		if (ret < 0) {
 			print_err("icreq read error %d", errno);
 			ret = -errno;
@@ -251,7 +261,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	icrep->cpda = 0;
 	icrep->digest = 0;
 
-	len = write(ep->sockfd, icrep, sizeof(*icrep));
+	len = tcp_ep_write(ep, icrep, sizeof(*icrep));
 	if (len != sizeof(*icrep)) {
 		print_err("icrep short read, %ld bytes missing",
 			  sizeof(*icrep) - len);
@@ -316,7 +326,7 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 			print_err("poll timeout");
 			return -ETIMEDOUT;
 		}
-		len = read(ep->sockfd, (u8 *)buf + offset, _len - offset);
+		len = tcp_ep_read(ep, (u8 *)buf + offset, _len - offset);
 		if (len < 0) {
 			print_err("read returned %d", errno);
 			return -errno;
@@ -359,7 +369,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 		u8 *data = (u8 *)pdu + send_pdu_len;
 		u64 data_len = pdu->hdr.hlen - send_pdu_len;
 
-		len = write(ep->sockfd, data, data_len);
+		len = tcp_ep_write(ep, data, data_len);
 		if (len < 0) {
 			print_err("c2h hdr write returned %d", errno);
 			return -errno;
@@ -374,7 +384,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	while (qe->iovec.iov_len) {
 		u8 *data = qe->iovec.iov_base;
 
-		len = write(ep->sockfd, data, qe->iovec.iov_len);
+		len = tcp_ep_write(ep, data, qe->iovec.iov_len);
 		if (len < 0) {
 			print_err("c2h data write returned %d", errno);
 			return -errno;
@@ -426,7 +436,7 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 
 	memcpy(&qe->pdu, pdu, sizeof(*pdu));
 
-	len = write(ep->sockfd, pdu, sizeof(*pdu));
+	len = tcp_ep_write(ep, pdu, sizeof(*pdu));
 	if (len < 0) {
 		print_err("r2t write returned %d", errno);
 		return -errno;
@@ -463,7 +473,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	term_pdu->fes = htole16(fes);
 	term_pdu->fei = htole32(parm_offset << 6 | pdu_offset << 1);
 
-	len = write(ep->sockfd, term_pdu, sizeof(*term_pdu));
+	len = tcp_ep_write(ep, term_pdu, sizeof(*term_pdu));
 	if (len < 0) {
 		print_err("c2h_term write returned %d", errno);
 		return -errno;
@@ -474,7 +484,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 		return -EAGAIN;
 	}
 	if (pdu) {
-		len = write(ep->sockfd, pdu, pdu_len);
+		len = tcp_ep_write(ep, pdu, pdu_len);
 		if (len < 0) {
 			print_err("c2h term pdu write returned %d", errno);
 			return -errno;
@@ -510,7 +520,7 @@ static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 
 	memcpy(&(pdu->cqe), comp, sizeof(struct nvme_completion));
 
-	len = write(ep->sockfd, pdu, sizeof(*pdu));
+	len = tcp_ep_write(ep, pdu, sizeof(*pdu));
 	if (len != sizeof(*pdu)) {
 		print_err("write completion returned %d", errno);
 		return -errno;
@@ -587,7 +597,7 @@ static int tcp_read_msg(struct endpoint *ep)
 
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
 		msg_len = sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len;
-		len = read(ep->sockfd, msg, msg_len);
+		len = tcp_ep_read(ep, msg, msg_len);
 		if (len < 0) {
 			print_errno("failed to read msg hdr", errno);
 			return -errno;
@@ -616,7 +626,7 @@ static int tcp_read_msg(struct endpoint *ep)
 	if (msg_len) {
 		msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 
-		len = read(ep->sockfd, msg, msg_len);
+		len = tcp_ep_read(ep, msg, msg_len);
 		if (len == 0)
 			return -EAGAIN;
 		if (len < 0) {
