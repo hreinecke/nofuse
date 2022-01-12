@@ -7,6 +7,7 @@
 #include "common.h"
 #include "tcp.h"
 #include "ops.h"
+#include "tls.h"
 
 #define NVME_OPCODE_MASK 0x3
 #define NVME_OPCODE_H2C  0x1
@@ -21,11 +22,15 @@
 
 static ssize_t tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 {
+	if (ep->bio)
+		return BIO_read(ep->bio, buf, buf_len);
 	return read(ep->sockfd, buf, buf_len);
 }
 
 static ssize_t tcp_ep_write(struct endpoint *ep, const void *buf, size_t buf_len)
 {
+	if (ep->bio)
+		return BIO_write(ep->bio, buf, buf_len);
 	return write(ep->sockfd, buf, buf_len);
 }
 
@@ -37,6 +42,7 @@ static void tcp_destroy_endpoint(struct endpoint *ep)
 	ep->recv_pdu = NULL;
 	free(ep->send_pdu);
 	ep->send_pdu = NULL;
+	tls_free_endpoint(ep);
 	close(ep->sockfd);
 	ep->sockfd = -1;
 }

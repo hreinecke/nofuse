@@ -18,6 +18,7 @@ static LINKED_LIST(device_linked_list);
 
 struct linked_list *devices = &device_linked_list;
 
+char *hostnqn;
 int stopped;
 int debug;
 static int signalled;
@@ -254,14 +255,16 @@ static void show_help(char *app)
 	print_info("  -s - transport service id (e.g. 4420)");
 	print_info("  -f - use file as namespace");
 	print_info("  -r - create internal ramdisk with given size (in MB)");
+	print_info("  -k - TLS key for encrypted connections");
+	print_info("  -n - Host NQN of the configured host");
 }
 
 static int init_args(int argc, char *argv[])
 {
 	int opt;
 	int run_as_daemon;
-	char *eptr;
-	const char *opt_list = "?dSi:s:f:r:";
+	char *eptr, *tls_key = NULL;
+	const char *opt_list = "?dSi:s:f:r:k:n:";
 	unsigned long size;
 	int port_num[16];
 	int port_max = 0, port, idx;
@@ -329,6 +332,12 @@ static int init_args(int argc, char *argv[])
 			if (open_ram_ns(size) < 0)
 				return 1;
 			break;
+		case 'k':
+			tls_key = optarg;
+			break;
+		case 'n':
+			hostnqn = optarg;
+			break;
 		case '?':
 		default:
 help:
@@ -373,6 +382,25 @@ help:
 		return 1;
 	}
 
+	if (tls_key) {
+		struct subsystem *subsys = NULL, *_subsys;
+
+		if (!hostnqn) {
+			print_err("host NQN not specified");
+			return 1;
+		}
+		subsys = NULL;
+		list_for_each_entry(_subsys, &subsys_linked_list, node) {
+			if (_subsys->type == NVME_NQN_NVM) {
+				subsys = _subsys;
+				break;
+			}
+		}
+		if (!subsys)
+			return 1;
+		if (tls_import_key(hostnqn, subsys->nqn, optarg) < 0)
+			return 1;
+	}
 	if (run_as_daemon) {
 		if (daemonize())
 			return 1;

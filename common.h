@@ -19,6 +19,8 @@
 #include <uuid/uuid.h>
 #include <liburing.h>
 
+#include <openssl/bio.h>
+
 #include "utils.h"
 #include "nvme.h"
 #include "tcp.h"
@@ -98,6 +100,9 @@ struct endpoint {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
+	BIO *bio;
+	SSL_CTX *ctx;
+	SSL *ssl;
 };
 
 struct ctrl_conn {
