@@ -15,6 +15,17 @@
 static int nvmf_discovery_genctr = 1;
 static int nvmf_ctrl_id = 1;
 
+static int send_response(struct endpoint *ep, struct ep_qe *qe,
+			 u16 status)
+{
+	int ret;
+
+	set_response(&qe->resp, qe->ccid, status, true);
+	ret = ep->ops->send_rsp(ep, &qe->resp);
+	ep->ops->release_tag(ep, qe);
+	return ret;
+}
+
 static int handle_property_set(struct endpoint *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
@@ -596,7 +607,6 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 {
-	struct nvme_completion *resp, _resp;
 	struct ep_qe *qe;
 	u32 len;
 	u16 ccid;
@@ -607,15 +617,16 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	ccid = cmd->common.command_id;
 	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
 	if (!qe) {
-		resp = &_resp;
+		struct nvme_completion resp = {
+			.status = NVME_SC_NS_NOT_READY,
+			.command_id = ccid,
+		};
+
 		print_err("endpoint %d ccid %#x queue busy",
 			  ep->qid, ccid);
-		ret = NVME_SC_NS_NOT_READY;
-		goto out;
+		return ep->ops->send_rsp(ep, &resp);
 	}
-	resp = &qe->resp;
-	memset(resp, 0, sizeof(qe->resp));
-	resp->command_id = qe->ccid;
+	memset(&qe->resp, 0, sizeof(qe->resp));
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
@@ -663,12 +674,8 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	if (ret < 0)
 		/* Internal return; response is sent separately */
 		return 0;
-out:
-	set_response(resp, ccid, ret, true);
 
-	ret = ep->ops->send_rsp(ep, resp);
-	ep->ops->release_tag(ep, qe);
-	return ret;
+	return send_response(ep, qe, ret);
 }
 
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res)
