@@ -54,7 +54,7 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 			  ep->qid, qe->tag, errno);
 		return NVME_SC_INTERNAL;
 	}
-	return -1;
+	return 0;
 }
 
 static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)

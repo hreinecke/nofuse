@@ -641,6 +641,8 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	} else if (ep->qid != 0) {
 		if (cmd->common.opcode == nvme_cmd_read) {
 			ret = handle_read(ep, qe, cmd);
+			if (!ret)
+				return 0;
 		} else if (cmd->common.opcode == nvme_cmd_write) {
 			ret = handle_write(ep, qe, cmd);
 			if (!ret)
