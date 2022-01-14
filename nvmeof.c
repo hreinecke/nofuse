@@ -393,9 +393,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 
 	qe->data_pos = 0;
 	ret = ep->ops->rma_write(ep, qe, id_len);
-	if (!ret)
-		ret = -1;
-	else {
+	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
@@ -652,9 +650,11 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 				  cmd->common.opcode);
 			ret = NVME_SC_INVALID_OPCODE;
 		}
-	} else if (cmd->common.opcode == nvme_admin_identify)
+	} else if (cmd->common.opcode == nvme_admin_identify) {
 		ret = handle_identify(ep, qe, cmd);
-	else if (cmd->common.opcode == nvme_admin_keep_alive) {
+		if (!ret)
+			return 0;
+	} else if (cmd->common.opcode == nvme_admin_keep_alive) {
 #ifdef DEBUG_COMMANDS
 		print_debug("nvme_keep_alive ctrl %d qid %d",
 			    ep->ctrl->cntlid, ep->qid);
