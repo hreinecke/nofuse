@@ -507,9 +507,7 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_FIELD;
 	}
 	ret = ep->ops->rma_write(ep, qe, log_len);
-	if (!ret)
-		ret = -1;
-	else {
+	if (ret) {
 		print_errno("rma_write failed", ret);
 		ret = NVME_SC_WRITE_FAULT;
 	}
@@ -660,9 +658,11 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			    ep->ctrl->cntlid, ep->qid);
 #endif
 		ret = 0;
-	} else if (cmd->common.opcode == nvme_admin_get_log_page)
+	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
 		ret = handle_get_log_page(ep, qe, cmd);
-	else if (cmd->common.opcode == nvme_admin_set_features) {
+		if (!ret)
+			return 0;
+	} else if (cmd->common.opcode == nvme_admin_set_features) {
 		ret = handle_set_features(ep, qe, cmd);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
