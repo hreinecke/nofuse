@@ -675,9 +675,10 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		ret = NVME_SC_INVALID_OPCODE;
 	}
 
-	if (ret < 0)
-		/* Internal return; response is sent separately */
-		return 0;
+	if (ret < 0) {
+		print_err("handle_request error %d\n", ret);
+		return ret;
+	}
 
 	return send_response(ep, qe, ret);
 }
