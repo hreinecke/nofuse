@@ -22,15 +22,15 @@
 
 static ssize_t tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 {
-	if (ep->bio)
-		return BIO_read(ep->bio, buf, buf_len);
+	if (ep->ssl)
+		return SSL_read(ep->ssl, buf, buf_len);
 	return read(ep->sockfd, buf, buf_len);
 }
 
 static ssize_t tcp_ep_write(struct endpoint *ep, const void *buf, size_t buf_len)
 {
-	if (ep->bio)
-		return BIO_write(ep->bio, buf, buf_len);
+	if (ep->ssl)
+		return SSL_write(ep->ssl, buf, buf_len);
 	return write(ep->sockfd, buf, buf_len);
 }
 
@@ -209,6 +209,14 @@ static int tcp_accept_connection(struct endpoint *ep)
 
 	if (!ep)
 		return -EINVAL;
+
+	if (ep->iface->tls_key) {
+		print_info("endpoint %d: start TLS handshake",
+			   ep->qid);
+		ret = tls_handshake(ep);
+		if (ret)
+			return ret;
+	}
 
 	icreq = malloc(sizeof(*icreq));
 	if (!icreq)

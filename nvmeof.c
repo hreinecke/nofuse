@@ -449,7 +449,7 @@ static int format_disc_log(void *data, u64 data_offset,
 				entry.adrfam = NVMF_ADDR_FAMILY_IP4;
 			else
 				entry.adrfam = NVMF_ADDR_FAMILY_IP6;
-			if (subsys->tls_key) {
+			if (iface->tls_key) {
 				entry.tsas.tcp.sectype = NVMF_TCP_SECTYPE_TLS13;
 				entry.treq = NVMF_TREQ_REQUIRED;
 			} else

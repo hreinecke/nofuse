@@ -19,7 +19,7 @@
 #include <uuid/uuid.h>
 #include <liburing.h>
 
-#include <openssl/bio.h>
+#include <openssl/ssl.h>
 
 #include "utils.h"
 #include "nvme.h"
@@ -101,7 +101,6 @@ struct endpoint {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
-	BIO *bio;
 	SSL_CTX *ctx;
 	SSL *ssl;
 };
@@ -142,6 +141,8 @@ struct host_iface {
 	int adrfam;
 	int portid;
 	int listenfd;
+	unsigned char *tls_key;
+	size_t tls_key_len;
 };
 
 struct subsystem {
@@ -149,8 +150,6 @@ struct subsystem {
 	struct linked_list ctrl_list;
 	pthread_mutex_t ctrl_mutex;
 	char nqn[MAX_NQN_SIZE + 1];
-	unsigned char *tls_key;
-	size_t tls_key_len;
 	int type;
 };
 

@@ -385,23 +385,25 @@ help:
 	}
 
 	if (tls_key) {
-		struct subsystem *subsys = NULL, *_subsys;
+		struct subsystem *subsys;
 
 		if (!hostnqn) {
 			print_err("host NQN not specified");
 			return 1;
 		}
-		subsys = NULL;
-		list_for_each_entry(_subsys, &subsys_linked_list, node) {
-			if (_subsys->type == NVME_NQN_NVM) {
-				subsys = _subsys;
-				break;
+		list_for_each_entry(subsys, &subsys_linked_list, node) {
+			struct host_iface *iface;
+
+			if (subsys->type != NVME_NQN_NVM)
+				continue;
+			list_for_each_entry(iface, &iface_linked_list, node) {
+				if (iface->port_type & (1 << NVME_NQN_NVM)) {
+					if (tls_import_key(iface, hostnqn, subsys->nqn,
+							   tls_key) < 0)
+						return 1;
+				}
 			}
 		}
-		if (!subsys)
-			return 1;
-		if (tls_import_key(subsys, hostnqn, tls_key) < 0)
-			return 1;
 	}
 	if (run_as_daemon) {
 		if (daemonize())
@@ -435,6 +437,8 @@ void free_interfaces(void)
 			pthread_join(iface->pthread, NULL);
 		pthread_mutex_destroy(&iface->ep_mutex);
 		list_del(&iface->node);
+		if (iface->tls_key)
+			free(iface->tls_key);
 		free(iface);
 	}
 }
@@ -445,8 +449,6 @@ void free_subsys(void)
 
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
 		pthread_mutex_destroy(&subsys->ctrl_mutex);
-		if (subsys->tls_key)
-			free(subsys->tls_key);
 		free(subsys);
 	}
 }

@@ -18,7 +18,8 @@ static unsigned char psk_key[129];
 static size_t psk_len;
 static unsigned char psk_cipher[2];
 
-int tls_import_key(struct subsystem *subsys, const char *hostnqn, const char *keystr)
+int tls_import_key(struct host_iface *iface, const char *hostnqn,
+		   const char *subsysnqn, const char *keystr)
 {
 	EVP_PKEY_CTX *kctx;
 	const EVP_MD *md;
@@ -91,16 +92,16 @@ int tls_import_key(struct subsystem *subsys, const char *hostnqn, const char *ke
 	printf("Key is valid (HMAC %d, length %lu, CRC %08x)\n",
 	       hmac, decoded_len, crc);
 
-	subsys->tls_key = malloc(decoded_len);
-	if (!subsys->tls_key)
+	iface->tls_key = malloc(decoded_len);
+	if (!iface->tls_key)
 		return -ENOMEM;
-	subsys->tls_key_len = decoded_len;
+	iface->tls_key_len = decoded_len;
 
 	/* HKDF functions as per NVMe-TCP v1.0a */
 	kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
 	if (!kctx) {
-		free(subsys->tls_key);
-		subsys->tls_key = NULL;
+		free(iface->tls_key);
+		iface->tls_key = NULL;
 		return -ENOMEM;
 	}
 
@@ -118,26 +119,26 @@ int tls_import_key(struct subsystem *subsys, const char *hostnqn, const char *ke
 	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, hostnqn, strlen(hostnqn)) <= 0)
 		goto out_free;
 
-	if (EVP_PKEY_derive(kctx, subsys->tls_key, &subsys->tls_key_len) <= 0) {
+	if (EVP_PKEY_derive(kctx, iface->tls_key, &iface->tls_key_len) <= 0) {
 		fprintf(stderr, "EVP_KDF_derive failed\n");
 		goto out_free;
 	}
 
-	psk_identity = malloc(strlen(hostnqn) + strlen(subsys->nqn) + 12);
+	psk_identity = malloc(strlen(hostnqn) + strlen(subsysnqn) + 12);
 	if (!psk_identity) {
 		err = -ENOMEM;
 		goto out_free;
 	}
 	sprintf(psk_identity, "NVMeR%02d %s %s", hmac,
-		hostnqn, subsys->nqn);
+		hostnqn, subsysnqn);
 
-	psk_len = subsys->tls_key_len;
+	psk_len = iface->tls_key_len;
 	err = -ENOKEY;
 	if (EVP_PKEY_derive_init(kctx) <= 0)
 		goto out_free;
 	if (EVP_PKEY_CTX_set_hkdf_md(kctx, md) <= 0)
 		goto out_free;
-	if (EVP_PKEY_CTX_set1_hkdf_key(kctx, subsys->tls_key, subsys->tls_key_len) <= 0)
+	if (EVP_PKEY_CTX_set1_hkdf_key(kctx, iface->tls_key, iface->tls_key_len) <= 0)
 		goto out_free;
 	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "tls13 ", 6) <= 0)
 		goto out_free;
@@ -213,30 +214,22 @@ int tls_handshake(struct endpoint *ep)
 		return -EPROTO;
 	}
 
-	/*
-	 * NOCLOSE prevents the library from sending a session closure
-	 * alert when the file descriptor is closed.
-	 */
-	ep->bio = BIO_new_fd(ep->sockfd, BIO_NOCLOSE);
-	if (!ep->bio)
-		return -ENOMEM;
-
-	ep->ssl = NULL;
-	BIO_get_ssl(ep->bio, &ep->ssl);
+	ep->ssl = SSL_new(ep->ctx);
 	if (!ep->ssl) {
 		fprintf(stderr, "ssl initialisation failed\n");
-		goto out_bio_free;
+		ret = -ENOPROTOOPT;
+		goto out_ctx_free;
 	}
+	SSL_set_fd(ep->ssl, ep->sockfd);
 
 	ret = SSL_do_handshake(ep->ssl);
 	if (ret > 0)
 		return 0;
 	fprintf(stderr, "ssl handshaked failed, error %d\n", ret);
-out_bio_free:
+	ret = -EOPNOTSUPP;
 	SSL_free(ep->ssl);
 	ep->ssl = NULL;
-	BIO_free_all(ep->bio);
-	ep->bio = NULL;
+out_ctx_free:
 	SSL_CTX_free(ep->ctx);
 	ep->ctx = NULL;
 	return ret;
@@ -247,9 +240,6 @@ void tls_free_endpoint(struct endpoint *ep)
 	if (ep->ssl)
 		SSL_free(ep->ssl);
 	ep->ssl = NULL;
-	if (ep->bio)
-		BIO_free_all(ep->bio);
-	ep->bio = NULL;
 	if (ep->ctx)
 		SSL_CTX_free(ep->ctx);
 	ep->ctx = NULL;
