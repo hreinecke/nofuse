@@ -30,7 +30,7 @@ int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 		return NVME_SC_INTERNAL;
 	}
 	
-	return -1;
+	return 0;
 }
 
 int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)

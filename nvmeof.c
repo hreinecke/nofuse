@@ -598,7 +598,7 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
 			   qe->data_pos, qe->data_len);
 
-	return ret ? ret : -1;
+	return ret;
 }
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd)
@@ -643,6 +643,8 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			ret = handle_read(ep, qe, cmd);
 		} else if (cmd->common.opcode == nvme_cmd_write) {
 			ret = handle_write(ep, qe, cmd);
+			if (!ret)
+				return 0;
 		} else {
 			print_err("unknown nvme I/O opcode %d",
 				  cmd->common.opcode);
