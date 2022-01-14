@@ -35,8 +35,9 @@ int tls_import_key(struct subsystem *subsys, const char *hostnqn, const char *ke
 	case 0:
 		break;
 	case 1:
-		if (strlen(keystr) != 59) {
-			fprintf(stderr, "Invalid key length for SHA(256)\n");
+		if (strlen(keystr) != 65) {
+			fprintf(stderr, "Invalid key length %lu for SHA(256)\n",
+				strlen(keystr));
 			return -EINVAL;
 		}
 		md = EVP_sha256();
@@ -44,8 +45,9 @@ int tls_import_key(struct subsystem *subsys, const char *hostnqn, const char *ke
 		psk_cipher[1] = 0x01;
 		break;
 	case 2:
-		if (strlen(keystr) != 83) {
-			fprintf(stderr, "Invalid key length for SHA(384)\n");
+		if (strlen(keystr) != 89) {
+			fprintf(stderr, "Invalid key length %lu for SHA(384)\n",
+				strlen(keystr));
 			return -EINVAL;
 		}
 		md = EVP_sha384();
