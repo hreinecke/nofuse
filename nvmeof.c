@@ -393,10 +393,8 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 
 	qe->data_pos = 0;
 	ret = ep->ops->rma_write(ep, qe, id_len);
-	if (ret) {
+	if (ret)
 		print_errno("rma_write failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
-	}
 	return ret;
 }
 
@@ -507,10 +505,9 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_FIELD;
 	}
 	ret = ep->ops->rma_write(ep, qe, log_len);
-	if (ret) {
+	if (ret)
 		print_errno("rma_write failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
-	}
+
 	return ret;
 }
 
@@ -580,7 +577,7 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 		if (ret < 0) {
 			print_err("ctrl %d qid %d tag %#x rma_read error %d",
 				  ep->ctrl->cntlid, ep->qid, qe->tag, ret);
-			ret = NVME_SC_WRITE_FAULT;
+			return ret;
 		}
 		return ns->ops->ns_write(ep, qe);
 	}
@@ -592,7 +589,6 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 	ret = ns->ops->ns_prep_read(ep, qe);
 	if (ret) {
 		print_errno("prep_rma_read failed", ret);
-		ret = NVME_SC_WRITE_FAULT;
 	} else
 		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x write pos %llu len %llu",
 			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
