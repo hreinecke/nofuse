@@ -400,7 +400,7 @@ help:
 		}
 		if (!subsys)
 			return 1;
-		if (tls_import_key(subsys, hostnqn, optarg) < 0)
+		if (tls_import_key(subsys, hostnqn, tls_key) < 0)
 			return 1;
 	}
 	if (run_as_daemon) {
