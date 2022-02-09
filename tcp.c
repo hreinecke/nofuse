@@ -23,7 +23,7 @@
 static ssize_t tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 {
 	if (ep->ssl)
-		return SSL_read(ep->ssl, buf, buf_len);
+		return tls_read(ep, buf, buf_len);
 	return read(ep->sockfd, buf, buf_len);
 }
 

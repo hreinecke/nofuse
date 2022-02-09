@@ -223,8 +223,8 @@ int tls_handshake(struct endpoint *ep)
 
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 
-	if (!SSL_CTX_set_min_proto_version(ep->ctx, TLS1_3_VERSION)) {
-		fprintf(stderr, "TLS 1.3 is not supported\n");
+	if (!SSL_CTX_set_min_proto_version(ep->ctx, TLS1_2_VERSION)) {
+		fprintf(stderr, "TLS 1.2 is not supported\n");
 		ret = -EPROTO;
 		goto out_bio_free;
 	}
@@ -247,8 +247,10 @@ retry_handshake:
 	} while (ret == SSL_ERROR_WANT_READ ||
 		 ret == SSL_ERROR_WANT_WRITE);
 
-	if (ret == SSL_ERROR_NONE)
+	if (ret == SSL_ERROR_NONE) {
+		fprintf(stdout, "tls handshake succeeded\n");
 		return 0;
+	}
 
 	switch (ret) {
 	case SSL_ERROR_SSL:
@@ -302,7 +304,70 @@ out_bio_free:
 	BIO_free(bio_err);
 	return ret;
 }
-	
+
+ssize_t tls_read(struct endpoint *ep, void *buf, size_t buf_len)
+{
+	int ret;
+
+retry:
+	ret = SSL_read(ep->ssl, buf, buf_len);
+
+	if (ret > 0)
+		return ret;
+
+	switch (SSL_get_error(ep->ssl, ret)) {
+	case SSL_ERROR_SSL:
+		fprintf(stderr, "SSL library error\n");
+		errno = EIO;
+		break;
+	case SSL_ERROR_WANT_READ:
+		fprintf(stderr, "SSL want_read\n");
+		goto retry;
+		break;
+	case SSL_ERROR_WANT_WRITE:
+		fprintf(stderr, "SSL want_write\n");
+		goto retry;
+		break;
+	case SSL_ERROR_WANT_X509_LOOKUP:
+		fprintf(stderr, "SSL want_x509_lookup\n");
+		errno = ENOKEY;
+		break;
+	case SSL_ERROR_SYSCALL:
+		fprintf(stderr, "SSL syscall error \n");
+		errno = ENXIO;
+		break;
+	case SSL_ERROR_ZERO_RETURN:
+		fprintf(stderr, "SSL zero return\n");
+		errno = ENODATA;
+		break;
+	case SSL_ERROR_WANT_CONNECT:
+		fprintf(stderr, "SSL want_connect\n");
+		errno = ENOLINK;
+		break;
+	case SSL_ERROR_WANT_ACCEPT:
+		fprintf(stderr, "SSL want_accept\n");
+		errno = EPROTO;
+		break;
+	case SSL_ERROR_WANT_ASYNC:
+		fprintf(stderr, "SSL want_async\n");
+		errno = EBUSY;
+		break;
+	case SSL_ERROR_WANT_ASYNC_JOB:
+		fprintf(stderr, "SSL want_async_job\n");
+		errno = EBUSY;
+		break;
+	case SSL_ERROR_WANT_CLIENT_HELLO_CB:
+		fprintf(stderr, "SSL want_client_hello\n");
+		errno = EPROTO;
+		break;
+	default:
+		fprintf(stderr, "SSL unknown\n");
+		errno = EIO;
+		break;
+	}
+	return -1;
+}
+
 void tls_free_endpoint(struct endpoint *ep)
 {
 	if (ep->ssl)
