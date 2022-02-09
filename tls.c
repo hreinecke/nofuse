@@ -238,12 +238,61 @@ int tls_handshake(struct endpoint *ep)
 	SSL_set_fd(ep->ssl, ep->sockfd);
 	SSL_set_accept_state(ep->ssl);
 
-	ret = SSL_do_handshake(ep->ssl);
-	if (ret < 0) {
-		fprintf(stderr, "tls handshaked failed, error %d\n", ret);
+retry_handshake:
+	do {
+		if (SSL_do_handshake(ep->ssl) < 0)
+			ret = SSL_get_error(ep->ssl, ret);
+		else
+			ret = SSL_ERROR_NONE;
+	} while (ret == SSL_ERROR_WANT_READ ||
+		 ret == SSL_ERROR_WANT_WRITE);
+
+	if (ret == SSL_ERROR_NONE)
+		return 0;
+
+	switch (ret) {
+	case SSL_ERROR_SSL:
+		fprintf(stderr, "SSL library error\n");
 		ERR_print_errors(bio_err);
-		ret = -EOPNOTSUPP;
+		break;
+	case SSL_ERROR_WANT_READ:
+		fprintf(stderr, "SSL want_read\n");
+		goto retry_handshake;
+		break;
+	case SSL_ERROR_WANT_WRITE:
+		fprintf(stderr, "SSL want_write\n");
+		goto retry_handshake;
+		break;
+	case SSL_ERROR_WANT_X509_LOOKUP:
+		fprintf(stderr, "SSL want_x509_lookup\n");
+		break;
+	case SSL_ERROR_SYSCALL:
+		fprintf(stderr, "SSL syscall error \n");
+		break;
+	case SSL_ERROR_ZERO_RETURN:
+		fprintf(stderr, "SSL zero return\n");
+		break;
+	case SSL_ERROR_WANT_CONNECT:
+		fprintf(stderr, "SSL want_connect\n");
+		break;
+	case SSL_ERROR_WANT_ACCEPT:
+		fprintf(stderr, "SSL want_accept\n");
+		break;
+	case SSL_ERROR_WANT_ASYNC:
+		fprintf(stderr, "SSL want_async\n");
+		break;
+	case SSL_ERROR_WANT_ASYNC_JOB:
+		fprintf(stderr, "SSL want_async_job\n");
+		break;
+	case SSL_ERROR_WANT_CLIENT_HELLO_CB:
+		fprintf(stderr, "SSL want_client_hello\n");
+		break;
+	default:
+		fprintf(stderr, "SSL unknown\n");
+		ERR_print_errors(bio_err);
+		break;
 	}
+	ret = -EOPNOTSUPP;
 	SSL_free(ep->ssl);
 	ep->ssl = NULL;
 out_ctx_free:

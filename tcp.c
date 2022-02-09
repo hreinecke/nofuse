@@ -211,8 +211,6 @@ static int tcp_accept_connection(struct endpoint *ep)
 		return -EINVAL;
 
 	if (ep->iface->tls_key) {
-		print_info("endpoint %d: start TLS handshake",
-			   ep->qid);
 		ret = tls_handshake(ep);
 		if (ret)
 			return ret;
