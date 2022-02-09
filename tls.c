@@ -6,6 +6,7 @@
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <zlib.h>
 
 #include "base64.h"
@@ -165,7 +166,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	SSL_SESSION *tmpsess = NULL;
 	const SSL_CIPHER *cipher = NULL;
 
-	fprintf(stdout, "%s: identity %s len %d\n",
+	fprintf(stdout, "%s: identity %s len %lu\n",
 		__func__, identity, identity_len);
 	if (strlen(psk_identity) != identity_len
             || memcmp(psk_identity, identity, identity_len) != 0) {
@@ -195,27 +196,37 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 
 int tls_handshake(struct endpoint *ep)
 {
+	BIO *bio_err;
 	const SSL_METHOD *method;
 	int ret;
 
+	bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
+	if (!bio_err) {
+		fprintf(stderr, "failed to create error bio\n");
+		return -ENOMEM;
+	}
 	SSL_library_init();
 	SSL_load_error_strings();
 
 	method = TLS_server_method();
 	if (!method) {
 		fprintf(stderr, "Cannot start server\n");
-		return -EPROTO;
+		ret = -EPROTO;
+		goto out_bio_free;
 	}
 
 	ep->ctx = SSL_CTX_new(method);
-	if (!ep->ctx)
-		return -ENOMEM;
+	if (!ep->ctx) {
+		ret = -ENOMEM;
+		goto out_bio_free;
+	}
 
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 
 	if (!SSL_CTX_set_min_proto_version(ep->ctx, TLS1_3_VERSION)) {
 		fprintf(stderr, "TLS 1.3 is not supported\n");
-		return -EPROTO;
+		ret = -EPROTO;
+		goto out_bio_free;
 	}
 
 	ep->ssl = SSL_new(ep->ctx);
@@ -225,17 +236,21 @@ int tls_handshake(struct endpoint *ep)
 		goto out_ctx_free;
 	}
 	SSL_set_fd(ep->ssl, ep->sockfd);
+	SSL_set_accept_state(ep->ssl);
 
 	ret = SSL_do_handshake(ep->ssl);
-	if (ret > 0)
-		return 0;
-	fprintf(stderr, "tls handshaked failed, error %d\n", ret);
-	ret = -EOPNOTSUPP;
+	if (ret < 0) {
+		fprintf(stderr, "tls handshaked failed, error %d\n", ret);
+		ERR_print_errors(bio_err);
+		ret = -EOPNOTSUPP;
+	}
 	SSL_free(ep->ssl);
 	ep->ssl = NULL;
 out_ctx_free:
 	SSL_CTX_free(ep->ctx);
 	ep->ctx = NULL;
+out_bio_free:
+	BIO_free(bio_err);
 	return ret;
 }
 	
