@@ -165,10 +165,13 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	SSL_SESSION *tmpsess = NULL;
 	const SSL_CIPHER *cipher = NULL;
 
+	fprintf(stdout, "%s: identity %s len %d\n",
+		__func__, identity, identity_len);
 	if (strlen(psk_identity) != identity_len
             || memcmp(psk_identity, identity, identity_len) != 0) {
+		fprintf(stdout, "%s: psk identity mismatch\n", __func__);
 		*sess = NULL;
-		return 1;
+		return 0;
 	}
 
 	cipher = SSL_CIPHER_find(ssl, psk_cipher);
@@ -182,6 +185,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
             || !SSL_SESSION_set1_master_key(tmpsess, psk_key, psk_len)
             || !SSL_SESSION_set_cipher(tmpsess, cipher)
             || !SSL_SESSION_set_protocol_version(tmpsess, SSL_version(ssl))) {
+		fprintf(stderr, "Error setting tls parameters\n");
 		return 0;
 	}
 	*sess = tmpsess;
@@ -225,7 +229,7 @@ int tls_handshake(struct endpoint *ep)
 	ret = SSL_do_handshake(ep->ssl);
 	if (ret > 0)
 		return 0;
-	fprintf(stderr, "ssl handshaked failed, error %d\n", ret);
+	fprintf(stderr, "tls handshaked failed, error %d\n", ret);
 	ret = -EOPNOTSUPP;
 	SSL_free(ep->ssl);
 	ep->ssl = NULL;
