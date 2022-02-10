@@ -321,11 +321,9 @@ retry:
 		errno = EIO;
 		break;
 	case SSL_ERROR_WANT_READ:
-		fprintf(stderr, "SSL want_read\n");
 		goto retry;
 		break;
 	case SSL_ERROR_WANT_WRITE:
-		fprintf(stderr, "SSL want_write\n");
 		goto retry;
 		break;
 	case SSL_ERROR_WANT_X509_LOOKUP:
