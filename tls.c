@@ -196,12 +196,11 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 
 int tls_handshake(struct endpoint *ep)
 {
-	BIO *bio_err;
 	const SSL_METHOD *method;
 	int ret;
 
-	bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
-	if (!bio_err) {
+	ep->bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
+	if (!ep->bio_err) {
 		fprintf(stderr, "failed to create error bio\n");
 		return -ENOMEM;
 	}
@@ -240,22 +239,19 @@ int tls_handshake(struct endpoint *ep)
 
 retry_handshake:
 	do {
-		if (SSL_do_handshake(ep->ssl) < 0)
-			ret = SSL_get_error(ep->ssl, ret);
-		else
-			ret = SSL_ERROR_NONE;
+		int err = SSL_do_handshake(ep->ssl);
+		if (err > 0) {
+			fprintf(stdout, "tls handshake succeeded\n");
+			return 0;
+		}
+		ret = SSL_get_error(ep->ssl, err);
 	} while (ret == SSL_ERROR_WANT_READ ||
 		 ret == SSL_ERROR_WANT_WRITE);
-
-	if (ret == SSL_ERROR_NONE) {
-		fprintf(stdout, "tls handshake succeeded\n");
-		return 0;
-	}
 
 	switch (ret) {
 	case SSL_ERROR_SSL:
 		fprintf(stderr, "SSL library error\n");
-		ERR_print_errors(bio_err);
+		ERR_print_errors(ep->bio_err);
 		break;
 	case SSL_ERROR_WANT_READ:
 		fprintf(stderr, "SSL want_read\n");
@@ -289,9 +285,10 @@ retry_handshake:
 	case SSL_ERROR_WANT_CLIENT_HELLO_CB:
 		fprintf(stderr, "SSL want_client_hello\n");
 		break;
+	case SSL_ERROR_NONE:
 	default:
 		fprintf(stderr, "SSL unknown\n");
-		ERR_print_errors(bio_err);
+		ERR_print_errors(ep->bio_err);
 		break;
 	}
 	ret = -EOPNOTSUPP;
@@ -301,7 +298,8 @@ out_ctx_free:
 	SSL_CTX_free(ep->ctx);
 	ep->ctx = NULL;
 out_bio_free:
-	BIO_free(bio_err);
+	BIO_free(ep->bio_err);
+	ep->bio_err = NULL;
 	return ret;
 }
 
@@ -374,4 +372,7 @@ void tls_free_endpoint(struct endpoint *ep)
 	if (ep->ctx)
 		SSL_CTX_free(ep->ctx);
 	ep->ctx = NULL;
+	if (ep->bio_err)
+		BIO_free(ep->bio_err);
+	ep->bio_err = NULL;
 }

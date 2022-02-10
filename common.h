@@ -103,6 +103,7 @@ struct endpoint {
 	int mdts;
 	SSL_CTX *ctx;
 	SSL *ssl;
+	BIO *bio_err;
 };
 
 struct ctrl_conn {
