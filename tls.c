@@ -220,13 +220,18 @@ int tls_handshake(struct endpoint *ep)
 		goto out_bio_free;
 	}
 
-	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
-
 	if (!SSL_CTX_set_min_proto_version(ep->ctx, TLS1_2_VERSION)) {
 		fprintf(stderr, "TLS 1.2 is not supported\n");
 		ret = -EPROTO;
-		goto out_bio_free;
+		goto out_ctx_free;
 	}
+
+	if (!SSL_CTX_set_ciphersuites(ep->ctx, TLS_DEFAULT_CIPHERSUITES)) {
+		fprintf(stderr, "Failed to set cipher list\n");
+		ret = -EPROTO;
+		goto out_ctx_free;
+	}
+	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 
 	ep->ssl = SSL_new(ep->ctx);
 	if (!ep->ssl) {
