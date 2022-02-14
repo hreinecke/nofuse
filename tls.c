@@ -194,9 +194,41 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	return 1;
 }
 
+int client_hello_cb(SSL *s, int *al, void *arg)
+{
+	const unsigned char *cipher_list;
+	const char *cipher_name;
+	size_t cipher_len;
+	int i, prio = 0;
+
+	do {
+		cipher_name = SSL_get_cipher_list(s, prio);
+		if (cipher_name)
+			fprintf(stdout, "prio %d cipher: %s\n",
+				prio, cipher_name);
+		prio++;
+	} while (cipher_name);
+
+	cipher_len = SSL_client_hello_get0_ciphers(s, &cipher_list);
+	for (i = 0; i < cipher_len; i+=2) {
+		const SSL_CIPHER *cipher;
+
+		cipher = SSL_CIPHER_find(s, &cipher_list[i]);
+		if (cipher)
+			fprintf(stdout, "client cipher: %02x%02x (%s)\n",
+				cipher_list[i], cipher_list[i + 1],
+				SSL_CIPHER_get_name(cipher));
+		else
+			fprintf(stdout, "client cipher: %02x%02x (not found)\n",
+				cipher_list[i], cipher_list[i + 1]);
+	}
+	return 1;
+}
+
 int tls_handshake(struct endpoint *ep)
 {
 	const SSL_METHOD *method;
+	long ssl_opts;
 	int ret;
 
 	ep->bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
@@ -206,6 +238,8 @@ int tls_handshake(struct endpoint *ep)
 	}
 	SSL_library_init();
 	SSL_load_error_strings();
+	ERR_load_crypto_strings();
+	OpenSSL_add_all_algorithms();
 
 	method = TLS_server_method();
 	if (!method) {
@@ -226,11 +260,22 @@ int tls_handshake(struct endpoint *ep)
 		goto out_ctx_free;
 	}
 
-	if (!SSL_CTX_set_ciphersuites(ep->ctx, TLS_DEFAULT_CIPHERSUITES)) {
+	if (!SSL_CTX_set_cipher_list(ep->ctx, "ALL:!COMPLEMENTOFDEFAULT:!eNULL:@SECLEVEL=0")) {
 		fprintf(stderr, "Failed to set cipher list\n");
 		ret = -EPROTO;
 		goto out_ctx_free;
 	}
+	if (!SSL_CTX_set_ciphersuites(ep->ctx, TLS_DEFAULT_CIPHERSUITES)) {
+		fprintf(stderr, "Failed to set cipher suite\n");
+		ret = -EPROTO;
+		goto out_ctx_free;
+	}
+
+	ssl_opts = SSL_CTX_get_options(ep->ctx);
+	ssl_opts |= SSL_OP_CIPHER_SERVER_PREFERENCE;
+	SSL_CTX_set_options(ep->ctx, ssl_opts);
+
+	SSL_CTX_set_client_hello_cb(ep->ctx, client_hello_cb, ep);
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 
 	ep->ssl = SSL_new(ep->ctx);
