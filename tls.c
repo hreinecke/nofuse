@@ -143,7 +143,7 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		goto out_free;
 	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "tls13 ", 6) <= 0)
 		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "nvme-tls-psk", 7) <= 0)
+	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "nvme-tls-psk", 12) <= 0)
 		goto out_free;
 	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, psk_identity, strlen(psk_identity)) <= 0)
 		goto out_free;
