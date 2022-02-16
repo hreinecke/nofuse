@@ -130,7 +130,7 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		err = -ENOMEM;
 		goto out_free;
 	}
-	sprintf(psk_identity, "NVMeR%02d %s %s", hmac,
+	sprintf(psk_identity, "NVMe0R%02d %s %s", hmac,
 		hostnqn, subsysnqn);
 
 	psk_len = iface->tls_key_len;
@@ -170,7 +170,8 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 		__func__, identity, identity_len);
 	if (strlen(psk_identity) != identity_len
             || memcmp(psk_identity, identity, identity_len) != 0) {
-		fprintf(stdout, "%s: psk identity mismatch\n", __func__);
+		fprintf(stdout, "%s: psk identity mismatch %s len %lu\n",
+			__func__, psk_identity, strlen(psk_identity));
 		*sess = NULL;
 		return 0;
 	}
