@@ -38,8 +38,8 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		break;
 	case 1:
 		if (strlen(keystr) != 65) {
-			fprintf(stderr, "Invalid key length %lu for SHA(256)\n",
-				strlen(keystr));
+			fprintf(stderr, "Invalid key length %lu for SHA(256) on key '%s'\n",
+				strlen(keystr), keystr);
 			return -EINVAL;
 		}
 		md = EVP_sha256();
