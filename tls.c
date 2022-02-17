@@ -237,37 +237,6 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	return 1;
 }
 
-int client_hello_cb(SSL *s, int *al, void *arg)
-{
-	const unsigned char *cipher_list;
-	const char *cipher_name;
-	size_t cipher_len;
-	int i, prio = 0;
-
-	do {
-		cipher_name = SSL_get_cipher_list(s, prio);
-		if (cipher_name)
-			fprintf(stdout, "prio %d cipher: %s\n",
-				prio, cipher_name);
-		prio++;
-	} while (cipher_name);
-
-	cipher_len = SSL_client_hello_get0_ciphers(s, &cipher_list);
-	for (i = 0; i < cipher_len; i+=2) {
-		const SSL_CIPHER *cipher;
-
-		cipher = SSL_CIPHER_find(s, &cipher_list[i]);
-		if (cipher)
-			fprintf(stdout, "client cipher: %02x%02x (%s)\n",
-				cipher_list[i], cipher_list[i + 1],
-				SSL_CIPHER_get_name(cipher));
-		else
-			fprintf(stdout, "client cipher: %02x%02x (not found)\n",
-				cipher_list[i], cipher_list[i + 1]);
-	}
-	return 1;
-}
-
 int tls_handshake(struct endpoint *ep)
 {
 	const SSL_METHOD *method;
@@ -297,7 +266,6 @@ int tls_handshake(struct endpoint *ep)
 		goto out_bio_free;
 	}
 
-	SSL_CTX_set_client_hello_cb(ep->ctx, client_hello_cb, ep);
 	SSL_CTX_set_psk_server_callback(ep->ctx, psk_server_cb);
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 
