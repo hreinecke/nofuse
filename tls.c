@@ -26,7 +26,7 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 	const EVP_MD *md;
 	int hmac, err;
 	unsigned char decoded_key[64];
-	size_t decoded_len;
+	size_t decoded_len, key_len;
 	unsigned int crc = 0, key_crc;
 
     	if (sscanf(keystr, "NVMeTLSkey-1:%02x:*s", &hmac) != 1) {
@@ -43,6 +43,7 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 			return -EINVAL;
 		}
 		md = EVP_sha256();
+		key_len = 32;
 		psk_cipher[0] = 0x13;
 		psk_cipher[1] = 0x01;
 		break;
@@ -53,6 +54,7 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 			return -EINVAL;
 		}
 		md = EVP_sha384();
+		key_len = 48;
 		psk_cipher[0] = 0x13;
 		psk_cipher[1] = 0x02;
 		break;
@@ -76,8 +78,9 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		return -EINVAL;
 	}
 	decoded_len -= 4;
-	if (decoded_len != 32 && decoded_len != 48) {
-		fprintf(stderr, "Invalid key length %lu\n", decoded_len);
+	if (decoded_len != key_len) {
+		fprintf(stderr, "Invalid key length %lu, expected %lu\n",
+			decoded_len, key_len);
 		return -EINVAL;
 	}
 	crc = crc32(crc, decoded_key, decoded_len);
@@ -133,7 +136,8 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 	sprintf(psk_identity, "NVMe0R%02d %s %s", hmac,
 		hostnqn, subsysnqn);
 
-	psk_len = iface->tls_key_len;
+	psk_len = key_len;
+	memset(psk_key, 0, psk_len);
 	err = -ENOKEY;
 	if (EVP_PKEY_derive_init(kctx) <= 0)
 		goto out_free;
