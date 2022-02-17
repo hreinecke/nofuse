@@ -160,11 +160,40 @@ out_free:
 	return err;
 }
 
+static unsigned int psk_server_cb(SSL *ssl, const char *identity,
+				 unsigned char *psk, unsigned int max_psk_len)
+{
+	fprintf(stdout, "%s: identity %s\n", __func__, identity);
+	if (SSL_version(ssl) >= TLS1_3_VERSION)
+		return 0;
+
+	if (identity == NULL) {
+		fprintf(stderr, "%s: no identity given\n", __func__);
+		return 0;
+	}
+
+	if (strlen(psk_identity) != strlen(identity) ||
+	    memcmp(psk_identity, identity, strlen(psk_identity))) {
+		fprintf(stdout, "%s: psk identity mismatch %s len %lu\n",
+			__func__, psk_identity, strlen(psk_identity));
+		return 0;
+	}
+
+	if (psk_len > max_psk_len) {
+		fprintf(stdout, "%s: psk buffer too small (%d) for key (%ld)\n",
+			__func__, max_psk_len, psk_len);
+		return 0;
+	}
+	memcpy(psk, psk_key, psk_len);
+	return psk_len;
+}
+
 static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
                                size_t identity_len, SSL_SESSION **sess)
 {
 	SSL_SESSION *tmpsess = NULL;
 	const SSL_CIPHER *cipher = NULL;
+	int i, nsig;
 
 	fprintf(stdout, "%s: identity %s len %lu\n",
 		__func__, identity, identity_len);
@@ -180,6 +209,19 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	if (cipher == NULL) {
 		fprintf(stderr, "Error finding suitable ciphersuite\n");
 		return 0;
+	}
+	fprintf(stdout, "%s: using cipher %s\n",
+		__func__, SSL_CIPHER_get_name(cipher));
+
+	nsig = SSL_get_shared_sigalgs(ssl, -1, NULL, NULL, NULL, NULL, NULL);
+	for (i = 0; i < nsig; i++) {
+		int sign_nid, hash_nid;
+		unsigned char rhash, rsign;
+
+		SSL_get_shared_sigalgs(ssl, i, &sign_nid, &hash_nid, NULL,
+				&rsign, &rhash);
+		fprintf(stdout, "sigalg %d: %02x+%02x raw %02x+%02x ", i,
+			sign_nid, hash_nid, rsign, rhash);
 	}
 
 	tmpsess = SSL_SESSION_new();
@@ -229,7 +271,6 @@ int client_hello_cb(SSL *s, int *al, void *arg)
 int tls_handshake(struct endpoint *ep)
 {
 	const SSL_METHOD *method;
-	long ssl_opts;
 	int ret;
 
 	ep->bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
@@ -241,6 +282,7 @@ int tls_handshake(struct endpoint *ep)
 	SSL_load_error_strings();
 	ERR_load_crypto_strings();
 	OpenSSL_add_all_algorithms();
+	OpenSSL_add_all_digests();
 
 	method = TLS_server_method();
 	if (!method) {
@@ -255,28 +297,8 @@ int tls_handshake(struct endpoint *ep)
 		goto out_bio_free;
 	}
 
-	if (!SSL_CTX_set_min_proto_version(ep->ctx, TLS1_2_VERSION)) {
-		fprintf(stderr, "TLS 1.2 is not supported\n");
-		ret = -EPROTO;
-		goto out_ctx_free;
-	}
-
-	if (!SSL_CTX_set_cipher_list(ep->ctx, "ALL:!COMPLEMENTOFDEFAULT:!eNULL:@SECLEVEL=0")) {
-		fprintf(stderr, "Failed to set cipher list\n");
-		ret = -EPROTO;
-		goto out_ctx_free;
-	}
-	if (!SSL_CTX_set_ciphersuites(ep->ctx, TLS_DEFAULT_CIPHERSUITES)) {
-		fprintf(stderr, "Failed to set cipher suite\n");
-		ret = -EPROTO;
-		goto out_ctx_free;
-	}
-
-	ssl_opts = SSL_CTX_get_options(ep->ctx);
-	ssl_opts |= SSL_OP_CIPHER_SERVER_PREFERENCE;
-	SSL_CTX_set_options(ep->ctx, ssl_opts);
-
 	SSL_CTX_set_client_hello_cb(ep->ctx, client_hello_cb, ep);
+	SSL_CTX_set_psk_server_callback(ep->ctx, psk_server_cb);
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 
 	ep->ssl = SSL_new(ep->ctx);
