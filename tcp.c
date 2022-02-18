@@ -23,14 +23,14 @@
 static ssize_t tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 {
 	if (ep->ssl)
-		return tls_read(ep, buf, buf_len);
+		return tls_io(ep, false, buf, buf_len);
 	return read(ep->sockfd, buf, buf_len);
 }
 
-static ssize_t tcp_ep_write(struct endpoint *ep, const void *buf, size_t buf_len)
+static ssize_t tcp_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
 {
 	if (ep->ssl)
-		return SSL_write(ep->ssl, buf, buf_len);
+		return tls_io(ep, true, buf, buf_len);
 	return write(ep->sockfd, buf, buf_len);
 }
 
@@ -257,6 +257,9 @@ static int tcp_accept_connection(struct endpoint *ep)
 		ep->maxr2t = le32toh(icreq->maxr2t) + 1;
 	}
 
+	fprintf(stderr, "read %d icreq bytes (type %d, maxr2t %u)\n",
+		len, icreq->hdr.type, icreq->maxr2t);
+
 	icrep = malloc(sizeof(*icrep));
 	if (!icrep) {
 		ret = -ENOMEM;
@@ -274,12 +277,18 @@ static int tcp_accept_connection(struct endpoint *ep)
 	icrep->digest = 0;
 
 	len = tcp_ep_write(ep, icrep, sizeof(*icrep));
+	if (len < 0) {
+		print_errno("icresp write", errno);
+		return -errno;
+	}
 	if (len != sizeof(*icrep)) {
-		print_err("icrep short read, %ld bytes missing",
+		print_err("icrep short write, %ld bytes missing",
 			  sizeof(*icrep) - len);
 		ret = -ENODATA;
-	} else
+	} else {
+		fprintf(stdout, "Wrote %d icresp bytes\n", len);
 		ret = 0;
+	}
 
 	free(icrep);
 out_free:

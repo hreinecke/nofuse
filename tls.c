@@ -348,26 +348,27 @@ out_bio_free:
 	return ret;
 }
 
-ssize_t tls_read(struct endpoint *ep, void *buf, size_t buf_len)
+ssize_t tls_io(struct endpoint *ep, bool is_write, void *buf, size_t buf_len)
 {
-	int ret;
+	int ret, err;
 
-retry:
-	ret = SSL_read(ep->ssl, buf, buf_len);
+	do {
+		if (is_write)
+			err = SSL_write(ep->ssl, buf, buf_len);
+		else
+			err = SSL_read(ep->ssl, buf, buf_len);
+		if (err > 0)
+			return err;
+		ret = SSL_get_error(ep->ssl, err);
+	} while (ret == SSL_ERROR_WANT_READ ||
+		 ret == SSL_ERROR_WANT_WRITE);
 
-	if (ret > 0)
-		return ret;
 
-	switch (SSL_get_error(ep->ssl, ret)) {
+	switch (ret) {
 	case SSL_ERROR_SSL:
 		fprintf(stderr, "SSL library error\n");
+		ERR_print_errors(ep->bio_err);
 		errno = EIO;
-		break;
-	case SSL_ERROR_WANT_READ:
-		goto retry;
-		break;
-	case SSL_ERROR_WANT_WRITE:
-		goto retry;
 		break;
 	case SSL_ERROR_WANT_X509_LOOKUP:
 		fprintf(stderr, "SSL want_x509_lookup\n");
@@ -375,6 +376,7 @@ retry:
 		break;
 	case SSL_ERROR_SYSCALL:
 		fprintf(stderr, "SSL syscall error \n");
+		ERR_print_errors(ep->bio_err);
 		errno = ENXIO;
 		break;
 	case SSL_ERROR_ZERO_RETURN:
@@ -402,11 +404,12 @@ retry:
 		errno = EPROTO;
 		break;
 	default:
-		fprintf(stderr, "SSL unknown\n");
+		fprintf(stderr, "SSL unknown (%d)\n", ret);
+		ERR_print_errors(ep->bio_err);
 		errno = EIO;
 		break;
 	}
-	return -1;
+	return -errno;
 }
 
 void tls_free_endpoint(struct endpoint *ep)
