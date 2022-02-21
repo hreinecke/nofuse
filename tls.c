@@ -24,7 +24,7 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 {
 	EVP_PKEY_CTX *kctx;
 	const EVP_MD *md;
-	int hmac, err;
+	int hmac, err, i;
 	unsigned char decoded_key[64];
 	size_t decoded_len, key_len;
 	unsigned int crc = 0, key_crc;
@@ -157,6 +157,14 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		goto out_free;
 	}
 	err = 0;
+
+	printf("PSK: ");
+	for (i = 0; i < psk_len; i++) {
+		if ((i % 8) == 0)
+			printf(" ");
+		printf("%02x", psk_key[i]);
+	}
+	printf("\n");
 
 out_free:
 	EVP_PKEY_CTX_free(kctx);
