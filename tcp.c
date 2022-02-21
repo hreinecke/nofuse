@@ -258,7 +258,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	}
 
 	fprintf(stderr, "read %d icreq bytes (type %d, maxr2t %u)\n",
-		len, icreq->hdr.type, icreq->maxr2t);
+		icreq->hdr.hlen, icreq->hdr.type, icreq->maxr2t);
 
 	icrep = malloc(sizeof(*icrep));
 	if (!icrep) {
@@ -286,7 +286,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 			  sizeof(*icrep) - len);
 		ret = -ENODATA;
 	} else {
-		fprintf(stdout, "Wrote %d icresp bytes\n", len);
+		fprintf(stdout, "wrote %d icresp bytes\n", len);
 		ret = 0;
 	}
 
