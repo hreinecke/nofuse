@@ -244,6 +244,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 int tls_handshake(struct endpoint *ep)
 {
 	const SSL_METHOD *method;
+	long ssl_opts;
 	int ret;
 
 	ep->bio_err = BIO_new_fp(stderr, BIO_NOCLOSE);
@@ -272,6 +273,9 @@ int tls_handshake(struct endpoint *ep)
 
 	SSL_CTX_set_psk_server_callback(ep->ctx, psk_server_cb);
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
+	ssl_opts = SSL_CTX_get_options(ep->ctx);
+	ssl_opts |= SSL_OP_ALLOW_NO_DHE_KEX;
+	SSL_CTX_set_options(ep->ctx, ssl_opts);
 
 	ep->ssl = SSL_new(ep->ctx);
 	if (!ep->ssl) {
