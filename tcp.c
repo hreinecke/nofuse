@@ -36,15 +36,23 @@ static ssize_t tcp_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
 
 static void tcp_destroy_endpoint(struct endpoint *ep)
 {
-	free(ep->qes);
-	ep->qes = NULL;
-	free(ep->recv_pdu);
-	ep->recv_pdu = NULL;
-	free(ep->send_pdu);
-	ep->send_pdu = NULL;
+	if (ep->qes) {
+		free(ep->qes);
+		ep->qes = NULL;
+	}
+	if (ep->recv_pdu) {
+		free(ep->recv_pdu);
+		ep->recv_pdu = NULL;
+	}
+	if (ep->send_pdu) {
+		free(ep->send_pdu);
+		ep->send_pdu = NULL;
+	}
 	tls_free_endpoint(ep);
-	close(ep->sockfd);
-	ep->sockfd = -1;
+	if (ep->sockfd >= 0) {
+		close(ep->sockfd);
+		ep->sockfd = -1;
+	}
 }
 
 static int tcp_create_endpoint(struct endpoint *ep, int id)
@@ -137,9 +145,11 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 		return;
 
 	qe->busy = false;
-	free(qe->data);
-	qe->data = NULL;
-	qe->data_len = 0;
+	if (qe->data) {
+		free(qe->data);
+		qe->data = NULL;
+		qe->data_len = 0;
+	}
 	qe->iovec.iov_base = NULL;
 	qe->iovec.iov_len = 0;
 	print_info("endpoint %d release tag %#x", ep->qid, qe->tag);
