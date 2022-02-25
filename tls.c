@@ -284,6 +284,7 @@ int tls_handshake(struct endpoint *ep)
 	ssl_opts = SSL_CTX_get_options(ep->ctx);
 	ssl_opts |= SSL_OP_ALLOW_NO_DHE_KEX;
 	SSL_CTX_set_options(ep->ctx, ssl_opts);
+	SSL_CTX_set_num_tickets(ep->ctx, 0);
 
 	ep->ssl = SSL_new(ep->ctx);
 	if (!ep->ssl) {
