@@ -345,7 +345,8 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 	fds.fd = ep->sockfd;
 	fds.events = POLLIN | POLLERR;
 
-	while (len < _len) {
+	while (offset < _len) {
+#if 0
 		ret = poll(&fds, 1, ep->kato_interval);
 		if (ret <= 0) {
 			if (ret < 0) {
@@ -357,6 +358,9 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 			print_err("poll timeout");
 			return -ETIMEDOUT;
 		}
+#endif
+		print_info("ep %d read %llu bytes",
+			   ep->qid, _len - offset);
 		len = tcp_ep_read(ep, (u8 *)buf + offset, _len - offset);
 		if (len < 0) {
 			print_err("read returned %d", errno);
@@ -628,6 +632,7 @@ static int tcp_read_msg(struct endpoint *ep)
 
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
 		msg_len = sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len;
+		print_info("ep %d read %u msg bytes\n", ep->qid, msg_len);
 		len = tcp_ep_read(ep, msg, msg_len);
 		if (len < 0) {
 			print_errno("failed to read msg hdr", errno);
@@ -657,6 +662,8 @@ static int tcp_read_msg(struct endpoint *ep)
 	if (msg_len) {
 		msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 
+		print_info("qid %d read %u pdu bytes",
+			   ep->qid, msg_len);
 		len = tcp_ep_read(ep, msg, msg_len);
 		if (len == 0)
 			return -EAGAIN;
