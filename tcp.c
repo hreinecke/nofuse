@@ -282,7 +282,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	icrep->hdr.pdo = 0;
 	icrep->hdr.plen = htole32(sizeof(*icrep));
 	icrep->pfv = htole16(NVME_TCP_PFV_1_0);
-	icrep->maxdata = 0xffff;
+	icrep->maxdata = 0xf000;
 	icrep->cpda = 0;
 	icrep->digest = 0;
 
@@ -339,14 +339,18 @@ static void tcp_destroy_listener(struct host_iface *iface)
 
 static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 {
+	int len = 0, offset = 0;
+#if 0
 	struct pollfd fds;
-	int ret, len = 0, offset = 0;
 
 	fds.fd = ep->sockfd;
 	fds.events = POLLIN | POLLERR;
-
+#endif
 	while (offset < _len) {
 #if 0
+		int ret;
+		struct pollfd fds;
+
 		ret = poll(&fds, 1, ep->kato_interval);
 		if (ret <= 0) {
 			if (ret < 0) {
