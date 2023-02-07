@@ -153,7 +153,7 @@ static int derive_tls_key(const EVP_MD *md, struct host_iface *iface,
 		printf("\n");
 	} else {
 		key_serial_t key;
-		const char *key_type = "tls";
+		const char *key_type = "psk";
 
 		key = keyctl_search(keyring_id, key_type, psk_identity, 0);
 		if (key >= 0) {
