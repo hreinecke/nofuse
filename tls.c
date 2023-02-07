@@ -8,6 +8,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <zlib.h>
+#include <keyutils.h>
 
 #include "base64.h"
 
@@ -19,12 +20,173 @@ static unsigned char psk_key[129];
 static size_t psk_len;
 static unsigned char psk_cipher[2];
 
+static unsigned char *derive_retained_key(const EVP_MD *md, const char *hostnqn,
+					  unsigned char *generated_key,
+					  size_t key_len)
+{
+	unsigned char *retained_key;
+	EVP_PKEY_CTX *ctx;
+	size_t retained_len;
+	key_serial_t keyring_id;
+	int err;
+
+	retained_key = malloc(key_len);
+	if (!retained_key)
+		return NULL;
+
+	retained_len = key_len;
+	ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
+	if (!ctx)
+		goto out_free_retained_key;
+
+	err = -ENOKEY;
+	if (EVP_PKEY_derive_init(ctx) <= 0)
+		goto out_free_retained_key;
+	if (EVP_PKEY_CTX_set_hkdf_md(ctx, md) <= 0)
+		goto out_free_retained_key;
+	if (EVP_PKEY_CTX_set1_hkdf_key(ctx, generated_key, key_len) <= 0)
+		goto out_free_retained_key;
+	if (EVP_PKEY_CTX_add1_hkdf_info(ctx, "tls13 ", 6) <= 0)
+		goto out_free_retained_key;
+	if (EVP_PKEY_CTX_add1_hkdf_info(ctx, "HostNQN", 7) <= 0)
+		goto out_free_retained_key;
+	if (EVP_PKEY_CTX_add1_hkdf_info(ctx, hostnqn, strlen(hostnqn)) <= 0)
+		goto out_free_retained_key;
+
+	if (EVP_PKEY_derive(ctx, retained_key, &retained_len) <= 0) {
+		fprintf(stderr, "EVP_KDF derive failed\n");
+		err = ENOKEY;
+	}
+	err = 0;
+
+	keyring_id = find_key_by_type_and_desc("keyring", ".nvme", 0);
+	if (keyring_id < 0) {
+		fprintf(stderr, "NVMe keyring not available, error %d", errno);
+	} else {
+		key_serial_t key;
+		const char *key_type = "psk";
+		char *identity;
+
+		identity = malloc(strlen(hostnqn) + 4);
+		if (!identity) {
+			err = ENOMEM;
+			goto out_free_retained_key;
+		}
+		sprintf(identity, "%02d %s",
+			md == EVP_sha256() ? 1 : 2, hostnqn);
+		key = keyctl_search(keyring_id, key_type, identity, 0);
+		if (key >= 0) {
+			printf("updating %s key '%s'\n", key_type, identity);
+			err = keyctl_update(key, retained_key, retained_len);
+			if (err)
+				fprintf(stderr, "updating %s key '%s' failed\n",
+					key_type, identity);
+		} else {
+			printf("adding %s key '%s'\n", key_type, identity);
+			key = add_key(key_type, identity,
+				      retained_key, retained_len, keyring_id);
+			if (key < 0)
+				fprintf(stderr, "adding %s key '%s' failed, error %d\n",
+					key_type, identity, errno);
+		}
+		free(identity);
+	}
+out_free_retained_key:
+	if (err) {
+		free(retained_key);
+		retained_key = NULL;
+	}
+	EVP_PKEY_CTX_free(ctx);
+	return retained_key;
+}
+
+static int derive_tls_key(const EVP_MD *md, struct host_iface *iface,
+			  const char *hostnqn, const char *subsysnqn)
+{
+	EVP_PKEY_CTX *ctx;
+	char *psk_identity;
+	key_serial_t keyring_id;
+	int err, i;
+
+	psk_identity = malloc(strlen(hostnqn) + strlen(subsysnqn) + 12);
+	if (!psk_identity)
+		return -ENOMEM;
+
+	sprintf(psk_identity, "NVMeR%02d %s %s", md == EVP_sha256() ? 1 : 2,
+		hostnqn, subsysnqn);
+
+	psk_len = iface->tls_key_len;
+	memset(psk_key, 0, psk_len);
+
+	ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
+	if (!ctx) {
+		err = -ENOMEM;
+		goto out_free_identity;
+	}
+
+	err = -ENOKEY;
+	if (EVP_PKEY_derive_init(ctx) <= 0)
+		goto out_free_ctx;
+	if (EVP_PKEY_CTX_set_hkdf_md(ctx, md) <= 0)
+		goto out_free_ctx;
+	if (EVP_PKEY_CTX_set1_hkdf_key(ctx, iface->tls_key,
+				       iface->tls_key_len) <= 0)
+		goto out_free_ctx;
+	if (EVP_PKEY_CTX_add1_hkdf_info(ctx, "tls13 ", 6) <= 0)
+		goto out_free_ctx;
+	if (EVP_PKEY_CTX_add1_hkdf_info(ctx, "nvme-tls-psk", 12) <= 0)
+		goto out_free_ctx;
+	if (EVP_PKEY_CTX_add1_hkdf_info(ctx, psk_identity,
+					strlen(psk_identity)) <= 0)
+		goto out_free_ctx;
+
+	if (EVP_PKEY_derive(ctx, psk_key, &psk_len) <= 0) {
+		fprintf(stderr, "EVP_KDF_derive failed\n");
+	}
+
+	keyring_id = find_key_by_type_and_desc("keyring", ".tls", 0);
+	if (keyring_id < 0) {
+		printf("TLS keyring not available\ngenerated TLS key\n%s\n",
+		       psk_identity);
+		for (i = 0; i < psk_len; i++)
+			printf("%02x", psk_key[i]);
+		printf("\n");
+	} else {
+		key_serial_t key;
+		const char *key_type = "tls";
+
+		key = keyctl_search(keyring_id, key_type, psk_identity, 0);
+		if (key >= 0) {
+			printf("updating %s key '%s'\n",
+			       key_type, psk_identity);
+			err = keyctl_update(key, psk_key, psk_len);
+			if (err)
+				fprintf(stderr, "updatint %s key '%s' failed\n",
+					key_type, psk_identity);
+		} else {
+			printf("adding %s key '%s'\n", key_type, psk_identity);
+			key = add_key(key_type, psk_identity,
+				      psk_key, psk_len, keyring_id);
+			if (key < 0)
+				fprintf(stderr, "adding %s key '%s' failed, error %d\n",
+					key_type, psk_identity, errno);
+		}
+	}
+	err = 0;
+
+out_free_ctx:
+	EVP_PKEY_CTX_free(ctx);
+out_free_identity:
+	free(psk_identity);
+
+	return err;
+}
+
 int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		   const char *subsysnqn, const char *keystr)
 {
-	EVP_PKEY_CTX *kctx;
 	const EVP_MD *md;
-	int hmac, err, i;
+	int hmac, err;
 	unsigned char decoded_key[64];
 	size_t decoded_len, key_len;
 	unsigned int crc = 0, key_crc;
@@ -96,80 +258,16 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 	printf("Key is valid (HMAC %d, length %lu, CRC %08x)\n",
 	       hmac, decoded_len, crc);
 
-	iface->tls_key = malloc(decoded_len);
-	if (!iface->tls_key)
-		return -ENOMEM;
 	iface->tls_key_len = decoded_len;
 
-	/* HKDF functions as per NVMe-TCP v1.0a */
-	kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
-	if (!kctx) {
-		free(iface->tls_key);
-		iface->tls_key = NULL;
-		return -ENOMEM;
+	iface->tls_key = derive_retained_key(md, hostnqn,
+					     decoded_key, decoded_len);
+	if (!iface->tls_key) {
+		fprintf(stderr, "Failed to derive retained key\n");
+		return -ENOKEY;
 	}
 
-	err = -ENOKEY;
-	if (EVP_PKEY_derive_init(kctx) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_set_hkdf_md(kctx, md) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_set1_hkdf_key(kctx, decoded_key, decoded_len) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "tls13 ", 6) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "HostNQN", 7) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, hostnqn, strlen(hostnqn)) <= 0)
-		goto out_free;
-
-	if (EVP_PKEY_derive(kctx, iface->tls_key, &iface->tls_key_len) <= 0) {
-		fprintf(stderr, "EVP_KDF_derive failed\n");
-		goto out_free;
-	}
-
-	psk_identity = malloc(strlen(hostnqn) + strlen(subsysnqn) + 12);
-	if (!psk_identity) {
-		err = -ENOMEM;
-		goto out_free;
-	}
-	sprintf(psk_identity, "NVMe0R%02d %s %s", hmac,
-		hostnqn, subsysnqn);
-
-	psk_len = key_len;
-	memset(psk_key, 0, psk_len);
-	err = -ENOKEY;
-	if (EVP_PKEY_derive_init(kctx) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_set_hkdf_md(kctx, md) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_set1_hkdf_key(kctx, iface->tls_key, iface->tls_key_len) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "tls13 ", 6) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, "nvme-tls-psk", 12) <= 0)
-		goto out_free;
-	if (EVP_PKEY_CTX_add1_hkdf_info(kctx, psk_identity, strlen(psk_identity)) <= 0)
-		goto out_free;
-
-	if (EVP_PKEY_derive(kctx, psk_key, &psk_len) <= 0) {
-		fprintf(stderr, "EVP_KDF_derive failed\n");
-		goto out_free;
-	}
-	err = 0;
-
-	printf("PSK: ");
-	for (i = 0; i < psk_len; i++) {
-		if ((i % 8) == 0)
-			printf(" ");
-		printf("%02x", psk_key[i]);
-	}
-	printf("\n");
-
-out_free:
-	EVP_PKEY_CTX_free(kctx);
-
-	return err;
+	return derive_tls_key(md, iface, hostnqn, subsysnqn);
 }
 
 static unsigned int psk_server_cb(SSL *ssl, const char *identity,
