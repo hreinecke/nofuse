@@ -559,7 +559,8 @@ static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 
 	memcpy(&(pdu->cqe), comp, sizeof(struct nvme_completion));
 
-	len = tcp_ep_write(ep, pdu, sizeof(*pdu));
+	print_info("ep %d write %u pdu bytes", ep->qid, pdu->hdr.plen);
+	len = tcp_ep_write(ep, pdu, pdu->hdr.plen);
 	if (len != sizeof(*pdu)) {
 		print_err("write completion returned %d", errno);
 		return -errno;
@@ -636,7 +637,7 @@ static int tcp_read_msg(struct endpoint *ep)
 
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
 		msg_len = sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len;
-		print_info("ep %d read %u msg bytes\n", ep->qid, msg_len);
+		print_info("ep %d read %u msg bytes", ep->qid, msg_len);
 		len = tcp_ep_read(ep, msg, msg_len);
 		if (len < 0) {
 			print_errno("failed to read msg hdr", errno);
