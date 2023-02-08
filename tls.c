@@ -104,7 +104,6 @@ static int derive_tls_key(const EVP_MD *md, struct host_iface *iface,
 			  const char *hostnqn, const char *subsysnqn)
 {
 	EVP_PKEY_CTX *ctx;
-	char *psk_identity;
 	key_serial_t keyring_id;
 	int err, i;
 
@@ -187,8 +186,10 @@ static int derive_tls_key(const EVP_MD *md, struct host_iface *iface,
 out_free_ctx:
 	EVP_PKEY_CTX_free(ctx);
 out_free_identity:
-	if (err)
+	if (err) {
 		free(psk_identity);
+		psk_identity = NULL;
+	}
 
 	return err;
 }
