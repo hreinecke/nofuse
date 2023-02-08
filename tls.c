@@ -187,7 +187,8 @@ static int derive_tls_key(const EVP_MD *md, struct host_iface *iface,
 out_free_ctx:
 	EVP_PKEY_CTX_free(ctx);
 out_free_identity:
-	free(psk_identity);
+	if (err)
+		free(psk_identity);
 
 	return err;
 }
