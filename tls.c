@@ -153,33 +153,25 @@ static int derive_tls_key(const EVP_MD *md, struct host_iface *iface,
 	} else {
 		key_serial_t key;
 		const char *key_type = "psk";
-		char *identity;
 
-		identity = malloc(strlen(psk_identity) + 5);
-		if (!identity) {
-			err = -ENOMEM;
-			goto out_free_ctx;
-		}
-		sprintf(identity, ";;;%s", psk_identity);
-		key = keyctl_search(keyring_id, key_type, identity, 0);
+		key = keyctl_search(keyring_id, key_type, psk_identity, 0);
 		if (key >= 0) {
 			printf("updating %s key '%s'\n",
-			       key_type, identity);
+			       key_type, psk_identity);
 			err = keyctl_update(key, psk_key, psk_len);
 			if (err)
 				fprintf(stderr, "updating %s key '%s' failed\n",
-					key_type, identity);
+					key_type, psk_identity);
 		} else {
-			printf("adding %s key '%s'\n", key_type, identity);
-			key = add_key(key_type, identity,
+			printf("adding %s key '%s'\n", key_type, psk_identity);
+			key = add_key(key_type, psk_identity,
 				      psk_key, psk_len, keyring_id);
 			if (key < 0) {
 				fprintf(stderr, "adding %s key '%s' failed, error %d\n",
-					key_type, identity, errno);
+					key_type, psk_identity, errno);
 				err = -errno;
 			}
 		}
-		free(identity);
 	}
 	err = 0;
 
