@@ -254,6 +254,7 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
 	ep->recv_state = RECV_PDU;
+	ep->io_ops = tcp_register_io_ops();
 
 	ret = run_pseudo_target(ep, id);
 	if (ret) {

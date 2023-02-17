@@ -20,18 +20,24 @@
 #define TCP_SYNCNT		7
 #define TCP_NODELAY		1
 
-static ssize_t tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
+static int tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 {
-	if (ep->ssl)
-		return tls_io(ep, false, buf, buf_len);
 	return read(ep->sockfd, buf, buf_len);
 }
 
-static ssize_t tcp_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
+static int tcp_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
 {
-	if (ep->ssl)
-		return tls_io(ep, true, buf, buf_len);
 	return write(ep->sockfd, buf, buf_len);
+}
+
+static struct io_ops tcp_io_ops = {
+	.io_read = tcp_ep_read,
+	.io_write = tcp_ep_write,
+};
+
+struct io_ops *tcp_register_io_ops(void)
+{
+	return &tcp_io_ops;
 }
 
 static void tcp_destroy_endpoint(struct endpoint *ep)

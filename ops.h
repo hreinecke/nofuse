@@ -32,7 +32,14 @@ struct ns_ops {
 	int (*ns_handle_qe)(struct endpoint *ep, struct ep_qe *qe, int res);
 };
 
+struct io_ops {
+	int (*io_read)(struct endpoint *ep, void *buf, size_t buf_len);
+	int (*io_write)(struct endpoint *ep, void *buf, size_t buf_len);
+};
+
 struct ns_ops *null_register_ops(void);
 struct ns_ops *uring_register_ops(void);
+
+struct io_ops *tcp_register_io_ops(void);
 
 #endif /* __OPS_H__ */

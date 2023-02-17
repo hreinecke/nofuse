@@ -19,7 +19,7 @@
 #include <uuid/uuid.h>
 #include <liburing.h>
 
-#include <openssl/ssl.h>
+#include <gnutls/gnutls.h>
 
 #include "utils.h"
 #include "nvme.h"
@@ -84,6 +84,7 @@ struct endpoint {
 	struct linked_list node;
 	pthread_t pthread;
 	struct io_uring uring;
+	struct io_ops *io_ops;
 	struct xp_ops *ops;
 	struct host_iface *iface;
 	struct ctrl_conn *ctrl;
@@ -101,9 +102,8 @@ struct endpoint {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
-	SSL_CTX *ctx;
-	SSL *ssl;
-	BIO *bio_err;
+	gnutls_session_t session;
+	gnutls_psk_server_credentials_t psk_cred;
 };
 
 struct ctrl_conn {
