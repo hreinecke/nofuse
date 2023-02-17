@@ -210,8 +210,9 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		}
 		md = EVP_sha256();
 		key_len = 32;
-		psk_cipher[0] = 0x13;
-		psk_cipher[1] = 0x01;
+		/* TLS_DHE_PSK_WITH_AES_128_GCM_SHA256 */
+		psk_cipher[0] = 0x00;
+		psk_cipher[1] = 0xaa;
 		break;
 	case 2:
 		if (strlen(keystr) != 89) {
@@ -221,8 +222,9 @@ int tls_import_key(struct host_iface *iface, const char *hostnqn,
 		}
 		md = EVP_sha384();
 		key_len = 48;
-		psk_cipher[0] = 0x13;
-		psk_cipher[1] = 0x02;
+		/* TLS_DHE_PSK_WITH_AES_256_GCM_SHA384 */
+		psk_cipher[0] = 0x00;
+		psk_cipher[1] = 0xab;
 		break;
 	default:
 		fprintf(stderr, "Invalid HMAC identifier %d\n", hmac);
@@ -324,9 +326,8 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 		fprintf(stderr, "Error finding suitable ciphersuite\n");
 		return 0;
 	}
-	fprintf(stdout, "%s: using cipher %s\n",
-		__func__, SSL_CIPHER_get_name(cipher));
-
+	fprintf(stdout, "%s: tls %s using cipher %s\n",
+		__func__, SSL_get_version(ssl), SSL_CIPHER_get_name(cipher));
 	nsig = SSL_get_shared_sigalgs(ssl, -1, NULL, NULL, NULL, NULL, NULL);
 	for (i = 0; i < nsig; i++) {
 		int sign_nid, hash_nid;
@@ -337,6 +338,8 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 		fprintf(stdout, "sigalg %d: %02x+%02x raw %02x+%02x ", i,
 			sign_nid, hash_nid, rsign, rhash);
 	}
+	if (!nsig)
+		fprintf(stdout, "no shared signature algorithms found!\n");
 
 	tmpsess = SSL_SESSION_new();
 	if (tmpsess == NULL
@@ -381,7 +384,7 @@ int tls_handshake(struct endpoint *ep)
 		goto out_bio_free;
 	}
 
-	SSL_CTX_set_psk_server_callback(ep->ctx, psk_server_cb);
+	SSL_CTX_set_psk_server_callback(ep->ctx, NULL);
 	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
 	ssl_opts = SSL_CTX_get_options(ep->ctx);
 	ssl_opts |= SSL_OP_ALLOW_NO_DHE_KEX;
