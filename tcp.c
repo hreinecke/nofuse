@@ -70,6 +70,8 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 
 	ep->sockfd = id;
 
+	tls_create_endpoint(ep);
+
 	flags = fcntl(ep->sockfd, F_GETFL);
 	fcntl(ep->sockfd, F_SETFL, flags | O_NONBLOCK);
 

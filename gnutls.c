@@ -110,8 +110,26 @@ int tls_handshake(struct endpoint *ep)
 	int ret;
 	const char *err_pos;
 
-	gnutls_global_init();
+	ret = gnutls_priority_set_direct(ep->session, tls_priority, &err_pos);
+	if (ret != GNUTLS_E_SUCCESS) {
+		fprintf(stderr,"failed to set priorities, err %s\n", err_pos);
+		return -EINVAL;
+	}
+	gnutls_handshake_set_timeout(ep->session, 20 * 1000);
+	do {
+		ret = gnutls_handshake(ep->session);
+	} while (ret < 0 && !gnutls_error_is_fatal(ret));
+	if (ret < 0) {
+		fprintf(stderr,"handshaked failed (%s)\n",
+			gnutls_strerror(ret));
+		ret = -EOPNOTSUPP;
+	}
+	ep->io_ops = &tls_io_ops;
+	return ret;
+}
 
+int tls_create_endpoint(struct endpoint *ep)
+{
 	gnutls_psk_allocate_server_credentials(&ep->psk_cred);
 
 	gnutls_global_set_log_level(9);
@@ -123,28 +141,7 @@ int tls_handshake(struct endpoint *ep)
 
 	gnutls_credentials_set(ep->session, GNUTLS_CRD_PSK, ep->psk_cred);
 
-	ret = gnutls_priority_set_direct(ep->session, tls_priority, &err_pos);
-	if (ret != GNUTLS_E_SUCCESS) {
-		fprintf(stderr,"failed to set priorities, err %s\n", err_pos);
-		ret = -EINVAL;
-		goto out_free;
-	}
-	gnutls_handshake_set_timeout(ep->session, 20 * 1000);
-	do {
-		ret = gnutls_handshake(ep->session);
-	} while (ret < 0 && !gnutls_error_is_fatal(ret));
-	if (ret < 0) {
-		fprintf(stderr,"handshaked failed (%s)\n",
-			gnutls_strerror(ret));
-		ret = -EOPNOTSUPP;
-		goto out_free;
-	}
-	ep->io_ops = &tls_io_ops;
-	return ret;
-out_free:
-	gnutls_psk_free_server_credentials(ep->psk_cred);
-	gnutls_deinit(ep->session);
-	return ret;
+	return 0;
 }
 
 void tls_free_endpoint(struct endpoint *ep)
