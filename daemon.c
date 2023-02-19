@@ -118,7 +118,7 @@ static int open_ram_ns(size_t size)
 	return 0;
 }
 
-static int init_subsys(void)
+static int init_subsys(char *nqn)
 {
 	struct subsystem *subsys;
 
@@ -139,8 +139,11 @@ static int init_subsys(void)
 		}
 		return -ENOMEM;
 	}
-	sprintf(subsys->nqn, NVMF_UUID_FMT,
-		"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
+	if (nqn)
+		sprintf(subsys->nqn, "%s", nqn);
+	else
+		sprintf(subsys->nqn, NVMF_UUID_FMT,
+			"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
 	subsys->type = NVME_NQN_NVM;
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
@@ -253,7 +256,8 @@ static void show_help(char *app)
 	print_info("  -d - enable debug prints in log files");
 	print_info("  -S - run as a standalone process (default is daemon)");
 	print_info("  -i - interface to use (default: 'lo')");
-	print_info("  -s - transport service id (e.g. 4420)");
+	print_info("  -p - transport service id (e.g. 4420)");
+	print_info("  -s - subsystem NQN");
 	print_info("  -f - use file as namespace");
 	print_info("  -r - create internal ramdisk with given size (in MB)");
 	print_info("  -n - Host NQN of the configured host");
@@ -264,7 +268,8 @@ static int init_args(int argc, char *argv[])
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	const char *opt_list = "?dSi:s:f:r:n:";
+	char *subsysnqn = NULL;
+	const char *opt_list = "?dSi:p:s:f:r:n:";
 	unsigned long size;
 	int port_num[16];
 	int port_max = 0, port, idx;
@@ -272,9 +277,6 @@ static int init_args(int argc, char *argv[])
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
-
-	if (init_subsys())
-		return 1;
 
 	hostnqn = NULL;
 	debug = 0;
@@ -296,7 +298,7 @@ static int init_args(int argc, char *argv[])
 			}
 			iface_num++;
 			break;
-		case 's':
+		case 'p':
 			errno = 0;
 			if (port_max >= 16) {
 				print_err("Too many port numbers specified");
@@ -318,6 +320,9 @@ static int init_args(int argc, char *argv[])
 				port_num[idx] = port;
 				port_max++;
 			}
+			break;
+		case 's':
+			subsysnqn = optarg;
 			break;
 		case 'f':
 			if (open_file_ns(optarg) < 0)
@@ -347,6 +352,11 @@ help:
 	if (optind < argc) {
 		print_info("Extra arguments");
 		goto help;
+	}
+
+	if (init_subsys(subsysnqn)) {
+		print_err("Failed to initialize subsystem");
+		return 1;
 	}
 
 	if (list_empty(devices)) {
