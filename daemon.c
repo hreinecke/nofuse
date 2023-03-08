@@ -349,6 +349,8 @@ help:
 		goto help;
 	}
 
+	tls_global_init();
+
 	if (list_empty(devices)) {
 		if (open_ram_ns(128) < 0) {
 			print_err("Failed to create default namespace");

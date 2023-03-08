@@ -109,19 +109,22 @@ void tls_log(int level, const char *msg)
 	fprintf(stderr, "gnutls(%d): %s\n", level, msg);
 }
 
-int tls_handshake(struct endpoint *ep)
+void tls_global_init(void)
 {
-	const char *tls_priority = "SECURE256:+SECURE128:+SECURE128:-COMP-ALL:-VERS-ALL:+VERS-TLS1.3:%NO_TICKETS:+PSK:+DHE-PSK:+ECDHE-PSK";
-	int ret;
-	const char *err_pos;
-
 	gnutls_global_init();
 
 	gnutls_global_set_log_function(tls_log);
 
-	gnutls_psk_allocate_server_credentials(&ep->psk_cred);
-
 	gnutls_global_set_log_level(9);
+}
+
+int tls_handshake(struct endpoint *ep)
+{
+	const char *tls_priority = "SECURE256:+SECURE128:-COMP-ALL:-VERS-ALL:+VERS-TLS1.3:%NO_TICKETS:+PSK:+DHE-PSK:+ECDHE-PSK";
+	int ret;
+	const char *err_pos;
+
+	gnutls_psk_allocate_server_credentials(&ep->psk_cred);
 
 	gnutls_psk_set_server_credentials_function(ep->psk_cred,
 						   psk_server_cb);
@@ -156,6 +159,8 @@ out_free:
 
 void tls_free_endpoint(struct endpoint *ep)
 {
+	if (ep->io_ops != &tls_io_ops)
+		return;
 	gnutls_deinit(ep->session);
 	gnutls_psk_free_server_credentials(ep->psk_cred);
 }
