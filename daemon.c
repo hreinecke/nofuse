@@ -20,6 +20,7 @@ static LINKED_LIST(device_linked_list);
 struct linked_list *devices = &device_linked_list;
 
 char *hostnqn;
+char *subsysnqn;
 int stopped;
 int debug;
 static int signalled;
@@ -139,8 +140,12 @@ static int init_subsys(void)
 		}
 		return -ENOMEM;
 	}
-	sprintf(subsys->nqn, NVMF_UUID_FMT,
-		"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
+	if (subsysnqn)
+		sprintf(subsys->nqn, "%s", subsysnqn);
+	else
+		sprintf(subsys->nqn, NVMF_UUID_FMT,
+			"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
+	print_info("Using subsysten NQN %s", subsys->nqn);
 	subsys->type = NVME_NQN_NVM;
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
@@ -255,6 +260,7 @@ static void show_help(char *app)
 	print_info("  -f - use file as namespace");
 	print_info("  -r - create internal ramdisk with given size (in MB)");
 	print_info("  -n - Host NQN of the configured host");
+	print_info("  -s - Subsystem NQN to use");
 }
 
 static int init_args(int argc, char *argv[])
@@ -262,7 +268,7 @@ static int init_args(int argc, char *argv[])
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	const char *opt_list = "?dSi:p:f:r:n:";
+	const char *opt_list = "?dSs:i:p:f:r:n:";
 	unsigned long size;
 	int port_num[16];
 	int port_max = 0, port, idx;
@@ -270,9 +276,6 @@ static int init_args(int argc, char *argv[])
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
-
-	if (init_subsys())
-		return 1;
 
 	hostnqn = NULL;
 	debug = 0;
@@ -285,6 +288,14 @@ static int init_args(int argc, char *argv[])
 			break;
 		case 'S':
 			run_as_daemon = 0;
+			break;
+		case 's':
+			if (strncmp(optarg, "nqn.", 4)) {
+				print_err("Invalid Subsystem NQN %s\n",
+					  optarg);
+				return 1;
+			}
+			subsysnqn = optarg;
 			break;
 		case 'i':
 			if (get_iface(optarg) < 0) {
@@ -348,6 +359,9 @@ help:
 	}
 
 	tls_global_init();
+
+	if (init_subsys())
+		return 1;
 
 	if (list_empty(devices)) {
 		if (open_ram_ns(128) < 0) {
