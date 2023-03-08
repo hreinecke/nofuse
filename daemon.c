@@ -246,14 +246,12 @@ static int add_host_port(int port)
 
 static void show_help(char *app)
 {
-	const char *arg_list = "{-d} {-S}";
-
-	print_info("Usage: %s %s", app, arg_list);
-
+	print_info("Usage: %s <args>", app);
+	print_info("Possible values for <args>");
 	print_info("  -d - enable debug prints in log files");
 	print_info("  -S - run as a standalone process (default is daemon)");
 	print_info("  -i - interface to use (default: 'lo')");
-	print_info("  -s - transport service id (e.g. 4420)");
+	print_info("  -p - port number (transport service id) (e.g. 4420)");
 	print_info("  -f - use file as namespace");
 	print_info("  -r - create internal ramdisk with given size (in MB)");
 	print_info("  -n - Host NQN of the configured host");
@@ -264,7 +262,7 @@ static int init_args(int argc, char *argv[])
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	const char *opt_list = "?dSi:s:f:r:n:";
+	const char *opt_list = "?dSi:p:f:r:n:";
 	unsigned long size;
 	int port_num[16];
 	int port_max = 0, port, idx;
@@ -296,7 +294,7 @@ static int init_args(int argc, char *argv[])
 			}
 			iface_num++;
 			break;
-		case 's':
+		case 'p':
 			errno = 0;
 			if (port_max >= 16) {
 				print_err("Too many port numbers specified");
