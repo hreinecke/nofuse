@@ -106,7 +106,7 @@ static int psk_server_cb(gnutls_session_t session, const char *identity,
 
 void tls_log(int level, const char *msg)
 {
-	fprintf(stderr, "gnutls(%d): %s\n", level, msg);
+	fprintf(stderr, "gnutls(%d): %s", level, msg);
 }
 
 void tls_global_init(void)

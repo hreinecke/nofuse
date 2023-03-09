@@ -226,12 +226,6 @@ static int tcp_accept_connection(struct endpoint *ep)
 	if (!ep)
 		return -EINVAL;
 
-	if (ep->iface->tls_key) {
-		ret = tls_handshake(ep);
-		if (ret)
-			return ret;
-	}
-
 	icreq = malloc(sizeof(*icreq));
 	if (!icreq)
 		return -ENOMEM;
@@ -239,6 +233,18 @@ static int tcp_accept_connection(struct endpoint *ep)
 	memset(icreq, 0, sizeof(*icreq));
 
 	hdr_len = sizeof(struct nvme_tcp_hdr);
+	ret = recv(ep->sockfd, icreq, hdr_len, MSG_PEEK);
+	if (ret < 0) {
+		print_errno("icreq header peek", errno);
+		return -errno;
+	}
+
+	if (icreq->hdr.type != nvme_tcp_icreq) {
+		ret = tls_handshake(ep);
+		if (ret)
+			return ret;
+	}
+
 	ret = tcp_ep_read(ep, icreq, hdr_len);
 	if (ret < 0) {
 		if (errno != EAGAIN)
@@ -252,26 +258,30 @@ static int tcp_accept_connection(struct endpoint *ep)
 		goto out_free;
 	}
 
-	if (icreq->hdr.type == 0) {
-		len = icreq->hdr.hlen - hdr_len;
-		ret = tcp_ep_read(ep, (u8 *)icreq + hdr_len, len);
-		if (ret < 0) {
-			print_err("icreq read error %d", errno);
-			ret = -errno;
-			goto out_free;
-		}
-		if (ret != len) {
-			print_err("icreq short read, %d bytes missing",
-				  len - ret);
-			ret = -ENODATA;
-			goto out_free;
-		}
-		if (icreq->hpda != 0) {
-			ret = -EPROTO;
-			goto out_free;
-		}
-		ep->maxr2t = le32toh(icreq->maxr2t) + 1;
+	if (icreq->hdr.type != nvme_tcp_icreq) {
+		print_err("icreq header type mismatch (%02x)\n",
+			  icreq->hdr.type);
+		ret = -ENOMSG;
+		goto out_free;
 	}
+	len = icreq->hdr.hlen - hdr_len;
+	ret = tcp_ep_read(ep, (u8 *)icreq + hdr_len, len);
+	if (ret < 0) {
+		print_err("icreq read error %d", errno);
+		ret = -errno;
+		goto out_free;
+	}
+	if (ret != len) {
+		print_err("icreq short read, %d bytes missing",
+			  len - ret);
+		ret = -ENODATA;
+		goto out_free;
+	}
+	if (icreq->hpda != 0) {
+		ret = -EPROTO;
+		goto out_free;
+	}
+	ep->maxr2t = le32toh(icreq->maxr2t) + 1;
 
 	fprintf(stderr, "read %d icreq bytes (type %d, maxr2t %u)\n",
 		icreq->hdr.hlen, icreq->hdr.type, icreq->maxr2t);
