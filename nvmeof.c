@@ -261,6 +261,8 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.lpa = (1 << 2);
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */
+	id.ioccsz = NVME_NVM_IOSQES;
+	id.iorcsz = NVME_NVM_IOCQES;
 
 	id.cntrltype = ep->ctrl->ctrl_type;
 	if (ep->ctrl->ctrl_type == NVME_CTRL_CNTRLTYPE_DISC) {
