@@ -245,7 +245,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 			return ret;
 	}
 
-	ret = tcp_ep_read(ep, icreq, hdr_len);
+	ret = ep->io_ops->io_read(ep, icreq, hdr_len);
 	if (ret < 0) {
 		if (errno != EAGAIN)
 			print_errno("icreq header read", errno);
@@ -259,13 +259,13 @@ static int tcp_accept_connection(struct endpoint *ep)
 	}
 
 	if (icreq->hdr.type != nvme_tcp_icreq) {
-		print_err("icreq header type mismatch (%02x)\n",
+		print_err("icreq header type mismatch (%02x)",
 			  icreq->hdr.type);
 		ret = -ENOMSG;
 		goto out_free;
 	}
 	len = icreq->hdr.hlen - hdr_len;
-	ret = tcp_ep_read(ep, (u8 *)icreq + hdr_len, len);
+	ret = ep->io_ops->io_read(ep, (u8 *)icreq + hdr_len, len);
 	if (ret < 0) {
 		print_err("icreq read error %d", errno);
 		ret = -errno;
@@ -302,7 +302,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	icrep->cpda = 0;
 	icrep->digest = 0;
 
-	len = tcp_ep_write(ep, icrep, sizeof(*icrep));
+	len = ep->io_ops->io_write(ep, icrep, sizeof(*icrep));
 	if (len < 0) {
 		print_errno("icresp write", errno);
 		return -errno;
@@ -381,7 +381,7 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 #endif
 		print_info("ep %d read %llu bytes",
 			   ep->qid, _len - offset);
-		len = tcp_ep_read(ep, (u8 *)buf + offset, _len - offset);
+		len = ep->io_ops->io_read(ep, (u8 *)buf + offset, _len - offset);
 		if (len < 0) {
 			print_err("read returned %d", errno);
 			return -errno;
@@ -424,7 +424,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 		u8 *data = (u8 *)pdu + send_pdu_len;
 		u64 data_len = pdu->hdr.hlen - send_pdu_len;
 
-		len = tcp_ep_write(ep, data, data_len);
+		len = ep->io_ops->io_write(ep, data, data_len);
 		if (len < 0) {
 			print_err("c2h hdr write returned %d", errno);
 			return -errno;
@@ -439,7 +439,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	while (qe->iovec.iov_len) {
 		u8 *data = qe->iovec.iov_base;
 
-		len = tcp_ep_write(ep, data, qe->iovec.iov_len);
+		len = ep->io_ops->io_write(ep, data, qe->iovec.iov_len);
 		if (len < 0) {
 			print_err("c2h data write returned %d", errno);
 			return -errno;
@@ -491,7 +491,7 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 
 	memcpy(&qe->pdu, pdu, sizeof(*pdu));
 
-	len = tcp_ep_write(ep, pdu, sizeof(*pdu));
+	len = ep->io_ops->io_write(ep, pdu, sizeof(*pdu));
 	if (len < 0) {
 		print_err("r2t write returned %d", errno);
 		return -errno;
@@ -528,7 +528,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	term_pdu->fes = htole16(fes);
 	term_pdu->fei = htole32(parm_offset << 6 | pdu_offset << 1);
 
-	len = tcp_ep_write(ep, term_pdu, sizeof(*term_pdu));
+	len = ep->io_ops->io_write(ep, term_pdu, sizeof(*term_pdu));
 	if (len < 0) {
 		print_err("c2h_term write returned %d", errno);
 		return -errno;
@@ -539,7 +539,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 		return -EAGAIN;
 	}
 	if (pdu) {
-		len = tcp_ep_write(ep, pdu, pdu_len);
+		len = ep->io_ops->io_write(ep, pdu, pdu_len);
 		if (len < 0) {
 			print_err("c2h term pdu write returned %d", errno);
 			return -errno;
@@ -576,7 +576,7 @@ static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 	memcpy(&(pdu->cqe), comp, sizeof(struct nvme_completion));
 
 	print_info("ep %d write %u pdu bytes", ep->qid, pdu->hdr.plen);
-	len = tcp_ep_write(ep, pdu, pdu->hdr.plen);
+	len = ep->io_ops->io_write(ep, pdu, pdu->hdr.plen);
 	if (len != sizeof(*pdu)) {
 		print_err("write completion returned %d", errno);
 		return -errno;
@@ -654,7 +654,7 @@ static int tcp_read_msg(struct endpoint *ep)
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
 		msg_len = sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len;
 		print_info("ep %d read %u msg bytes", ep->qid, msg_len);
-		len = tcp_ep_read(ep, msg, msg_len);
+		len = ep->io_ops->io_read(ep, msg, msg_len);
 		if (len < 0) {
 			print_errno("failed to read msg hdr", errno);
 			return -errno;
@@ -685,7 +685,7 @@ static int tcp_read_msg(struct endpoint *ep)
 
 		print_info("qid %d read %u pdu bytes",
 			   ep->qid, msg_len);
-		len = tcp_ep_read(ep, msg, msg_len);
+		len = ep->io_ops->io_read(ep, msg, msg_len);
 		if (len == 0)
 			return -EAGAIN;
 		if (len < 0) {

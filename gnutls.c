@@ -77,7 +77,7 @@ static int psk_server_cb(gnutls_session_t session, const char *identity,
 		return -1;
 	}
 
-	keyring_id = find_key_by_type_and_desc("keyring", ".tls", 0);
+	keyring_id = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (keyring_id < 0) {
 		fprintf(stderr, "TLS keyring not available\n");
 		return -1;
@@ -111,11 +111,24 @@ void tls_log(int level, const char *msg)
 
 void tls_global_init(void)
 {
+	key_serial_t serial;
+	int ret;
+
 	gnutls_global_init();
 
 	gnutls_global_set_log_function(tls_log);
 
 	gnutls_global_set_log_level(9);
+
+	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
+	if (!serial) {
+		tls_log(3, "default '.nvme' keyring not found\n");
+		return;
+	}
+	ret = keyctl_link(serial, KEY_SPEC_SESSION_KEYRING);
+	if (ret < 0) {
+		tls_log(3, "failed to link '.nvme' into session keyring");
+	}
 }
 
 int tls_handshake(struct endpoint *ep)
@@ -149,6 +162,7 @@ int tls_handshake(struct endpoint *ep)
 		ret = -EOPNOTSUPP;
 		goto out_free;
 	}
+	printf("switching to TLS functions\n");
 	ep->io_ops = &tls_io_ops;
 	return ret;
 out_free:
