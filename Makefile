@@ -1,6 +1,6 @@
 
 CFLAGS = -Wall -g -DDEBUG_COMMANDS
-OBJS := daemon.o nvmeof.o pseudo_target.o tcp.o null.o uring.o base64.o gnutls.o
+OBJS := daemon.o nvmeof.o endpoint.o tcp.o null.o uring.o base64.o gnutls.o
 LIBS := -luring -lpthread -luuid -lgnutls -lz -lkeyutils
 
 all: nofuse tls_key

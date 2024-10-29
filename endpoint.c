@@ -33,7 +33,7 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 	}
 }
 
-int start_pseudo_target(struct host_iface *iface)
+static int start_interface(struct host_iface *iface)
 {
 	int ret;
 
@@ -51,7 +51,7 @@ int start_pseudo_target(struct host_iface *iface)
 	return 0;
 }
 
-int run_pseudo_target(struct endpoint *ep, int id)
+int start_endpoint(struct endpoint *ep, int id)
 {
 	int			 ret;
 
@@ -256,9 +256,9 @@ static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->recv_state = RECV_PDU;
 	ep->io_ops = tcp_register_io_ops();
 
-	ret = run_pseudo_target(ep, id);
+	ret = start_endpoint(ep, id);
 	if (ret) {
-		print_errno("run_pseudo_target failed", ret);
+		print_err("failed to start endpoint");
 		goto out;
 	}
 
@@ -286,7 +286,7 @@ void *run_host_interface(void *arg)
 	sigaddset(&set, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
-	ret = start_pseudo_target(iface);
+	ret = start_interface(iface);
 	if (ret) {
 		print_err("failed to start pseudo target, error %d", ret);
 		pthread_exit(NULL);
@@ -314,7 +314,6 @@ void *run_host_interface(void *arg)
 				     endpoint_thread, ep);
 		if (ret) {
 			ep->pthread = 0;
-			print_err("failed to start endpoint thread");
 			print_errno("pthread_create failed", ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
