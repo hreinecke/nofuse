@@ -25,14 +25,6 @@ typedef unsigned long long __u64;
 #define u32	__u32
 #define u64	__u64
 
-/* complex for_each that checkpatch has issues with but is correct and
- * used in multiple include files in the kernel
- */
-#define for_each_dir(entry, subdir)			\
-	while ((entry = readdir(subdir)) != NULL)	\
-		if (strcmp(entry->d_name, ".") &&	\
-		    strcmp(entry->d_name, ".."))
-
 /* simple linked list functions */
 
 struct linked_list {
