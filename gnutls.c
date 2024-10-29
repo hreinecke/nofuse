@@ -29,6 +29,11 @@ static int tls_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
 					gnutls_strerror(ret));
 				ret = 1;
 			}
+		} else if (ret < buf_len) {
+			fprintf(stderr, "tls short write (%d of %ld bytes)\n",
+				ret, buf_len);
+			buf += ret;
+			buf_len -= ret;
 		}
 	} while (ret >= 0);
 	if (ret < 0)
@@ -51,6 +56,11 @@ static int tls_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 					gnutls_strerror(ret));
 				ret = 1;
 			}
+		} else if (ret < buf_len) {
+			fprintf(stderr, "tls short read (%d of %ld bytes)\n",
+				ret, buf_len);
+			buf += ret;
+			buf_len -= ret;
 		}
 	} while (ret >= 0);
 	if (ret < 0)
