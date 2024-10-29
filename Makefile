@@ -1,15 +1,15 @@
 
 CFLAGS = -Wall -g -DDEBUG_COMMANDS
-OBJS := daemon.o nvmeof.o endpoint.o tcp.o null.o uring.o base64.o gnutls.o
-LIBS := -luring -lpthread -luuid -lgnutls -lz -lkeyutils
+OBJS := daemon.o nvmeof.o endpoint.o tcp.o null.o uring.o base64.o tls.o
+LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils
 
-all: nofuse tls_key
+all: nofuse
 
 nofuse: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 tls_key: tls_key.o
-	$(CC) $(CFLAGS) -o $@ $^ -lcrypto -lz -lkeyutils
+	$(CC) $(CFLAGS) -o $@ $^ -lz -lkeyutils
 
 %.o: %.c common.h utils.h ops.h
 	$(CC) $(CFLAGS) -c -o $@ $<

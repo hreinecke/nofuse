@@ -19,7 +19,11 @@
 #include <uuid/uuid.h>
 #include <liburing.h>
 
+#ifdef _GNUTLS
 #include <gnutls/gnutls.h>
+#else
+#include <openssl/ssl.h>
+#endif
 
 #include "utils.h"
 #include "nvme.h"
@@ -102,8 +106,13 @@ struct endpoint {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
+#ifdef _GNUTLS
 	gnutls_session_t session;
 	gnutls_psk_server_credentials_t psk_cred;
+#else
+	SSL_CTX *ctx;
+	SSL *ssl;
+#endif
 };
 
 struct ctrl_conn {
