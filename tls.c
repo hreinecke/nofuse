@@ -258,7 +258,7 @@ ssize_t tls_io(struct endpoint *ep, bool is_write, void *buf, size_t buf_len)
 	return -errno;
 }
 
-void tls_global_init(void)
+int tls_global_init(void)
 {
 	key_serial_t serial;
 	int ret;
@@ -272,12 +272,14 @@ void tls_global_init(void)
 	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (!serial) {
 		fprintf(stderr, "default '.nvme' keyring not found\n");
-		return;
+		return -1;
 	}
 	ret = keyctl_link(serial, KEY_SPEC_SESSION_KEYRING);
 	if (ret < 0) {
 		fprintf(stderr, "failed to link '.nvme' into session keyring");
+		serial = -1;
 	}
+	return serial;
 }
 
 void tls_free_endpoint(struct endpoint *ep)

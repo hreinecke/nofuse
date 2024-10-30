@@ -286,7 +286,7 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 	struct nsdev *ns = NULL, *_ns;
 	struct nvme_id_ns id;
 
-	list_for_each_entry(_ns, devices, node) {
+	list_for_each_entry(_ns, &device_linked_list, node) {
 		if (_ns->nsid == nsid) {
 			ns = _ns;
 			break;
@@ -319,7 +319,7 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 	int id_len = len;
 
 	memset(ns_list, 0, len);
-	list_for_each_entry(ns, devices, node) {
+	list_for_each_entry(ns, &device_linked_list, node) {
 		u32 nsid = htole32(ns->nsid);
 		if (len < 4)
 			break;
@@ -336,7 +336,7 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_
 	int desc_len = len;
 
 	memset(desc_list, 0, len);
-	list_for_each_entry(_ns, devices, node) {
+	list_for_each_entry(_ns, &device_linked_list, node) {
 		if (_ns->nsid == nsid) {
 			ns = _ns;
 			break;
@@ -451,9 +451,9 @@ static int format_disc_log(void *data, u64 data_offset,
 				entry.adrfam = NVMF_ADDR_FAMILY_IP4;
 			else
 				entry.adrfam = NVMF_ADDR_FAMILY_IP6;
-			if (iface->tls_key) {
+			if (iface->tls) {
 				entry.tsas.tcp.sectype = NVMF_TCP_SECTYPE_TLS13;
-				entry.treq = NVMF_TREQ_REQUIRED;
+				entry.treq = NVMF_TREQ_NOT_REQUIRED;
 			} else
 				entry.treq = NVMF_TREQ_NOT_SPECIFIED;
 			entry.portid = iface->portid;
@@ -519,7 +519,7 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 	struct nsdev *ns;
 	int nsid = le32toh(cmd->rw.nsid);
 
-	list_for_each_entry(ns, devices, node) {
+	list_for_each_entry(ns, &device_linked_list, node) {
 		if (ns->nsid == nsid) {
 			qe->ns = ns;
 			break;
@@ -555,7 +555,7 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 	int nsid = le32toh(cmd->rw.nsid);
 	int ret;
 
-	list_for_each_entry(ns, devices, node) {
+	list_for_each_entry(ns, &device_linked_list, node) {
 		if (ns->nsid == nsid) {
 			qe->ns = ns;
 			break;

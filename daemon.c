@@ -13,11 +13,10 @@
 #include "ops.h"
 #include "tls.h"
 
+LINKED_LIST(host_linked_list);
 LINKED_LIST(subsys_linked_list);
 LINKED_LIST(iface_linked_list);
-static LINKED_LIST(device_linked_list);
-
-struct linked_list *devices = &device_linked_list;
+LINKED_LIST(device_linked_list);
 
 char *hostnqn;
 char *subsysnqn;
@@ -95,7 +94,7 @@ static int open_file_ns(char *filename)
 
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
-	list_add_tail(&ns->node, devices);
+	list_add_tail(&ns->node, &device_linked_list);
 	return 0;
 }
 
@@ -115,7 +114,7 @@ static int open_ram_ns(size_t size)
 
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
-	list_add_tail(&ns->node, devices);
+	list_add_tail(&ns->node, &device_linked_list);
 	return 0;
 }
 
@@ -272,7 +271,7 @@ static int init_args(int argc, char *argv[])
 	unsigned long size;
 	int port_num[16];
 	int port_max = 0, port, idx;
-	int iface_num = 0;
+	int iface_num = 0, tls_keyring;
 
 	if (argc > 1 && strcmp(argv[1], "--help") == 0)
 		goto help;
@@ -358,12 +357,12 @@ help:
 		goto help;
 	}
 
-	tls_global_init();
+	tls_keyring = tls_global_init();
 
 	if (init_subsys())
 		return 1;
 
-	if (list_empty(devices)) {
+	if (list_empty(&device_linked_list)) {
 		if (open_ram_ns(128) < 0) {
 			print_err("Failed to create default namespace");
 			return 1;
@@ -392,6 +391,12 @@ help:
 	if (list_empty(&iface_linked_list)) {
 		print_err("invalid host interface configuration");
 		return 1;
+	} else if (tls_keyring) {
+		struct host_iface *iface;
+
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			iface->tls = true;
+		}
 	}
 
 	if (run_as_daemon) {
@@ -408,7 +413,7 @@ void free_devices(void)
 	struct linked_list *n;
 	struct nsdev *dev;
 
-	list_for_each_safe(p, n, devices) {
+	list_for_each_safe(p, n, &device_linked_list) {
 		list_del(p);
 		dev = container_of(p, struct nsdev, node);
 		if (dev->fd >= 0)
@@ -426,8 +431,6 @@ void free_interfaces(void)
 			pthread_join(iface->pthread, NULL);
 		pthread_mutex_destroy(&iface->ep_mutex);
 		list_del(&iface->node);
-		if (iface->tls_key)
-			free(iface->tls_key);
 		free(iface);
 	}
 }

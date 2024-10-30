@@ -29,10 +29,12 @@
 #include "nvme.h"
 #include "tcp.h"
 
-extern int			 debug;
-extern char			*hostnqn;
-extern struct linked_list	*devices;
-extern struct linked_list	*interfaces;
+extern int debug;
+extern char *hostnqn;
+
+extern struct linked_list device_linked_list;
+extern struct linked_list subsys_linked_list;
+extern struct linked_list iface_linked_list;
 
 #define NVMF_UUID_FMT		"nqn.2014-08.org.nvmexpress:uuid:%s"
 
@@ -151,8 +153,7 @@ struct host_iface {
 	int adrfam;
 	int portid;
 	int listenfd;
-	unsigned char *tls_key;
-	size_t tls_key_len;
+	bool tls;
 };
 
 struct subsystem {
@@ -162,9 +163,6 @@ struct subsystem {
 	char nqn[MAX_NQN_SIZE + 1];
 	int type;
 };
-
-extern struct linked_list subsys_linked_list;
-extern struct linked_list iface_linked_list;
 
 static inline void set_response(struct nvme_completion *resp,
 				u16 ccid, u16 status, bool dnr)
