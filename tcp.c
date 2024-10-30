@@ -179,7 +179,7 @@ static int tcp_init_listener(struct host_iface *iface)
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = iface->adrfam;
 		addr.sin_port = htons(iface->port_num);
-		inet_pton(AF_INET, iface->address, &addr.sin_addr);
+		inet_pton(AF_INET, iface->port.traddr, &addr.sin_addr);
 
 		ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
 		if (ret < 0) {
@@ -192,7 +192,7 @@ static int tcp_init_listener(struct host_iface *iface)
 		memset(&addr6, 0, sizeof(addr6));
 		addr6.sin6_family = iface->adrfam;
 		addr6.sin6_port = htons(iface->port_num);
-		inet_pton(AF_INET6, iface->address, &addr6.sin6_addr);
+		inet_pton(AF_INET6, iface->port.traddr, &addr6.sin6_addr);
 
 		ret = bind(listenfd, (struct sockaddr *) &addr6, sizeof(addr6));
 		if (ret < 0) {

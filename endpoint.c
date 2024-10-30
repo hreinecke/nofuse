@@ -44,7 +44,7 @@ static int start_interface(struct host_iface *iface)
 	ret = iface->ops->init_listener(iface);
 	if (ret < 0) {
 		print_err("iface %s init_listener failed",
-			iface->address);
+			iface->port.traddr);
 		return ret;
 	}
 	iface->listenfd = ret;

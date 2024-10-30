@@ -92,8 +92,10 @@ static int init_subsys(void)
 	subsys = malloc(sizeof(*subsys));
 	if (!subsys)
 		return -ENOMEM;
+	memset(subsys, 0, sizeof(*subsys));
 	sprintf(subsys->nqn, "%s", NVME_DISC_SUBSYS_NAME);
 	subsys->type = NVME_NQN_CUR;
+	subsys->allow_any = 1;
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	list_add(&subsys->node, &subsys_linked_list);
@@ -106,6 +108,7 @@ static int init_subsys(void)
 		}
 		return -ENOMEM;
 	}
+	memset(subsys, 0, sizeof(*subsys));
 	if (ctx->subsysnqn)
 		sprintf(subsys->nqn, "%s", ctx->subsysnqn);
 	else
@@ -113,6 +116,7 @@ static int init_subsys(void)
 			"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
 	print_info("Using subsysten NQN %s", subsys->nqn);
 	subsys->type = NVME_NQN_NVM;
+	subsys->allow_any = 0;
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	list_add(&subsys->node, &subsys_linked_list);
@@ -128,25 +132,31 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 	if (!iface)
 		return NULL;
 	memset(iface, 0, sizeof(*iface));
-	strcpy(iface->address, ifaddr);
+	strcpy(iface->port.traddr, ifaddr);
 	iface->adrfam = adrfam;
-	if (iface->adrfam != AF_INET && iface->adrfam != AF_INET6) {
+	strcpy(iface->port.trtype, "tcp");
+	if (iface->adrfam == AF_INET)
+		strcpy(iface->port.adrfam, "ipv4");
+	else if (iface->adrfam == AF_INET6)
+		strcpy(iface->port.adrfam, "ipv6");
+	else {
 		print_err("invalid address family %d", adrfam);
 		free(iface);
 		return NULL;
 	}
 	iface->portid = nvmf_portid++;
 	iface->port_num = port;
+	sprintf(iface->port.trsvcid, "%d", port);
 	if (port == 8009)
 		iface->port_type = (1 << NVME_NQN_CUR);
 	else
 		iface->port_type = (1 << NVME_NQN_NVM);
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
-	print_info("iface %d: listening on %s address %s port %d",
+	print_info("iface %d: listening on %s address %s port %s",
 		   iface->portid,
 		   iface->adrfam == AF_INET ? "ipv4" : "ipv6",
-		   iface->address, iface->port_num);
+		   iface->port.traddr, iface->port.trsvcid);
 
 	return iface;
 }
@@ -204,7 +214,7 @@ static int add_host_port(int port)
 			continue;
 		if (iface->port_num != 8009)
 			continue;
-		new = new_host_iface(iface->address, iface->adrfam, port);
+		new = new_host_iface(iface->port.traddr, iface->adrfam, port);
 		if (new) {
 			list_add_tail(&new->node, &tmp_iface_list);
 			iface_num++;

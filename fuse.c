@@ -46,7 +46,7 @@ static const char *port_attrs[NUM_PORT_ATTRS] = {
 	"addr_adrfam",
 	"addr_traddr",
 	"addr_treq",
-	"addr_trsvcid"
+	"addr_trsvcid",
 	"addr_trtype",
 	"addr_tsas",
 };
@@ -57,7 +57,6 @@ static int port_getattr(struct host_iface *iface, const char *path,
 	int res = -ENOENT;
 	const char *p = path;
 
-	printf("%s %s\n", __func__, path);
 	if (strlen(p) && *p == '/')
 		p++;
 	if (!strlen(p)) {
@@ -330,7 +329,7 @@ static int attr_open(const char *path, const char **attrs, int num_attrs,
 
 	if (strlen(p) && *p == '/')
 		p++;
-	if (strlen(p))
+	if (!strlen(p))
 		return -ENOENT;
 	attr = select_attr(attrs, num_attrs, p);
 	if (!attr)
@@ -405,8 +404,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 					   NUM_SUBSYS_ATTRS, p);
 			if (!attr)
 				return ret;
-			if (strcmp(attr, "attr_allow_any_host")) {
-				strcpy(buf, "1\n");
+			if (!strcmp(attr, "attr_allow_any_host")) {
+				sprintf(buf, "%d\n", subsys->allow_any);
 				return 2;
 			} else {
 				return 0;
@@ -431,7 +430,23 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 					   NUM_PORT_ATTRS, p);
 			if (!attr)
 				return ret;
-			return 0;
+			memset(buf, 0, size);
+			if (!strcmp(attr, "addr_adrfam")) {
+				strcpy(buf, iface->port.adrfam);
+			} else if (!strcmp(attr, "addr_traddr")) {
+				strcpy(buf, iface->port.traddr);
+			} else if (!strcmp(attr, "addr_trsvcid")) {
+				strcpy(buf, iface->port.trsvcid);
+			} else if (!strcmp(attr, "addr_trtype")) {
+				strcpy(buf, iface->port.trtype);
+			} else if (!strcmp(attr, "addr_tsas")) {
+				strcpy(buf, "none");
+			} else if (!strcmp(attr, "addr_treq")) {
+				strcpy(buf, "not specified");
+			}
+			if (strlen(buf))
+				strcat(buf, "\n");
+			return strlen(buf);
 		}
 	}
 	return ret;

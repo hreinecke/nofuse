@@ -439,8 +439,6 @@ static int format_disc_log(void *data, u64 data_offset,
 	log_ptr += sizeof(hdr);
 
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		char trsvcid[NVMF_TRSVCID_SIZE + 1];
-
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		list_for_each_entry(iface, &iface_linked_list, node) {
@@ -462,10 +460,10 @@ static int format_disc_log(void *data, u64 data_offset,
 			entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
 			entry.asqsz = 32;
 			entry.subtype = subsys->type;
-			snprintf(trsvcid, NVMF_TRSVCID_SIZE + 1, "%d",
-				 iface->port_num);
-			memcpy(entry.trsvcid, trsvcid, NVMF_TRSVCID_SIZE);
-			memcpy(entry.traddr, iface->address, NVMF_TRADDR_SIZE);
+			memcpy(entry.trsvcid, iface->port.trsvcid,
+			       NVMF_TRSVCID_SIZE);
+			memcpy(entry.traddr, iface->port.traddr,
+			       NVMF_TRADDR_SIZE);
 			strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
 			memcpy(log_ptr, &entry, sizeof(entry));
 			log_ptr += sizeof(entry);

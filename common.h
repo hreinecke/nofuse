@@ -66,6 +66,16 @@ enum { DISCONNECTED, CONNECTED };
 
 extern int stopped;
 
+struct port {
+	int port_id;
+	char trtype[256];
+	char traddr[256];
+	char trsvcid[256];
+	char adrfam[256];
+	char treq[256];
+	char tsas[256];
+};
+
 struct ep_qe {
 	struct linked_list node;
 	int tag;
@@ -147,10 +157,10 @@ struct host_iface {
 	struct xp_ops *ops;
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
-	char address[41];
-	int port_num;
+	struct port port;
 	int port_type;
-	int adrfam;
+	sa_family_t adrfam;
+	int port_num;
 	int portid;
 	int listenfd;
 	bool tls;
@@ -162,6 +172,7 @@ struct subsystem {
 	pthread_mutex_t ctrl_mutex;
 	char nqn[MAX_NQN_SIZE + 1];
 	int type;
+	bool allow_any;
 };
 
 struct nofuse_context {
