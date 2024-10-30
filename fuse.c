@@ -30,8 +30,10 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	if (!strcmp(path, "/")) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-	} else if (!strncmp(path, "/hosts/", 7)) {
-		p = path + 7;
+	} else if (!strncmp(path, "/hosts", 6)) {
+		p = path + 6;
+		if (strlen(p) && *p == '/')
+			p++;
 		if (!strlen(p)) {
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
@@ -40,8 +42,10 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 			stbuf->st_nlink = 2;
 		} else
 			res = -ENOENT;
-	} else if (!strncmp(path, "/ports/", 7)) {
-		p = path + 7;
+	} else if (!strncmp(path, "/ports", 6)) {
+		p = path + 6;
+		if (strlen(p) && *p == '/')
+			p++;
 		if (!strlen(p)) {
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
@@ -61,8 +65,10 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 				}
 			}
 		}
-	} else if (!strncmp(path, "/subsystems/", 12)) {
-		p = path + 12;
+	} else if (!strncmp(path, "/subsystems", 11)) {
+		p = path + 11;
+		if (strlen(p) && *p == '/')
+			p++;
 		if (!strlen(p)) {
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
@@ -93,21 +99,18 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	(void) fi;
 	(void) flags;
 
-	if (strcmp(path, "/") != 0)
-		return -ENOENT;
-
 	if (!strcmp(path, "/")) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "hosts", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "ports", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "subsystems", NULL, 0, FUSE_FILL_DIR_PLUS);
-	} else if (!strcmp(path, "/hosts/")) {
+	} else if (!strcmp(path, "/hosts")) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (ctx->hostnqn)
 			filler(buf, ctx->hostnqn, NULL, 0, FUSE_FILL_DIR_PLUS);
-	} else if (!strcmp(path, "/ports/")) {
+	} else if (!strcmp(path, "/ports")) {
 		struct host_iface *iface;
 
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -118,7 +121,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			sprintf(portname, "%d", iface->portid);
 			filler(buf, portname, NULL, 0, FUSE_FILL_DIR_PLUS);
 		}
-	} else if (!strcmp(path, "/subsystems/")) {
+	} else if (!strcmp(path, "/subsystems")) {
 		struct subsystem *subsys;
 
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -158,9 +161,8 @@ int run_fuse(struct fuse_args *args)
 	int ret;
 
 	ret = fuse_main(args->argc, args->argv, &nofuse_oper, ctx);
-	if (ret) {
-		fprintf(stderr, "failed to run fuse, error %d\n", ret);
-	}
+	if (ret)
+		fprintf(stderr, "fuse terminated with %d\n", ret);
 	fuse_opt_free_args(args);
 	return ret;
 }

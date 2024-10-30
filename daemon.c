@@ -24,7 +24,6 @@ LINKED_LIST(device_linked_list);
 
 int stopped;
 int debug;
-static int signalled;
 
 static int nsdevs = 1;
 static int nvmf_portid = 1;
@@ -32,12 +31,6 @@ static int nvmf_portid = 1;
 struct nofuse_context *ctx;
 
 extern int run_fuse(struct fuse_args *args);
-
-static void signal_handler(int sig_num)
-{
-	signalled = sig_num;
-	stopped = 1;
-}
 
 static int open_file_ns(const char *filename)
 {
@@ -358,9 +351,6 @@ int main(int argc, char *argv[])
 	struct host_iface *iface;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	signal(SIGINT, signal_handler);
-	signal(SIGTERM, signal_handler);
-
 	ctx = malloc(sizeof(struct nofuse_context));
 	if (!ctx)
 		return 1;
@@ -373,7 +363,7 @@ int main(int argc, char *argv[])
 	if (ret)
 		return ret;
 
-	signalled = stopped = 0;
+	stopped = 0;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		pthread_attr_t pthread_attr;
@@ -393,6 +383,12 @@ int main(int argc, char *argv[])
 	run_fuse(&args);
 
 	printf("terminating\n");
+	stopped = 1;
+
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		if (iface->pthread)
+			pthread_kill(iface->pthread, SIGTERM);
+	}
 
 	free_interfaces();
 
