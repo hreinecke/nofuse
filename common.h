@@ -173,7 +173,6 @@ struct nofuse_context {
 	int ramdisk_size;
 	int debug;
 	int help;
-	int standalone;
 };
 
 extern struct nofuse_context *ctx;

@@ -39,38 +39,6 @@ static void signal_handler(int sig_num)
 	stopped = 1;
 }
 
-static int daemonize(void)
-{
-	pid_t			 pid, sid;
-
-	pid = fork();
-	if (pid < 0) {
-		print_errno("fork failed", pid);
-		return pid;
-	}
-
-	if (pid) /* if parent, exit to allow child to run as daemon */
-		exit(0);
-
-	umask(0022);
-
-	sid = setsid();
-	if (sid < 0) {
-		print_errno("setsid failed", sid);
-		return sid;
-	}
-
-	if ((chdir("/")) < 0) {
-		print_err("could not change dir to /");
-		return -1;
-	}
-
-	freopen("/var/log/nofuse_debug.log", "a", stdout);
-	freopen("/var/log/nofuse.log", "a", stderr);
-
-	return 0;
-}
-
 static int open_file_ns(const char *filename)
 {
 	struct nsdev *ns;
@@ -262,7 +230,6 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--hostnqn=%s", hostnqn),
 	OPTION("--help", help),
 	OPTION("--debug", debug),
-	OPTION("--standalone", standalone),
 	OPTION("--interface=%s", interface),
 	OPTION("--port=%d", portnum),
 	OPTION("--file=%s", filename),
@@ -275,7 +242,6 @@ static void show_help(void)
 	print_info("Usage: nofuse <args>");
 	print_info("Possible values for <args>");
 	print_info("  --debug - enable debug prints in log files");
-	print_info("  --standalone - run as a standalone process (default is daemon)");
 	print_info("  --interface=<iface> - interface to use (default: 'lo')");
 	print_info("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
 	print_info("  --file=<filename> - use file as namespace");
@@ -343,11 +309,6 @@ static int init_args(struct fuse_args *args)
 		list_for_each_entry(iface, &iface_linked_list, node) {
 			iface->tls = true;
 		}
-	}
-
-	if (!ctx->standalone) {
-		if (daemonize())
-			return 1;
 	}
 
 	return 0;
