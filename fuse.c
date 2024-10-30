@@ -27,20 +27,20 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	const char *p;
 
 	memset(stbuf, 0, sizeof(struct stat));
-	if (strcmp(path, "/") == 0) {
+	if (!strcmp(path, "/")) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-	} else if (strncmp(path, "/hosts/", 7)) {
+	} else if (!strncmp(path, "/hosts/", 7)) {
 		p = path + 7;
 		if (!strlen(p)) {
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
-		} else if (strcmp(p, hostnqn)) {
+		} else if (ctx->hostnqn && !strcmp(p, ctx->hostnqn)) {
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
 		} else
 			res = -ENOENT;
-	} else if (strncmp(path, "/ports/", 7)) {
+	} else if (!strncmp(path, "/ports/", 7)) {
 		p = path + 7;
 		if (!strlen(p)) {
 			stbuf->st_mode = S_IFDIR | 0755;
@@ -61,7 +61,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 				}
 			}
 		}
-	} else if (strncmp(path, "/subsystems/", 12)) {
+	} else if (!strncmp(path, "/subsystems/", 12)) {
 		p = path + 12;
 		if (!strlen(p)) {
 			stbuf->st_mode = S_IFDIR | 0755;
@@ -105,7 +105,8 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	} else if (!strcmp(path, "/hosts/")) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		filler(buf, hostnqn, NULL, 0, FUSE_FILL_DIR_PLUS);
+		if (ctx->hostnqn)
+			filler(buf, ctx->hostnqn, NULL, 0, FUSE_FILL_DIR_PLUS);
 	} else if (!strcmp(path, "/ports/")) {
 		struct host_iface *iface;
 
@@ -152,12 +153,14 @@ static const struct fuse_operations nofuse_oper = {
 	.read		= nofuse_read,
 };
 
-int run_fuse(int argc, char *argv[])
+int run_fuse(struct fuse_args *args)
 {
 	int ret;
-	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-	ret = fuse_main(args.argc, args.argv, &nofuse_oper, NULL);
-	fuse_opt_free_args(&args);
+	ret = fuse_main(args->argc, args->argv, &nofuse_oper, ctx);
+	if (ret) {
+		fprintf(stderr, "failed to run fuse, error %d\n", ret);
+	}
+	fuse_opt_free_args(args);
 	return ret;
 }

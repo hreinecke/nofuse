@@ -22,14 +22,16 @@ LINKED_LIST(subsys_linked_list);
 LINKED_LIST(iface_linked_list);
 LINKED_LIST(device_linked_list);
 
-char *hostnqn;
-char *subsysnqn;
 int stopped;
 int debug;
 static int signalled;
 
 static int nsdevs = 1;
 static int nvmf_portid = 1;
+
+struct nofuse_context *ctx;
+
+extern int run_fuse(struct fuse_args *args);
 
 static void signal_handler(int sig_num)
 {
@@ -69,7 +71,7 @@ static int daemonize(void)
 	return 0;
 }
 
-static int open_file_ns(char *filename)
+static int open_file_ns(const char *filename)
 {
 	struct nsdev *ns;
 	struct stat st;
@@ -143,8 +145,8 @@ static int init_subsys(void)
 		}
 		return -ENOMEM;
 	}
-	if (subsysnqn)
-		sprintf(subsys->nqn, "%s", subsysnqn);
+	if (ctx->subsysnqn)
+		sprintf(subsys->nqn, "%s", ctx->subsysnqn);
 	else
 		sprintf(subsys->nqn, NVMF_UUID_FMT,
 			"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
@@ -252,22 +254,25 @@ static int add_host_port(int port)
 	return iface_num;
 }
 
-static const struct option nofuse_options[] = {
-	{ "subsysnqn", required_argument, 0, 0 },
-	{ "hostnqn", required_argument, 0, 0 },
-	{ "help", no_argument, 0, 'h' },
-	{ "debug", no_argument, 0, 'd' },
-	{ "standalone", no_argument, 0, 0 },
-	{ "interface", required_argument, 0, 0},
-	{ "port", required_argument, 0, 0},
-	{ "file", required_argument, 0, 0},
-	{ "ramdisk", required_argument, 0, 0},
-	{ NULL, 0, 0, 0 },
+#define OPTION(t, p)				\
+    { t, offsetof(struct nofuse_context, p), 1 }
+
+static const struct fuse_opt nofuse_options[] = {
+	OPTION("--subsysnqn=%s", subsysnqn),
+	OPTION("--hostnqn=%s", hostnqn),
+	OPTION("--help", help),
+	OPTION("--debug", debug),
+	OPTION("--standalone", standalone),
+	OPTION("--interface=%s", interface),
+	OPTION("--port=%d", portnum),
+	OPTION("--file=%s", filename),
+	OPTION("--ramdisk=%d", ramdisk_size),
+	FUSE_OPT_END,
 };
 
-static void show_help(char *app)
+static void show_help(void)
 {
-	print_info("Usage: %s <args>", app);
+	print_info("Usage: nofuse <args>");
 	print_info("Possible values for <args>");
 	print_info("  --debug - enable debug prints in log files");
 	print_info("  --standalone - run as a standalone process (default is daemon)");
@@ -279,140 +284,59 @@ static void show_help(char *app)
 	print_info("  --subsysnqn=<NQN> - Subsystem NQN to use");
 }
 
-static int init_args(int argc, char *argv[], struct fuse_args *fuse_opts)
+static int init_args(struct fuse_args *args)
 {
-	int opt;
-	int run_as_daemon;
-	char *eptr;
-	const char *opt_list = "s:n:hdSi:t:f:r";
-	unsigned long size;
-	int port_num[16];
-	int port_max = 0, port, idx;
 	int iface_num = 0, tls_keyring;
-	char **fuse_argv;
-	int fuse_argc = 0;
-	int option_index;
 
-	hostnqn = NULL;
-	debug = 0;
-	run_as_daemon = 1;
+	debug = ctx->debug;
 
-	fuse_argv = malloc(sizeof(char *) * argc);
-	memset(fuse_argv, 0, sizeof(char *) * argc);
-
-	while ((opt = getopt_long(argc, argv, opt_list,
-				  nofuse_options, &option_index)) != -1) {
-		switch (opt) {
-		case 'd':
-			debug = 1;
-			break;
-		case 'S':
-			run_as_daemon = 0;
-			break;
-		case 's':
-			if (strncmp(optarg, "nqn.", 4)) {
-				print_err("Invalid Subsystem NQN %s\n",
-					  optarg);
-				goto out_free;
-			}
-			subsysnqn = optarg;
-			break;
-		case 'i':
-			if (get_iface(optarg) < 0) {
-				print_err("Invalid interface %s\n",
-					  optarg);
-				goto out_free;
-			}
-			iface_num++;
-			break;
-		case 'p':
-			errno = 0;
-			if (port_max >= 16) {
-				print_err("Too many port numbers specified");
-				goto out_free;
-			}
-			port = strtoul(optarg, &eptr, 10);
-			if (errno || port == 0 || port > LONG_MAX) {
-				print_err("Invalid port number '%s'",
-					  optarg);
-				goto out_free;
-			}
-			for (idx = 0; idx < port_max; idx++) {
-				if (port_num[idx] == port) {
-					port = -1;
-					break;
-				}
-			}
-			if (port > 0) {
-				port_num[idx] = port;
-				port_max++;
-			}
-			break;
-		case 'f':
-			if (open_file_ns(optarg) < 0)
-				goto out_free;
-			break;
-		case 'r':
-			size = strtoul(optarg, &eptr, 10);
-			if (errno || size == 0 || size > LONG_MAX) {
-				print_err("Invalid size '%s'",
-					  optarg);
-				goto out_free;
-			}
-			if (open_ram_ns(size) < 0)
-				goto out_free;
-			break;
-		case 'n':
-			hostnqn = optarg;
-			break;
-		case '?':
-		case 'h':
-			show_help(argv[0]);
-			goto out_free;
-		default:
-			fuse_argv[fuse_argc++] = argv[optind];
-			break;
+	if (ctx->interface) {
+		if (get_iface(ctx->interface) < 0) {
+			print_err("Invalid interface %s\n",
+				  ctx->interface);
+			return 1;
 		}
+		iface_num++;
+	}
+	if (ctx->portnum) {
+		add_host_port(ctx->portnum);
+	}
+	if (ctx->filename) {
+		if (open_file_ns(ctx->filename) < 0)
+			return 1;
+	}
+	if (ctx->ramdisk_size) {
+		if (open_ram_ns(ctx->ramdisk_size) < 0)
+			return 1;
+	}
+	if (ctx->help) {
+		show_help();
+		return 1;
 	}
 
 	tls_keyring = tls_global_init();
 
-	fuse_opts->argc = fuse_argc;
-	fuse_opts->argv = fuse_argv;
-	fuse_opts->allocated = 0;
-
 	if (init_subsys())
-		goto out_free;
+		return 1;
 
 	if (list_empty(&device_linked_list)) {
 		if (open_ram_ns(128) < 0) {
 			print_err("Failed to create default namespace");
-			goto out_free;
+			return 1;
 		}
 	}
 
 	if (list_empty(&iface_linked_list)) {
 		if (get_iface("lo") < 0) {
 			print_err("Failed to initialize iface 'lo'");
-			goto out_free;
+			return 1;
 		}
 		iface_num++;
 	}
 
-	if (!port_max) {
-		struct host_iface *iface;
-
-		/* No port specified; use 8009 as I/O port, too */
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			iface->port_type |= (1 << NVME_NQN_NVM);
-		}
-	}
-	for (idx = 0; idx < port_max; idx++)
-		add_host_port(port_num[idx]);
-
 	if (list_empty(&iface_linked_list)) {
 		print_err("invalid host interface configuration");
-		goto out_free;
+		return 1;
 	} else if (tls_keyring) {
 		struct host_iface *iface;
 
@@ -421,15 +345,12 @@ static int init_args(int argc, char *argv[], struct fuse_args *fuse_opts)
 		}
 	}
 
-	if (run_as_daemon) {
+	if (!ctx->standalone) {
 		if (daemonize())
-			goto out_free;
+			return 1;
 	}
 
 	return 0;
-out_free:
-	free(fuse_argv);
-	return 1;
 }
 
 void free_devices(void)
@@ -474,12 +395,20 @@ int main(int argc, char *argv[])
 {
 	int ret = 1;
 	struct host_iface *iface;
-	struct fuse_args fuse_argv;
+	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
-	ret = init_args(argc, argv, &fuse_argv);
+	ctx = malloc(sizeof(struct nofuse_context));
+	if (!ctx)
+		return 1;
+	memset(ctx, 0, sizeof(struct nofuse_context));
+
+	if (fuse_opt_parse(&args, ctx, nofuse_options, NULL) < 0)
+		return 1;
+
+	ret = init_args(&args);
 	if (ret)
 		return ret;
 
@@ -500,15 +429,17 @@ int main(int argc, char *argv[])
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	run_fuse(fuse_argv.argc, fuse_argv.argv);
+	run_fuse(&args);
 
-	free(fuse_argv.argv);
+	printf("terminating\n");
 
 	free_interfaces();
 
 	free_devices();
 
 	free_subsys();
+
+	free(ctx);
 
 	return ret;
 }

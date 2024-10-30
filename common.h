@@ -164,6 +164,20 @@ struct subsystem {
 	int type;
 };
 
+struct nofuse_context {
+	const char *hostnqn;
+	const char *subsysnqn;
+	const char *interface;
+	const char *filename;
+	int portnum;
+	int ramdisk_size;
+	int debug;
+	int help;
+	int standalone;
+};
+
+extern struct nofuse_context *ctx;
+
 static inline void set_response(struct nvme_completion *resp,
 				u16 ccid, u16 status, bool dnr)
 {
@@ -177,7 +191,5 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
-
-int run_fuse(int argc, char *argv[]);
 
 #endif

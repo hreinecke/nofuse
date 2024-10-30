@@ -203,7 +203,9 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
-		if (hostnqn && memcmp(connect->hostnqn, hostnqn, strlen(hostnqn))) {
+		if (ctx->hostnqn &&
+		    memcmp(connect->hostnqn, ctx->hostnqn,
+			   strlen(ctx->hostnqn))) {
 			print_err("Rejecting host NQN '%s'\n", connect->hostnqn);
 			return NVME_SC_CONNECT_INVALID_HOST;
 		}
