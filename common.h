@@ -178,4 +178,6 @@ int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
+int run_fuse(int argc, char *argv[]);
+
 #endif

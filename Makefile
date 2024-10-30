@@ -1,7 +1,7 @@
 
-CFLAGS = -Wall -g -DDEBUG_COMMANDS
-OBJS := daemon.o nvmeof.o endpoint.o tcp.o null.o uring.o base64.o tls.o
-LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils
+CFLAGS = -Wall -g -DDEBUG_COMMANDS -I/usr/include/fuse3
+OBJS := daemon.o nvmeof.o endpoint.o tcp.o null.o uring.o base64.o tls.o fuse.o
+LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3
 
 all: nofuse
 
