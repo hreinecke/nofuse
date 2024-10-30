@@ -19,9 +19,30 @@ static void *nofuse_init(struct fuse_conn_info *conn,
 	return NULL;
 }
 
+static const char *select_attr(const char *attrs[], int num_attrs,
+			       const char *path)
+{
+	int i;
+	const char *p = path;
+
+	if (strlen(p) && *p == '/')
+		p++;
+	for (i = 0; i < num_attrs; i++) {
+		if (!strncmp(attrs[i], p, strlen(attrs[i]))) {
+			p += strlen(attrs[i]);
+			if (strlen(p) && *p == '/')
+				p++;
+			if (strlen(p))
+				continue;
+			return attrs[i];
+		}
+	}
+	return NULL;
+}
+
 #define NUM_PORT_ATTRS 6
 
-static char *port_attrs[NUM_PORT_ATTRS] = {
+static const char *port_attrs[NUM_PORT_ATTRS] = {
 	"addr_adrfam",
 	"addr_traddr",
 	"addr_treq",
@@ -44,15 +65,13 @@ static int port_getattr(struct host_iface *iface, const char *path,
 		stbuf->st_nlink = 2;
 		res = 0;
 	} else {
-		int i;
+		const char *attr = select_attr(port_attrs, NUM_PORT_ATTRS, p);
 
-		for (i = 0; i < NUM_PORT_ATTRS; i++) {
-			if (!strcmp(port_attrs[i], p)) {
-				stbuf->st_mode = S_IFREG | 0444;
-				stbuf->st_nlink = 1;
-				stbuf->st_size = 0;
-				res = 0;
-			}
+		if (attr) {
+			stbuf->st_mode = S_IFREG | 0444;
+			stbuf->st_nlink = 1;
+			stbuf->st_size = 256;
+			res = 0;
 		}
 	}
 	return res;
@@ -60,7 +79,7 @@ static int port_getattr(struct host_iface *iface, const char *path,
 
 #define NUM_SUBSYS_ATTRS 7
 
-static char *subsys_attrs[NUM_SUBSYS_ATTRS] = {
+static const char *subsys_attrs[NUM_SUBSYS_ATTRS] = {
 	"attr_allow_any_host",
 	"attr_firmware",
 	"attr_ieee_oui",
@@ -83,15 +102,14 @@ static int subsys_getattr(struct subsystem *subsys, const char *path,
 		stbuf->st_nlink = 2;
 		res = 0;
 	} else {
-		int i;
+		const char *attr = select_attr(subsys_attrs,
+					       NUM_SUBSYS_ATTRS, p);
 
-		for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
-			if (!strcmp(subsys_attrs[i], p)) {
-				stbuf->st_mode = S_IFREG | 0444;
-				stbuf->st_nlink = 1;
-				stbuf->st_size = 0;
-				res = 0;
-			}
+		if (attr) {
+			stbuf->st_mode = S_IFREG | 0444;
+			stbuf->st_nlink = 1;
+			stbuf->st_size = 256;
+			res = 0;
 		}
 	}
 	return res;
@@ -304,18 +322,119 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return ret;
 }
 
+static int attr_open(const char *path, const char **attrs, int num_attrs,
+		     struct fuse_file_info *fi)
+{
+	const char *p = path;
+	const char *attr;
+
+	if (strlen(p) && *p == '/')
+		p++;
+	if (strlen(p))
+		return -ENOENT;
+	attr = select_attr(attrs, num_attrs, p);
+	if (!attr)
+		return -ENOENT;
+	if ((fi->flags & O_ACCMODE) != O_RDONLY)
+		return -EACCES;
+	return 0;
+}
+
 static int nofuse_open(const char *path, struct fuse_file_info *fi)
 {
-	return -ENOENT;
+	const char *p = path;
+	int ret = -ENOENT;
+
+	if (!strncmp(path, "/subsystems", 11)) {
+		struct subsystem *subsys;
+
+		p += 11;
+		if (strlen(p) && *p == '/')
+			p++;
+		list_for_each_entry(subsys, &subsys_linked_list, node) {
+			if (!strncmp(subsys->nqn, p,
+				     strlen(subsys->nqn))) {
+				p += strlen(subsys->nqn);
+				ret = attr_open(p, subsys_attrs,
+						NUM_SUBSYS_ATTRS, fi);
+				break;
+			}
+		}
+	} else if (!strncmp(path, "/ports", 6)) {
+		struct host_iface *iface;
+
+		p += 6;
+		if (strlen(p) && *p == '/')
+			p++;
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			char portname[16];
+
+			sprintf(portname, "%d", iface->portid);
+			if (!strncmp(p, portname, strlen(portname))) {
+				p += strlen(portname);
+				ret = attr_open(p, port_attrs,
+						NUM_PORT_ATTRS, fi);
+				break;
+			}
+		}
+	}
+	return ret;
 }
 
 static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
-	(void) fi;
+	const char *p = path;
+	int ret = -ENOENT;
 
-	printf("read %s\n", path);
-	return -ENOENT;
+	if (!strncmp(path, "/subsystems", 11)) {
+		struct subsystem *subsys;
+
+		p += 11;
+		if (strlen(p) && *p == '/')
+			p++;
+		list_for_each_entry(subsys, &subsys_linked_list, node) {
+			const char *attr;
+
+			if (strncmp(subsys->nqn, p,
+				    strlen(subsys->nqn)))
+				continue;
+
+			p += strlen(subsys->nqn);
+			attr = select_attr(subsys_attrs,
+					   NUM_SUBSYS_ATTRS, p);
+			if (!attr)
+				return ret;
+			if (strcmp(attr, "attr_allow_any_host")) {
+				strcpy(buf, "1\n");
+				return 2;
+			} else {
+				return 0;
+			}
+		}
+	} else if (!strncmp(path, "/ports", 6)) {
+		struct host_iface *iface;
+
+		p += 6;
+		if (strlen(p) && *p == '/')
+			p++;
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			const char *attr;
+			char portname[16];
+
+			sprintf(portname, "%d", iface->portid);
+			if (strncmp(p, portname, strlen(portname)))
+				continue;
+
+			p += strlen(portname);
+			attr = select_attr(port_attrs,
+					   NUM_PORT_ATTRS, p);
+			if (!attr)
+				return ret;
+			return 0;
+		}
+	}
+	return ret;
 }
 
 static const struct fuse_operations nofuse_oper = {
