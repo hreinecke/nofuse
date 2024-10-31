@@ -63,47 +63,45 @@ static enum dir_type next_dir_type(const char *e, enum dir_type cur, void **p)
 	struct host_iface *iface = NULL;
 	struct subsystem *subsys = NULL;
 
-	if (!e) {
-		switch (cur) {
-		case TYPE_ROOT:
-			if (!strcmp(e, "hosts")) {
-				next = TYPE_HOST_DIR;
-			} else if (!strcmp(e, "ports")) {
-				next = TYPE_PORT_DIR;
-			} else if (!strcmp(e, "subsystems")) {
-				next = TYPE_SUBSYS_DIR;
-			}
-			break;
-		case TYPE_HOST_DIR:
-			if (ctx->hostnqn && !strcmp(ctx->hostnqn, e)) {
-				next = TYPE_HOST;
-				*p = ctx;
-			}
-			break;
-		case TYPE_PORT_DIR:
-			list_for_each_entry(iface, &iface_linked_list, node) {
-				char portname[16];
-
-				sprintf(portname, "%d", iface->portid);
-				if (!strcmp(portname, e)) {
-					next = TYPE_PORT;
-					*p = iface;
-					break;
-				}
-			}
-			break;
-		case TYPE_SUBSYS_DIR:
-			list_for_each_entry(subsys, &subsys_linked_list, node) {
-				if (!strcmp(subsys->nqn, e)) {
-					next = TYPE_SUBSYS;
-					*p = subsys;
-					break;
-				}
-			}
-			break;
-		default:
-			break;
+	switch (cur) {
+	case TYPE_ROOT:
+		if (!strcmp(e, "hosts")) {
+			next = TYPE_HOST_DIR;
+		} else if (!strcmp(e, "ports")) {
+			next = TYPE_PORT_DIR;
+		} else if (!strcmp(e, "subsystems")) {
+			next = TYPE_SUBSYS_DIR;
 		}
+		break;
+	case TYPE_HOST_DIR:
+		if (ctx->hostnqn && !strcmp(ctx->hostnqn, e)) {
+			next = TYPE_HOST;
+			*p = ctx;
+		}
+		break;
+	case TYPE_PORT_DIR:
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			char portname[16];
+
+			sprintf(portname, "%d", iface->portid);
+			if (!strcmp(portname, e)) {
+				next = TYPE_PORT;
+				*p = iface;
+				break;
+			}
+		}
+		break;
+	case TYPE_SUBSYS_DIR:
+		list_for_each_entry(subsys, &subsys_linked_list, node) {
+			if (!strcmp(subsys->nqn, e)) {
+				next = TYPE_SUBSYS;
+				*p = subsys;
+				break;
+			}
+		}
+		break;
+	default:
+		break;
 	}
 	return next;
 }
@@ -185,26 +183,28 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 {
 	(void) fi;
 	int res = 0;
-	char *p, *pathbuf;
+	char *p = NULL, *pathbuf;
 	enum dir_type type;
 	void *s;
 
+	memset(stbuf, 0, sizeof(struct stat));
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	memset(stbuf, 0, sizeof(struct stat));
 	p = strtok(pathbuf, "/");
+	printf("%s: %s %s\n", __func__, pathbuf, p);
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 5;
 		goto out_free;
 	}
+
 	type = next_dir_type(p, TYPE_ROOT, NULL);
 	if (type == TYPE_NONE) {
 		res = -ENOENT;
 		goto out_free;
 	}
-
+	printf("%s: type %d %p\n", __func__, type, p);
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
@@ -231,11 +231,11 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		goto out_free;
 	}
 
+	printf("%s: type %d %p\n", __func__, type, p);
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		res = 0;
 	} else if (type == TYPE_PORT) {
 		struct host_iface *iface = s;
 
@@ -244,7 +244,9 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		struct subsystem *subsys = s;
 
 		res = subsys_getattr(subsys, p, stbuf);
-	}
+	} else
+		res = -ENOENT;
+
 out_free:
 	free(pathbuf);
 	return res;
