@@ -26,10 +26,6 @@ LINKED_LIST(device_linked_list);
 int stopped;
 int debug;
 
-int hosts_ino;
-int subsys_ino;
-int ports_ino;
-
 static int nsdevs = 1;
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
@@ -41,7 +37,7 @@ extern int run_fuse(struct fuse_args *args);
 static struct nofuse_subsys *add_subsys(const char *nqn, int type)
 {
 	struct nofuse_subsys *subsys;
-	int inode;
+	int inode, subsys_ino = inode_get_root("subsystems");
 
 	subsys = malloc(sizeof(*subsys));
 	if (!subsys)
@@ -154,7 +150,7 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 					 int adrfam, int port)
 {
 	struct host_iface *iface;
-	int inode;
+	int inode, ports_ino = inode_get_root("ports");
 
 	iface = malloc(sizeof(*iface));
 	if (!iface)
@@ -257,25 +253,6 @@ static int add_host_port(int port)
 
 	list_splice_tail(&tmp_iface_list, &iface_linked_list);
 	return iface_num;
-}
-
-static int init_inodes(void)
-{
-	hosts_ino = inode_add_root("hosts");
-	if (hosts_ino < 0)
-		return hosts_ino;
-	subsys_ino = inode_add_root("subsystems");
-	if (subsys_ino < 0) {
-		inode_del_inode(hosts_ino);
-		return subsys_ino;
-	}
-	ports_ino = inode_add_root("ports");
-	if (ports_ino < 0) {
-		inode_del_inode(subsys_ino);
-		inode_del_inode(hosts_ino);
-		return ports_ino;
-	}
-	return 0;
 }
 
 #define OPTION(t, p)				\
@@ -427,10 +404,6 @@ int main(int argc, char *argv[])
 	ret = inode_open(ctx->dbname);
 	if (ret)
 		return 1;
-
-	ret = init_inodes();
-	if (ret)
-		goto out_close;
 
 	ret = init_args(&args);
 	if (ret)

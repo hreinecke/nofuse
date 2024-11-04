@@ -20,6 +20,10 @@
  */
 #define _GNU_SOURCE
 
+#define FUSE_USE_VERSION 31
+
+#include <fuse.h>
+
 #include <stdio.h>
 #include <unistd.h>
 #include <sqlite3.h>
@@ -29,6 +33,11 @@
 #include "inode.h"
 
 static sqlite3 *inode_db;
+
+static int hosts_ino;
+static int subsys_ino;
+static int ports_ino;
+
 
 static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 {
@@ -121,9 +130,66 @@ static int sql_exec_int(const char *sql, char *col, int *value)
 	}
 	if (parm.done < 0)
 		fprintf(stderr, "value error for '%s': %s\n", col,
-			strerror(parm.done));
+			strerror(-parm.done));
 	else
 		*value = parm.val;
+	return parm.done;
+}
+
+struct sql_str_value_parm {
+	const char *col;
+	char *val;
+	int done;
+};
+
+static int sql_str_value_cb(void *argp, int argc, char **argv, char **colname)
+{
+	struct sql_str_value_parm *parm = argp;
+	int i;
+
+	if (parm->done != 0) {
+		parm->done = -ENOTUNIQ;
+		return 0;
+	}
+
+	for (i = 0; i < argc; i++) {
+		if (strcmp(parm->col, colname[i])) {
+			printf("%s: ignore col %s\n", __func__,
+			       colname[i]);
+			continue;
+		}
+		if (parm->val) {
+			if (!argv[i])
+				*parm->val = '\0';
+			else
+				strcpy(parm->val, argv[i]);
+		}
+		parm->done = 1;
+	}
+	return 0;
+}
+
+static int sql_exec_str(const char *sql, const char *col, char *value)
+{
+	char *errmsg;
+	struct sql_str_value_parm parm = {
+		.col = col,
+		.val = value,
+		.done = 0,
+	};
+	int ret;
+
+	ret = sqlite3_exec(inode_db, sql, sql_str_value_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		parm.done = -EINVAL;
+	}
+	if (parm.done < 0)
+		fprintf(stderr, "value error for '%s': %s\n", col,
+			strerror(parm.done));
 	return parm.done;
 }
 
@@ -133,20 +199,24 @@ static const char *init_sql[NUM_TABLES] = {
 "CREATE TABLE inode ( ino INTEGER PRIMARY KEY AUTOINCREMENT, "
 "pathname VARCHAR(256) NOT NULL, parent_ino INTEGER, mode INTEGER, "
 "ctime TIME, atime TIME, mtime TIME, data_type INTEGER, data_id INTEGER);",
-"CREATE TABLE host ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
 "parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino));",
-"CREATE TABLE subsys ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"nqn VARCHAR(223) UNIQUE NOT NULL, allow_any INT DEFAULT 1, "
-"type INT DEFAULT 3, parent_ino INTEGER, "
+"CREATE TABLE subsystems ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
+"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
+"attr_model VARCHAR(256), attr_serial VARCHAR(256), attr_version VARCHAR(256), "
+"type INT DEFAULT 3, parent_ino INTEGER, ctime TIME, "
 "FOREIGN KEY (parent_ino) REFERENCES inode(ino));",
-"CREATE TABLE port ( portid INTEGER PRIMARY KEY AUTOINCREMENT,"
-"trtype CHAR(32) NOT NULL, adrfam CHAR(32) DEFAULT '', "
-"subtype INT DEFAULT 2, treq char(32), traddr CHAR(255) NOT NULL, "
-"trsvcid CHAR(32) DEFAULT '', tsas CHAR(255) DEFAULT '', parent_ino INTEGER, "
-"UNIQUE(trtype,adrfam,traddr,trsvcid), "
+"CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT,"
+"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
+"addr_subtype INT DEFAULT 2, addr_treq char(32), "
+"addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
+"addr_tsas CHAR(255) DEFAULT '', parent_ino INTEGER, "
+"ctime TIME, atime TIME, mtime TIME, "
+"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid), "
 "FOREIGN KEY (parent_ino) REFERENCES inode (ino) );"
-"CREATE UNIQUE INDEX port_addr ON port(trtype, adrfam, traddr, trsvcid);",
+"CREATE UNIQUE INDEX port_addr ON ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
 "parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
 "FOREIGN KEY (host_id) REFERENCES host(id) "
@@ -155,9 +225,9 @@ static const char *init_sql[NUM_TABLES] = {
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 "CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
 "parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
-"FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
+"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT, "
-"FOREIGN KEY (port_id) REFERENCES port(portid) "
+"FOREIGN KEY (port_id) REFERENCES ports(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
@@ -178,9 +248,9 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE subsys_port;",
 	"DROP TABLE host_subsys;",
 	"DROP INDEX port_addr",
-	"DROP TABLE port;",
-	"DROP TABLE subsys;",
-	"DROP TABLE host;",
+	"DROP TABLE ports;",
+	"DROP TABLE subsystems;",
+	"DROP TABLE hosts;",
 	"DROP TABLE inode;",
 };
 
@@ -231,6 +301,74 @@ int inode_add_root(const char *pathname)
 	return value;
 rollback:
 	ret = sql_exec_simple("ROLLBACK TRANSACTION;");
+	return ret;
+}
+
+int inode_get_root(const char *path)
+{
+	if (!strcmp(path, "hosts"))
+		return hosts_ino;
+	if (!strcmp(path, "subsystems"))
+		return subsys_ino;
+	if (!strcmp(path, "ports"))
+		return ports_ino;
+	return -1;
+}
+
+struct fill_parm_t {
+	fuse_fill_dir_t filler;
+	const char *prefix;
+	void *buf;
+};
+
+static int fill_root_cb(void *p, int argc, char **argv, char **colname)
+{
+	struct fill_parm_t *parm = p;
+	int i;
+
+	for (i = 0; i < argc; i++)
+		parm->filler(parm->buf, argv[i], NULL,
+			     0, FUSE_FILL_DIR_PLUS);
+	return 0;
+}
+
+static int fill_filter_cb(void *p, int argc, char **argv, char **colname)
+{
+	struct fill_parm_t *parm = p;
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (strncmp(colname[i], parm->prefix,
+			    strlen(parm->prefix)))
+			continue;
+		parm->filler(parm->buf, colname[i], NULL,
+			     0, FUSE_FILL_DIR_PLUS);
+	}
+	return 0;
+}
+
+static char fill_root_sql[] =
+	"SELECT pathname FROM inode WHERE parent_ino IS NULL;";
+
+int inode_fill_root(void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *errmsg;
+	int ret;
+
+	ret = sqlite3_exec(inode_db, fill_root_sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_root_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
 	return ret;
 }
 
@@ -290,6 +428,22 @@ int inode_del_inode(int ino)
 	return ret;
 }
 
+static char find_links_sql[] =
+	"SELECT count(id) AS num FROM %s WHERE parent_ino = '%d';";
+
+int inode_find_links(const char *tbl, int parent_ino)
+{
+	char *sql;
+	int ret, value;
+
+	ret = asprintf(&sql, find_links_sql, tbl, parent_ino);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "num", &value);
+	free(sql);
+	return ret;
+}
+
 static char add_host_sql[] =
 	"INSERT INTO host (nqn, parent_ino) VALUES ('%s', '%d');";
 
@@ -307,8 +461,51 @@ int inode_add_host(struct nofuse_host *host, int parent_ino)
 	return ret;
 }
 
+static char host_get_inode_sql[] =
+	"SELECT id AS ino FROM hosts "
+	"WHERE nqn = '%s';";
+
+int inode_get_host_ino(const char *host, int *inode)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, host_get_inode_sql, host);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "ino", inode);
+	free(sql);
+	return ret;
+}
+
+static char fill_host_dir_sql[] =
+	"SELECT nqn FROM hosts;";
+
+int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *errmsg;
+	int ret;
+
+	ret = sqlite3_exec(inode_db, fill_host_dir_sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	return ret;
+}
+
 static char del_host_sql[] =
-	"DELETE FROM host WHERE nqn = '%s';";
+	"DELETE FROM hosts WHERE nqn = '%s';";
 
 int inode_del_host(struct nofuse_host *host)
 {
@@ -324,8 +521,8 @@ int inode_del_host(struct nofuse_host *host)
 }
 
 static char add_subsys_sql[] =
-	"INSERT INTO subsys (nqn, allow_any, type, parent_ino) "
-	"VALUES ('%s', '%d', '%d', '%d');";
+	"INSERT INTO subsystems (nqn, attr_allow_any_host, type, parent_ino, ctime) "
+	"VALUES ('%s', '%d', '%d', '%d', date('now'));";
 
 int inode_add_subsys(struct nofuse_subsys *subsys, int parent_ino)
 {
@@ -341,8 +538,117 @@ int inode_add_subsys(struct nofuse_subsys *subsys, int parent_ino)
 	return ret;
 }
 
+static char subsys_get_inode_sql[] =
+	"SELECT id AS ino FROM subsystems "
+	"WHERE nqn = '%s' AND parent_ino = '%d';";
+
+int inode_get_subsys_ino(const char *subsys, int parent_ino, int *inode)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, subsys_get_inode_sql, subsys, parent_ino);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "ino", inode);
+	free(sql);
+	return ret;
+}
+
+static char stat_subsys_sql[] =
+	"SELECT unixepoch('ctime') AS tv FROM subsystems WHERE nqn = '%s';";
+
+int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
+{
+	char *sql;
+	int ret, timeval;
+
+	ret = asprintf(&sql, stat_subsys_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "tv", &timeval);
+	free(sql);
+	if (ret < 0)
+		return -ENOENT;
+	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	return 0;
+}
+
+static char fill_subsys_dir_sql[] =
+	"SELECT nqn FROM subsystems;";
+
+int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *errmsg;
+	int ret;
+
+	ret = sqlite3_exec(inode_db, fill_subsys_dir_sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_subsys_dir_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	return ret;
+}
+
+static char fill_subsys_sql[] =
+	"SELECT * FROM subsystems WHERE nqn = '%s';";
+
+int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = "attr_",
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, fill_subsys_sql, nqn);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(inode_db, sql, fill_filter_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	free(sql);
+	return ret;
+}
+
+static char get_subsys_attr_sql[] =
+	"SELECT %s FROM subsystems WHERE nqn = '%s';";
+
+int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, get_subsys_attr_sql, attr, nqn);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_str(sql, attr, buf);
+	free(sql);
+	return ret;
+}
+
 static char del_subsys_sql[] =
-	"DELETE FROM subsys WHERE id = '%d';";
+	"DELETE FROM subsystems WHERE id = '%d';";
 
 int inode_del_subsys(struct nofuse_subsys *subsys)
 {
@@ -358,17 +664,17 @@ int inode_del_subsys(struct nofuse_subsys *subsys)
 }
 
 static char add_port_sql[] =
-	"INSERT INTO port (trtype, adrfam, treq, traddr, trsvcid, tsas, subtype)"
-	" VALUES ('%s','%s','%s','%s','%s','%s','%d');";
+	"INSERT INTO ports (addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, addr_subtype, ctime)"
+	" VALUES ('%s','%s','%s','%s','%s','%s','%d', date('now'));";
 
 static char select_portid_sql[] =
-	"SELECT portid FROM port "
-	"WHERE trtype = '%s' AND adrfam = '%s' AND "
-	"traddr = '%s' AND trsvcid = '%s';";
+	"SELECT id FROM ports "
+	"WHERE addr_trtype = '%s' AND addr_adrfam = '%s' AND "
+	"addr_traddr = '%s' AND addr_trsvcid = '%s';";
 
 static char update_traddr_sql[] =
-	"UPDATE port SET traddr = '%s' "
-	"WHERE portid = '%d';";
+	"UPDATE ports SET traddr = '%s' "
+	"WHERE id = '%d';";
 
 int inode_add_port(struct nofuse_port *port, u8 subtype)
 {
@@ -414,7 +720,7 @@ int inode_add_port(struct nofuse_port *port, u8 subtype)
 		       port->adrfam, port->traddr, port->trsvcid);
 	if (ret < 0)
 		goto rollback;
-	ret = sql_exec_int(sql, "portid", &portid);
+	ret = sql_exec_int(sql, "id", &portid);
 	if (ret < 0)
 		goto rollback;
 
@@ -447,13 +753,125 @@ rollback:
 	return ret;
 }
 
+static char port_get_inode_sql[] =
+	"SELECT id AS ino FROM ports "
+	"WHERE id = '%s' AND parent_ino = '%d';";
+
+int inode_get_port_ino(const char *port, int parent_ino, int *inode)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, port_get_inode_sql, port, parent_ino);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "ino", inode);
+	free(sql);
+	return ret;
+}
+
+static char stat_port_sql[] =
+	"SELECT unixepoch('%s') AS tv FROM ports WHERE id = '%d';";
+
+int inode_stat_port(int port_ino, const char *attr, struct stat *stbuf)
+{
+	char *sql;
+	int ret, timeval;
+
+	ret = asprintf(&sql, stat_port_sql, attr, port_ino);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "tv", &timeval);
+	free(sql);
+	if (ret < 0)
+		return -ENOENT;
+	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_nlink = 1;
+	stbuf->st_size = 256;
+	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	return 0;
+}
+
+static char fill_port_dir_sql[] =
+	"SELECT id FROM ports;";
+
+int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *errmsg;
+	int ret;
+
+	ret = sqlite3_exec(inode_db, fill_port_dir_sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_port_dir_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	return ret;
+}
+
+static char fill_port_sql[] =
+	"SELECT * FROM ports WHERE id = '%d';";
+
+int inode_fill_port(int inode, void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = "addr_",
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, fill_port_sql, inode);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(inode_db, sql, fill_filter_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	free(sql);
+	return ret;
+}
+
+static char get_port_attr_sql[] =
+	"SELECT %s FROM ports WHERE id = '%s';";
+
+int inode_get_port_attr(const char *portid, const char *attr, char *buf)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, get_port_attr_sql, attr, portid);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_str(sql, attr, buf);
+	free(sql);
+	return ret;
+}
+
 static char update_genctr_port_sql[] =
 	"UPDATE host SET genctr = genctr + 1 "
 	"FROM "
-	"(SELECT hs.host_id AS host_id, sp.portid AS portid "
+	"(SELECT hs.host_id AS host_id, sp.id AS port_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
-	"AS hg WHERE hg.host_id = host.id AND hg.portid = '%d';";
+	"AS hg WHERE hg.host_id = host.id AND hg.port_id = '%d';";
 
 int inode_modify_port(struct nofuse_port *port, char *attr)
 {
@@ -475,8 +893,8 @@ int inode_modify_port(struct nofuse_port *port, char *attr)
 	else
 		return -EINVAL;
 
-	ret = asprintf(&sql, "UPDATE port SET %s = '%s' "
-		       "WHERE portid = '%d';", attr, value,
+	ret = asprintf(&sql, "UPDATE ports SET %s = '%s' "
+		       "WHERE id = '%d';", attr, value,
 		       port->port_id);
 	if (ret < 0)
 		return ret;
@@ -491,7 +909,7 @@ int inode_modify_port(struct nofuse_port *port, char *attr)
 }
 
 static char del_port_sql[] =
-	"DELETE FROM port WHERE portid = '%d';";
+	"DELETE FROM ports WHERE id = '%d';";
 
 int inode_del_port(struct nofuse_port *port)
 {
@@ -510,7 +928,7 @@ int inode_del_port(struct nofuse_port *port)
 
 static char add_host_subsys_sql[] =
 	"INSERT INTO host_subsys (host_id, subsys_id) "
-	"SELECT host.id, subsys.id FROM host, subsys "
+	"SELECT host.id, subsys.id FROM hosts, subsystems "
 	"WHERE host.nqn LIKE '%s' AND subsys.nqn LIKE '%s';";
 
 int discdb_add_host_subsys(struct nvmet_host *host, struct nvmet_subsys *subsys)
@@ -536,9 +954,9 @@ int discdb_add_host_subsys(struct nvmet_host *host, struct nvmet_subsys *subsys)
 static char del_host_subsys_sql[] =
 	"DELETE FROM host_subsys AS hs "
 	"WHERE hs.host_id IN "
-	"(SELECT id FROM host WHERE nqn LIKE '%s') AND "
+	"(SELECT id FROM hosts WHERE nqn LIKE '%s') AND "
 	"hs.subsys_id IN "
-	"(SELECT id FROM subsys WHERE nqn LIKE '%s');";
+	"(SELECT id FROM subsystems WHERE nqn LIKE '%s');";
 
 int discdb_del_host_subsys(struct nvmet_host *host, struct nvmet_subsys *subsys)
 {
@@ -556,15 +974,15 @@ int discdb_del_host_subsys(struct nvmet_host *host, struct nvmet_subsys *subsys)
 
 static char add_subsys_port_sql[] =
 	"INSERT INTO subsys_port (subsys_id, port_id) "
-	"SELECT subsys.id, port.portid FROM subsys, port "
-	"WHERE subsys.nqn LIKE '%s' AND port.portid = '%d';";
+	"SELECT s.id, p.id FROM subsystems AS s, ports AS p "
+	"WHERE s.nqn LIKE '%s' AND p.id = '%d';";
 
 static char update_genctr_host_subsys_sql[] =
-	"UPDATE host SET genctr = genctr + 1 "
+	"UPDATE hosts SET genctr = genctr + 1 "
 	"FROM "
 	"(SELECT s.nqn AS subsys_nqn, hs.host_id AS host_id "
 	"FROM host_subsys AS hs "
-	"INNER JOIN subsys AS s ON s.id = hs.subsys_id) AS hs "
+	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id) AS hs "
 	"WHERE hs.host_id = host.id AND hs.subsys_nqn LIKE '%s';";
 
 int discdb_add_subsys_port(struct nvmet_subsys *subsys, struct nvmet_port *port)
@@ -593,9 +1011,9 @@ int discdb_add_subsys_port(struct nvmet_subsys *subsys, struct nvmet_port *port)
 static char del_subsys_port_sql[] =
 	"DELETE FROM subsys_port AS sp "
 	"WHERE sp.subsys_id in "
-	"(SELECT id FROM subsys WHERE nqn LIKE '%s') AND "
+	"(SELECT id FROM subsystems WHERE nqn LIKE '%s') AND "
 	"sp.port_id IN "
-	"(SELECT portid FROM port WHERE portid = %d);";
+	"(SELECT id FROM ports WHERE id = %d);";
 
 int discdb_del_subsys_port(struct nvmet_subsys *subsys, struct nvmet_port *port)
 {
@@ -621,10 +1039,10 @@ int discdb_del_subsys_port(struct nvmet_subsys *subsys, struct nvmet_port *port)
 }
 
 static char count_subsys_port_sql[] =
-	"SELECT count(p.portid) AS portnum "
+	"SELECT count(p.id) AS portnum "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsys AS s ON s.id = sp.subsys_id "
-	"INNER JOIN port AS p ON p.portid = sp.port_id "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE p.trtype = '%s' AND p.traddr = '%s' AND p.trsvcid != '%d';";
 
 
@@ -697,7 +1115,7 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 			if (arg_len > NVMF_NQN_FIELD_LEN)
 				arg_len = NVMF_NQN_FIELD_LEN;
 			strncpy(entry->subnqn, argv[i], arg_len);
-		} else if (!strcmp(colname[i], "portid")) {
+		} else if (!strcmp(colname[i], "id")) {
 			char *eptr = NULL;
 			int val;
 
@@ -800,12 +1218,12 @@ next:
 
 static char host_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.portid, p.subtype, p.trtype, p.traddr, p.trsvcid, p.treq, p.tsas "
+	"p.id, p.subtype, p.trtype, p.traddr, p.trsvcid, p.treq, p.tsas "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsys AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
-	"INNER JOIN host AS h ON hs.host_id = h.id "
-	"INNER JOIN port AS p ON sp.port_id = p.portid "
+	"INNER JOIN hosts AS h ON hs.host_id = h.id "
+	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE h.nqn LIKE '%s';";
 
 int discdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
@@ -846,7 +1264,7 @@ int discdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 }
 
 static char host_genctr_sql[] =
-	"SELECT genctr FROM host WHERE nqn LIKE '%s';";
+	"SELECT genctr FROM hosts WHERE nqn LIKE '%s';";
 
 int discdb_host_genctr(const char *hostnqn)
 {
@@ -883,6 +1301,25 @@ int discdb_host_genctr(const char *hostnqn)
 
 #endif
 
+static int inode_create_root(void)
+{
+	hosts_ino = inode_add_root("hosts");
+	if (hosts_ino < 0)
+		return hosts_ino;
+	subsys_ino = inode_add_root("subsystems");
+	if (subsys_ino < 0) {
+		inode_del_inode(hosts_ino);
+		return subsys_ino;
+	}
+	ports_ino = inode_add_root("ports");
+	if (ports_ino < 0) {
+		inode_del_inode(subsys_ino);
+		inode_del_inode(hosts_ino);
+		return ports_ino;
+	}
+	return 0;
+}
+
 int inode_open(const char *filename)
 {
 	int ret;
@@ -899,6 +1336,7 @@ int inode_open(const char *filename)
 		fprintf(stderr, "Can't initialize database, error %d\n", ret);
 		sqlite3_close(inode_db);
 	}
+	ret = inode_create_root();
 	return ret;
 }
 

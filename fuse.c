@@ -10,6 +10,11 @@
 #include <assert.h>
 
 #include "common.h"
+#include "inode.h"
+
+const char hosts_dir[] = "hosts";
+const char ports_dir[] = "ports";
+const char subsys_dir[] = "subsystems";
 
 enum dir_type {
 	TYPE_NONE,
@@ -28,6 +33,12 @@ enum dir_type {
 	TYPE_SUBSYS_HOST,	/* subsystems/<subsys>/allowed_hosts/<host> */
 };
 
+struct inode_table_t {
+	enum dir_type type;
+	enum dir_type next;
+	const char *table;
+};
+
 static void *nofuse_init(struct fuse_conn_info *conn,
 			 struct fuse_config *cfg)
 {
@@ -36,214 +47,120 @@ static void *nofuse_init(struct fuse_conn_info *conn,
 	return NULL;
 }
 
-static const char *select_attr(const char *attrs[], int num_attrs,
-			       const char *path)
-{
-	int i;
-	const char *p = path;
-
-	if (strlen(p) && *p == '/')
-		p++;
-	for (i = 0; i < num_attrs; i++) {
-		if (!strncmp(attrs[i], p, strlen(attrs[i]))) {
-			p += strlen(attrs[i]);
-			if (strlen(p) && *p == '/')
-				p++;
-			if (strlen(p))
-				continue;
-			return attrs[i];
-		}
-	}
-	return NULL;
-}
-
-static enum dir_type next_dir_type(const char *e, enum dir_type cur, void **p)
-{
-	enum dir_type next = TYPE_NONE;
-	struct host_iface *iface = NULL;
-	struct nofuse_subsys *subsys = NULL;
-
-	switch (cur) {
-	case TYPE_ROOT:
-		if (!strcmp(e, "hosts")) {
-			next = TYPE_HOST_DIR;
-		} else if (!strcmp(e, "ports")) {
-			next = TYPE_PORT_DIR;
-		} else if (!strcmp(e, "subsystems")) {
-			next = TYPE_SUBSYS_DIR;
-		}
-		break;
-	case TYPE_HOST_DIR:
-		if (ctx->hostnqn && !strcmp(ctx->hostnqn, e)) {
-			next = TYPE_HOST;
-			*p = ctx;
-		}
-		break;
-	case TYPE_PORT_DIR:
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			char portname[16];
-
-			sprintf(portname, "%d", iface->port.port_id);
-			if (!strcmp(portname, e)) {
-				next = TYPE_PORT;
-				*p = iface;
-				break;
-			}
-		}
-		break;
-	case TYPE_SUBSYS_DIR:
-		list_for_each_entry(subsys, &subsys_linked_list, node) {
-			if (!strcmp(subsys->nqn, e)) {
-				next = TYPE_SUBSYS;
-				*p = subsys;
-				break;
-			}
-		}
-		break;
-	default:
-		break;
-	}
-	return next;
-}
-
-#define NUM_PORT_ATTRS 6
-
-static const char *port_attrs[NUM_PORT_ATTRS] = {
-	"addr_adrfam",
-	"addr_traddr",
-	"addr_treq",
-	"addr_trsvcid",
-	"addr_trtype",
-	"addr_tsas",
-};
-
-static int port_getattr(struct host_iface *iface, char *path,
+static int port_getattr(char *port, int parent_ino,
 			struct stat *stbuf)
 {
-	int res = -ENOENT;
-	char *p = path;
+	int res = -ENOENT, inode;
+	char *p, *attr;
+
+	res = inode_get_port_ino(port, parent_ino, &inode);
+	if (res)
+		return -ENOENT;
 
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		res = 0;
-	} else {
-		const char *attr = select_attr(port_attrs, NUM_PORT_ATTRS, p);
-
-		if (attr) {
-			stbuf->st_mode = S_IFREG | 0444;
-			stbuf->st_nlink = 1;
-			stbuf->st_size = 256;
-			res = 0;
-		}
+		return 0;
 	}
-	return res;
+
+	if (strncmp(p, "addr_", 5))
+		return -ENOENT;
+	attr = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	return inode_stat_port(inode, attr, stbuf);
 }
 
-#define NUM_SUBSYS_ATTRS 7
-
-static const char *subsys_attrs[NUM_SUBSYS_ATTRS] = {
-	"attr_allow_any_host",
-	"attr_firmware",
-	"attr_ieee_oui",
-	"attr_model",
-	"attr_qid_max",
-	"attr_serial",
-	"attr_version",
-};
-
-static int subsys_getattr(struct nofuse_subsys *subsys, char *path,
+static int subsys_getattr(char *subsysnqn, int parent_ino,
 			  struct stat *stbuf)
 {
-	int res = -ENOENT;
-	char *p = path;
+	char *p, *attr;
+	int ret;
+
+	ret = inode_stat_subsys(subsysnqn, stbuf);
+	if (ret)
+		return -ENOENT;
 
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		res = 0;
-	} else {
-		const char *attr = select_attr(subsys_attrs,
-					       NUM_SUBSYS_ATTRS, p);
-
-		if (attr) {
-			stbuf->st_mode = S_IFREG | 0444;
-			stbuf->st_nlink = 1;
-			stbuf->st_size = 256;
-			res = 0;
-		}
+		return 0;
 	}
-	return res;
+	printf("%s: subsys %s attr %s\n", __func__, subsysnqn, p);
+	if (strncmp(p, "attr_", 5))
+		return -ENOENT;
+
+	attr = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
+	if (ret < 0)
+		return -ENOENT;
+	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_nlink = 1;
+	stbuf->st_size = 256;
+	return 0;
 }
 
 static int nofuse_getattr(const char *path, struct stat *stbuf,
 			 struct fuse_file_info *fi)
 {
 	(void) fi;
-	int res = 0;
-	char *p = NULL, *pathbuf;
-	enum dir_type type;
-	void *s;
+	int res = 0, inode;
+	char *p = NULL, *root, *pathbuf;
 
 	memset(stbuf, 0, sizeof(struct stat));
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	p = strtok(pathbuf, "/");
-	printf("%s: %s %s\n", __func__, pathbuf, p);
-	if (!p) {
+	root = strtok(pathbuf, "/");
+	printf("%s: %s %s\n", __func__, pathbuf, root);
+	if (!root) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 5;
 		goto out_free;
 	}
-
-	type = next_dir_type(p, TYPE_ROOT, NULL);
-	if (type == TYPE_NONE) {
+	inode = inode_get_root(root);
+	if (inode < 0) {
 		res = -ENOENT;
 		goto out_free;
 	}
-	printf("%s: type %d %p\n", __func__, type, p);
+
+	printf("%s: root %s\n", __func__, root);
 	p = strtok(NULL, "/");
 	if (!p) {
+		int nlinks;
+
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		if (type == TYPE_HOST_DIR) {
-			if (ctx->hostnqn)
-				stbuf->st_nlink++;
-		} else if (type == TYPE_PORT_DIR) {
-			struct host_iface *iface;
-
-			list_for_each_entry(iface, &iface_linked_list, node)
-				stbuf->st_nlink++;
-		} else {
-			struct nofuse_subsys *subsys;
-
-			list_for_each_entry(subsys, &subsys_linked_list, node)
-				stbuf->st_nlink++;
+		nlinks = inode_find_links(root, inode);
+		if (nlinks < 0)
+			res = -ENOENT;
+		else {
+			printf("%s: tbl %s links %d\n",
+			       __func__, root, nlinks);
+			stbuf->st_nlink += nlinks;
 		}
 		goto out_free;
 	}
-	type = next_dir_type(p, type, &s);
-	if (type == TYPE_NONE) {
-		res = -ENOENT;
-		goto out_free;
-	}
-
-	printf("%s: type %d %p\n", __func__, type, p);
-	p = strtok(NULL, "/");
-	if (!p) {
+	if (!strcmp(root, hosts_dir)) {
+		res = inode_get_host_ino(p, &inode);
+		if (res < 0) {
+			res = -ENOENT;
+			goto out_free;
+		}
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-	} else if (type == TYPE_PORT) {
-		struct host_iface *iface = s;
-
-		res = port_getattr(iface, p, stbuf);
-	} else if (type == TYPE_SUBSYS) {
-		struct nofuse_subsys *subsys = s;
-
-		res = subsys_getattr(subsys, p, stbuf);
+		res = 0;
+		goto out_free;
+	} else if (!strcmp(root, ports_dir)) {
+		res = port_getattr(p, inode, stbuf);
+	} else if (!strcmp(root, subsys_dir)){
+		res = subsys_getattr(p, inode, stbuf);
 	} else
 		res = -ENOENT;
 
@@ -252,42 +169,64 @@ out_free:
 	return res;
 }
 
-static int fill_port(struct host_iface *iface, const char *path,
+static int fill_host(const char *path,
 		     void *buf, fuse_fill_dir_t filler)
 {
 	const char *p = path;
-	int i;
 
-	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
 
-	filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
-	filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-	for (i = 0; i < NUM_PORT_ATTRS; i++) {
-		filler(buf, port_attrs[i], NULL,
-		       0, FUSE_FILL_DIR_PLUS);
-	}
-	return 0;
+	return inode_fill_host_dir(buf, filler);
 }
 
-static int fill_subsys(struct nofuse_subsys *subsys, const char *path,
+static int fill_port(int parent_ino, const char *port,
+		     void *buf, fuse_fill_dir_t filler)
+{
+	const char *p;
+	int inode, ret;
+
+	if (!port) {
+		/* list contents of /ports */
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return inode_fill_port_dir(buf, filler);
+	}
+
+	ret = inode_get_port_ino(port, parent_ino, &inode);
+	if (ret)
+		return -ENOENT;
+	p = strtok(NULL, "/");
+	if (!p) {
+		/* list contents of /ports/<portid> */
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return inode_fill_port(inode, buf, filler);
+	}
+	return -ENOENT;
+}
+
+static int fill_subsys(int parent_ino, const char *subsys,
 		       void *buf, fuse_fill_dir_t filler)
 {
-	const char *p = path;
-	int i;
+	const char *p;
 
-	p = strtok(NULL, "/");
-	if (p)
-		return -ENOENT;
-
-	filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
-	filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-	for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
-		filler(buf, subsys_attrs[i], NULL,
-		       0, FUSE_FILL_DIR_PLUS);
+	if (!subsys) {
+		/* list contents of /subsystems */
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return inode_fill_subsys_dir(buf, filler);
 	}
-	return 0;
+	p = strtok(NULL, "/");
+	if (!p) {
+		/* list contents of /subsystems/<subsys> */
+		printf("%s: subsys %s\n", __func__, subsys);
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return inode_fill_subsys(subsys, buf, filler);
+	}
+	printf("%s: subsys %s path %p\n", __func__, subsys, p);
+	return -ENOENT;
 }
 
 static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
@@ -297,210 +236,166 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	(void) offset;
 	(void) fi;
 	(void) flags;
-	char *p, *pathbuf;
-	int ret = -ENOENT;
-	enum dir_type type;
-	struct host_iface *iface;
-	struct nofuse_subsys *subsys;
-	void *s;
+	char *p, *root, *pathbuf;
+	int ret = -ENOENT, inode;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	p = strtok(pathbuf, "/");
-	if (!p) {
+	root = strtok(pathbuf, "/");
+	if (!root) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		filler(buf, "hosts", NULL, 0, FUSE_FILL_DIR_PLUS);
-		filler(buf, "ports", NULL, 0, FUSE_FILL_DIR_PLUS);
-		filler(buf, "subsystems", NULL, 0, FUSE_FILL_DIR_PLUS);
+		inode_fill_root(buf, filler);
 		ret = 0;
 		goto out_free;
 	}
-	type = next_dir_type(p, TYPE_ROOT, NULL);
-	if (type == TYPE_NONE)
+	inode = inode_get_root(root);
+	if (inode < 0)
 		goto out_free;
 
 	p = strtok(NULL, "/");
-	if (!p) {
-		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
-		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		switch (type) {
-		case TYPE_HOST_DIR:
-			if (ctx->hostnqn)
-				filler(buf, ctx->hostnqn, NULL,
-				       0, FUSE_FILL_DIR_PLUS);
-			ret = 0;
-			break;
-		case TYPE_PORT_DIR:
-			list_for_each_entry(iface, &iface_linked_list, node) {
-				char portname[16];
+	if (!strcmp(root, hosts_dir))
+		ret = fill_host(p, buf, filler);
+	else if (!strcmp(root, ports_dir))
+		ret = fill_port(inode, p, buf, filler);
+	else if (!strcmp(root, subsys_dir))
+		ret = fill_subsys(inode, p, buf, filler);
 
-				sprintf(portname, "%d", iface->port.port_id);
-				filler(buf, portname, NULL,
-				       0, FUSE_FILL_DIR_PLUS);
-			}
-			ret = 0;
-			break;
-		case TYPE_SUBSYS_DIR:
-			list_for_each_entry(subsys, &subsys_linked_list, node) {
-				filler(buf, subsys->nqn, NULL,
-				       0, FUSE_FILL_DIR_PLUS);
-			}
-			ret = 0;
-			break;
-		default:
-			break;
-		}
-		goto out_free;
-	}
-	type = next_dir_type(p, type, &s);
-	if (type == TYPE_NONE)
-		goto out_free;
-
-	switch (type) {
-	case TYPE_PORT:
-		ret = fill_port((struct host_iface *)s, p, buf, filler);
-		break;
-	case TYPE_SUBSYS:
-		ret = fill_subsys((struct nofuse_subsys *)s, p, buf, filler);
-		break;
-	default:
-		break;
-	}
 out_free:
 	free(pathbuf);
 	return ret;
 }
 
-static int attr_open(const char *path, const char **attrs, int num_attrs,
-		     struct fuse_file_info *fi)
-{
-	const char *p = path;
-	const char *attr;
-
-	if (strlen(p) && *p == '/')
-		p++;
-	if (!strlen(p))
-		return -ENOENT;
-	attr = select_attr(attrs, num_attrs, p);
-	if (!attr)
-		return -ENOENT;
-	if ((fi->flags & O_ACCMODE) != O_RDONLY)
-		return -EACCES;
-	return 0;
-}
-
 static int nofuse_open(const char *path, struct fuse_file_info *fi)
 {
-	const char *p = path;
+	const char *p, *root, *attr;
+	char *pathbuf;
 	int ret = -ENOENT;
 
-	if (!strncmp(path, "/subsystems", 11)) {
-		struct nofuse_subsys *subsys;
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
 
-		p += 11;
-		if (strlen(p) && *p == '/')
-			p++;
-		list_for_each_entry(subsys, &subsys_linked_list, node) {
-			if (!strncmp(subsys->nqn, p,
-				     strlen(subsys->nqn))) {
-				p += strlen(subsys->nqn);
-				ret = attr_open(p, subsys_attrs,
-						NUM_SUBSYS_ATTRS, fi);
-				break;
-			}
+	if (!strcmp(root, hosts_dir))
+		goto out_free;
+
+	p = strtok(NULL, "/");
+	if (!p)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		const char *portid = p;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+
+		attr = p;
+		p = strtok(NULL, "/");
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
 		}
-	} else if (!strncmp(path, "/ports", 6)) {
-		struct host_iface *iface;
+		ret = inode_get_port_attr(portid, attr, NULL);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+	} else if (!strcmp(root, hosts_dir)) {
+		const char *subsysnqn = p;
 
-		p += 6;
-		if (strlen(p) && *p == '/')
-			p++;
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			char portname[16];
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
 
-			sprintf(portname, "%d", iface->port.port_id);
-			if (!strncmp(p, portname, strlen(portname))) {
-				p += strlen(portname);
-				ret = attr_open(p, port_attrs,
-						NUM_PORT_ATTRS, fi);
-				break;
-			}
+		attr = p;
+		p = strtok(NULL, "/");
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+
+		ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
 		}
 	}
+	if ((fi->flags & O_ACCMODE) != O_RDONLY)
+		ret = -EACCES;
+	else
+		ret = 0;
+out_free:
+	free(pathbuf);
 	return ret;
 }
 
 static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
-	const char *p = path;
+	const char *p, *root, *attr;
+	char *pathbuf;
 	int ret = -ENOENT;
 
-	if (!strncmp(path, "/subsystems", 11)) {
-		struct nofuse_subsys *subsys;
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
 
-		p += 11;
-		if (strlen(p) && *p == '/')
-			p++;
-		list_for_each_entry(subsys, &subsys_linked_list, node) {
-			const char *attr;
+	if (!strcmp(root, hosts_dir))
+		goto out_free;
 
-			if (strncmp(subsys->nqn, p,
-				    strlen(subsys->nqn)))
-				continue;
+	p = strtok(NULL, "/");
+	if (!p)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		const char *portid = p;
 
-			p += strlen(subsys->nqn);
-			attr = select_attr(subsys_attrs,
-					   NUM_SUBSYS_ATTRS, p);
-			if (!attr)
-				return ret;
-			if (!strcmp(attr, "attr_allow_any_host")) {
-				sprintf(buf, "%d\n", subsys->allow_any);
-				return 2;
-			} else {
-				return 0;
-			}
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+
+		attr = p;
+		p = strtok(NULL, "/");
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
 		}
-	} else if (!strncmp(path, "/ports", 6)) {
-		struct host_iface *iface;
+		ret = inode_get_port_attr(portid, attr, buf);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+	} else if (!strcmp(root, subsys_dir)) {
+		const char *subsysnqn = p;
 
-		p += 6;
-		if (strlen(p) && *p == '/')
-			p++;
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			const char *attr;
-			char portname[16];
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
 
-			sprintf(portname, "%d", iface->port.port_id);
-			if (strncmp(p, portname, strlen(portname)))
-				continue;
+		attr = p;
+		p = strtok(NULL, "/");
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
 
-			p += strlen(portname);
-			attr = select_attr(port_attrs,
-					   NUM_PORT_ATTRS, p);
-			if (!attr)
-				return ret;
-			memset(buf, 0, size);
-			if (!strcmp(attr, "addr_adrfam")) {
-				strcpy(buf, iface->port.adrfam);
-			} else if (!strcmp(attr, "addr_traddr")) {
-				strcpy(buf, iface->port.traddr);
-			} else if (!strcmp(attr, "addr_trsvcid")) {
-				strcpy(buf, iface->port.trsvcid);
-			} else if (!strcmp(attr, "addr_trtype")) {
-				strcpy(buf, iface->port.trtype);
-			} else if (!strcmp(attr, "addr_tsas")) {
-				strcpy(buf, "none");
-			} else if (!strcmp(attr, "addr_treq")) {
-				strcpy(buf, "not specified");
-			}
-			if (strlen(buf))
-				strcat(buf, "\n");
-			return strlen(buf);
+		ret = inode_get_subsys_attr(subsysnqn, attr, buf);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
 		}
 	}
+	if (strlen(buf))
+		strcat(buf, "\n");
+	ret = strlen(buf);
+out_free:
+	free(pathbuf);
 	return ret;
 }
 
