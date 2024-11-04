@@ -28,7 +28,7 @@ int inode_del_subsys(struct nofuse_subsys *subsys);
 
 int inode_add_port(struct nofuse_port *port, u8 subtype);
 int inode_get_port_ino(const char *port, int parent_ino, int *ino);
-int inode_stat_port(int port_ino, const char *attr, struct stat *stbuf);
+int inode_stat_port(const char *port, struct stat *stbuf);
 int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler);
 int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler);
 int inode_get_port_attr(const char *port, const char *attr, char *buf);

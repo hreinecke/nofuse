@@ -50,11 +50,11 @@ static void *nofuse_init(struct fuse_conn_info *conn,
 static int port_getattr(char *port, int parent_ino,
 			struct stat *stbuf)
 {
-	int res = -ENOENT, inode;
+	int ret;
 	char *p, *attr;
 
-	res = inode_get_port_ino(port, parent_ino, &inode);
-	if (res)
+	ret = inode_stat_port(port, stbuf);
+	if (ret)
 		return -ENOENT;
 
 	p = strtok(NULL, "/");
@@ -70,7 +70,13 @@ static int port_getattr(char *port, int parent_ino,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	return inode_stat_port(inode, attr, stbuf);
+	ret = inode_get_port_attr(port, attr, NULL);
+	if (ret < 0)
+		return -ENOENT;
+	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_nlink = 1;
+	stbuf->st_size = 256;
+	return 0;
 }
 
 static int subsys_getattr(char *subsysnqn, int parent_ino,
@@ -89,8 +95,6 @@ static int subsys_getattr(char *subsysnqn, int parent_ino,
 		stbuf->st_nlink = 2;
 		return 0;
 	}
-	printf("%s: subsys %s attr %s ctime %s\n", __func__,
-	       subsysnqn, p, ctime(&stbuf->st_ctime));
 	if (strncmp(p, "attr_", 5))
 		return -ENOENT;
 

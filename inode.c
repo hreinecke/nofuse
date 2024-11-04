@@ -522,7 +522,7 @@ int inode_del_host(struct nofuse_host *host)
 
 static char add_subsys_sql[] =
 	"INSERT INTO subsystems (nqn, attr_allow_any_host, type, parent_ino, ctime) "
-	"VALUES ('%s', '%d', '%d', '%d', date('now'));";
+	"VALUES ('%s', '%d', '%d', '%d', CURRENT_TIMESTAMP);";
 
 int inode_add_subsys(struct nofuse_subsys *subsys, int parent_ino)
 {
@@ -557,7 +557,7 @@ int inode_get_subsys_ino(const char *subsys, int parent_ino, int *inode)
 }
 
 static char stat_subsys_sql[] =
-	"SELECT unixepoch('ctime') AS tv FROM subsystems WHERE nqn = '%s';";
+	"SELECT unixepoch(ctime) AS tv FROM subsystems WHERE nqn = '%s';";
 
 int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 {
@@ -665,7 +665,7 @@ int inode_del_subsys(struct nofuse_subsys *subsys)
 
 static char add_port_sql[] =
 	"INSERT INTO ports (addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, addr_subtype, ctime)"
-	" VALUES ('%s','%s','%s','%s','%s','%s','%d', date('now'));";
+	" VALUES ('%s','%s','%s','%s','%s','%s','%d', CURRENT_TIMESTAMP);";
 
 static char select_portid_sql[] =
 	"SELECT id FROM ports "
@@ -772,14 +772,14 @@ int inode_get_port_ino(const char *port, int parent_ino, int *inode)
 }
 
 static char stat_port_sql[] =
-	"SELECT unixepoch('%s') AS tv FROM ports WHERE id = '%d';";
+	"SELECT unixepoch(ctime) AS tv FROM ports WHERE id = '%s';";
 
-int inode_stat_port(int port_ino, const char *attr, struct stat *stbuf)
+int inode_stat_port(const char *port, struct stat *stbuf)
 {
 	char *sql;
 	int ret, timeval;
 
-	ret = asprintf(&sql, stat_port_sql, attr, port_ino);
+	ret = asprintf(&sql, stat_port_sql, port);
 	if (ret < 0)
 		return ret;
 
