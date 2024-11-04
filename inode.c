@@ -820,9 +820,9 @@ int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 }
 
 static char fill_port_sql[] =
-	"SELECT * FROM ports WHERE id = '%d';";
+	"SELECT * FROM ports WHERE id = '%s';";
 
-int inode_fill_port(int inode, void *buf, fuse_fill_dir_t filler)
+int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -832,7 +832,7 @@ int inode_fill_port(int inode, void *buf, fuse_fill_dir_t filler)
 	char *sql, *errmsg;
 	int ret;
 
-	ret = asprintf(&sql, fill_port_sql, inode);
+	ret = asprintf(&sql, fill_port_sql, port);
 	if (ret < 0)
 		return ret;
 	ret = sqlite3_exec(inode_db, sql, fill_filter_cb,

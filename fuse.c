@@ -89,7 +89,8 @@ static int subsys_getattr(char *subsysnqn, int parent_ino,
 		stbuf->st_nlink = 2;
 		return 0;
 	}
-	printf("%s: subsys %s attr %s\n", __func__, subsysnqn, p);
+	printf("%s: subsys %s attr %s ctime %s\n", __func__,
+	       subsysnqn, p, ctime(&stbuf->st_ctime));
 	if (strncmp(p, "attr_", 5))
 		return -ENOENT;
 
@@ -184,7 +185,6 @@ static int fill_port(int parent_ino, const char *port,
 		     void *buf, fuse_fill_dir_t filler)
 {
 	const char *p;
-	int inode, ret;
 
 	if (!port) {
 		/* list contents of /ports */
@@ -193,15 +193,12 @@ static int fill_port(int parent_ino, const char *port,
 		return inode_fill_port_dir(buf, filler);
 	}
 
-	ret = inode_get_port_ino(port, parent_ino, &inode);
-	if (ret)
-		return -ENOENT;
 	p = strtok(NULL, "/");
 	if (!p) {
 		/* list contents of /ports/<portid> */
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_port(inode, buf, filler);
+		return inode_fill_port(port, buf, filler);
 	}
 	return -ENOENT;
 }
