@@ -13,10 +13,10 @@ int inode_del_inode(int ino);
 
 int inode_find_links(const char *tbl, int parent_ino);
 
-int inode_add_host(struct nofuse_host *host, int parent_ino);
+int inode_add_host(const char *nqn);
 int inode_get_host_ino(const char *nqn, int *inode);
 int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler);
-int inode_del_host(struct nofuse_host *host);
+int inode_del_host(const char *nqn);
 
 int inode_add_subsys(struct nofuse_subsys *subsys, int parent_ino);
 int inode_get_subsys_ino(const char *subsys, int parent_ino, int *inode);

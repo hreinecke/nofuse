@@ -445,14 +445,14 @@ int inode_find_links(const char *tbl, int parent_ino)
 }
 
 static char add_host_sql[] =
-	"INSERT INTO host (nqn, parent_ino) VALUES ('%s', '%d');";
+	"INSERT INTO host (nqn, ctime) VALUES ('%s', CURRENT_TIMESTAMP);";
 
-int inode_add_host(struct nofuse_host *host, int parent_ino)
+int inode_add_host(const char *nqn)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, add_host_sql, host->nqn, parent_ino);
+	ret = asprintf(&sql, add_host_sql, nqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -507,12 +507,12 @@ int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler)
 static char del_host_sql[] =
 	"DELETE FROM hosts WHERE nqn = '%s';";
 
-int inode_del_host(struct nofuse_host *host)
+int inode_del_host(const char *nqn)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, del_host_sql, host->nqn);
+	ret = asprintf(&sql, del_host_sql, nqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);

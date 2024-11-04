@@ -302,6 +302,9 @@ static int init_args(struct fuse_args *args)
 	if (ctx->portnum) {
 		add_host_port(ctx->portnum);
 	}
+	if (ctx->hostnqn)
+		inode_add_host(ctx->hostnqn);
+
 	if (ctx->filename) {
 		if (open_file_ns(ctx->filename) < 0)
 			return 1;
