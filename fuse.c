@@ -60,16 +60,26 @@ static int port_getattr(char *port, int parent_ino,
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
+		stbuf->st_nlink = 5;
 		return 0;
 	}
 
-	if (strncmp(p, "addr_", 5))
-		return -ENOENT;
 	attr = p;
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
+
+	if (!strcmp(attr, "ana_groups") ||
+	    !strcmp(attr, "referrals") ||
+	    !strcmp(attr, "subsystems")) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+
+	if (strncmp(attr, "addr_", 5))
+		return -ENOENT;
+
 	ret = inode_get_port_attr(port, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
@@ -95,12 +105,20 @@ static int subsys_getattr(char *subsysnqn, int parent_ino,
 		stbuf->st_nlink = 2;
 		return 0;
 	}
-	if (strncmp(p, "attr_", 5))
-		return -ENOENT;
 
 	attr = p;
 	p = strtok(NULL, "/");
 	if (p)
+		return -ENOENT;
+
+	if (!strcmp(attr, "allowed_hosts") ||
+	    !strcmp(attr, "namespaces")) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+
+	if (strncmp(attr, "attr_", 5))
 		return -ENOENT;
 	ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
 	if (ret < 0)
@@ -188,7 +206,7 @@ static int fill_host(const char *path,
 static int fill_port(int parent_ino, const char *port,
 		     void *buf, fuse_fill_dir_t filler)
 {
-	const char *p;
+	const char *p, *subdir;
 
 	if (!port) {
 		/* list contents of /ports */
@@ -204,13 +222,24 @@ static int fill_port(int parent_ino, const char *port,
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return inode_fill_port(port, buf, filler);
 	}
+	subdir = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	if (!strcmp(subdir, "ana_groups") ||
+	    !strcmp(subdir, "referrals") ||
+	    !strcmp(subdir, "subsystems")) {
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return 0;
+	}
 	return -ENOENT;
 }
 
 static int fill_subsys(int parent_ino, const char *subsys,
 		       void *buf, fuse_fill_dir_t filler)
 {
-	const char *p;
+	const char *p, *subdir;
 
 	if (!subsys) {
 		/* list contents of /subsystems */
@@ -226,7 +255,16 @@ static int fill_subsys(int parent_ino, const char *subsys,
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return inode_fill_subsys(subsys, buf, filler);
 	}
-	printf("%s: subsys %s path %p\n", __func__, subsys, p);
+	subdir = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	if (!strcmp(subdir, "namespaces") ||
+	    !strcmp(subdir, "allowed_hosts")) {
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return 0;
+	}
 	return -ENOENT;
 }
 

@@ -373,7 +373,7 @@ int inode_fill_root(void *buf, fuse_fill_dir_t filler)
 }
 
 static char add_inode_sql[] =
-	"INSERT INTO inode (pathname, parent_ino) VALUES ('%s','%d');";
+	"INSERT INTO inode (pathname, parent_ino, ctime) VALUES ('%s','%d', CURRENT_TIMESTAMP);";
 static char get_inode_sql[] =
 	"SELECT ino FROM inode WHERE pathname = '%s' AND parent_ino = '%d';";
 
@@ -598,6 +598,7 @@ int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
 	} else
 		ret = 0;
+
 	return ret;
 }
 
@@ -624,8 +625,11 @@ int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
 		fprintf(stderr, "SQL error: %s\n", errmsg);
 		sqlite3_free(errmsg);
 		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
+	} else	{
+		filler(buf, "allowed_hosts", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "namespaces", NULL, 0, FUSE_FILL_DIR_PLUS);
 		ret = 0;
+	}
 	free(sql);
 	return ret;
 }
@@ -842,8 +846,12 @@ int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler)
 		fprintf(stderr, "SQL error: %s\n", errmsg);
 		sqlite3_free(errmsg);
 		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
+	} else {
+		filler(buf, "ana_groups", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "subsystems", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "referrals", NULL, 0, FUSE_FILL_DIR_PLUS);
 		ret = 0;
+	}
 	free(sql);
 	return ret;
 }
