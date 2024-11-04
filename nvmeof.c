@@ -123,7 +123,7 @@ static int handle_set_features(struct endpoint *ep, struct ep_qe *qe,
 static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			  struct nvme_command *cmd)
 {
-	struct subsystem *subsys = NULL, *_subsys;
+	struct nofuse_subsys *subsys = NULL, *_subsys;
 	struct ctrl_conn *ctrl;
 	struct nvmf_connect_data *connect = qe->data;
 	u16 sqsize;
@@ -188,7 +188,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	if (!(ep->iface->port_type & (1 << subsys->type))) {
 		print_err("non-matching subsystem '%s' type %x on port %d",
 			  subsys->nqn, ep->iface->port_type,
-			  ep->iface->portid);
+			  ep->iface->port.port_id);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
@@ -405,7 +405,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 static int format_disc_log(void *data, u64 data_offset,
 			   u64 data_len, struct endpoint *ep)
 {
-	struct subsystem *subsys;
+	struct nofuse_subsys *subsys;
 	struct host_iface *iface;
 	struct nvmf_disc_rsp_page_hdr hdr;
 	struct nvmf_disc_rsp_page_entry entry;
@@ -456,7 +456,7 @@ static int format_disc_log(void *data, u64 data_offset,
 				entry.treq = NVMF_TREQ_NOT_REQUIRED;
 			} else
 				entry.treq = NVMF_TREQ_NOT_SPECIFIED;
-			entry.portid = iface->portid;
+			entry.portid = iface->port.port_id;
 			entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
 			entry.asqsz = 32;
 			entry.subtype = subsys->type;

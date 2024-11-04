@@ -18,7 +18,7 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 	ep->state = DISCONNECTED;
 
 	if (ctrl) {
-		struct subsystem *subsys = ctrl->subsys;
+		struct nofuse_subsys *subsys = ctrl->subsys;
 
 		pthread_mutex_lock(&subsys->ctrl_mutex);
 		ctrl->num_endpoints--;
@@ -319,7 +319,7 @@ void *run_host_interface(void *arg)
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	print_info("iface %d: destroy listener", iface->portid);
+	print_info("iface %d: destroy listener", iface->port.port_id);
 
 	iface->ops->destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);

@@ -66,7 +66,7 @@ enum { DISCONNECTED, CONNECTED };
 
 extern int stopped;
 
-struct port {
+struct nofuse_port {
 	int port_id;
 	char trtype[256];
 	char traddr[256];
@@ -74,6 +74,10 @@ struct port {
 	char adrfam[256];
 	char treq[256];
 	char tsas[256];
+};
+
+struct nofuse_host {
+	char nqn[MAX_NQN_SIZE + 1];
 };
 
 struct ep_qe {
@@ -129,7 +133,7 @@ struct endpoint {
 
 struct ctrl_conn {
 	struct linked_list node;
-	struct subsystem *subsys;
+	struct nofuse_subsys *subsys;
 	char nqn[MAX_NQN_SIZE + 1];
 	int cntlid;
 	int ctrl_type;
@@ -157,19 +161,19 @@ struct host_iface {
 	struct xp_ops *ops;
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
-	struct port port;
+	struct nofuse_port port;
 	int port_type;
 	sa_family_t adrfam;
 	int port_num;
-	int portid;
 	int listenfd;
 	bool tls;
 };
 
-struct subsystem {
+struct nofuse_subsys {
 	struct linked_list node;
 	struct linked_list ctrl_list;
 	pthread_mutex_t ctrl_mutex;
+	int ino;
 	char nqn[MAX_NQN_SIZE + 1];
 	int type;
 	bool allow_any;
@@ -180,6 +184,7 @@ struct nofuse_context {
 	const char *subsysnqn;
 	const char *interface;
 	const char *filename;
+	const char *dbname;
 	int portnum;
 	int ramdisk_size;
 	int debug;

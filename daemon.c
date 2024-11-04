@@ -16,6 +16,7 @@
 #include "common.h"
 #include "ops.h"
 #include "tls.h"
+#include "inode.h"
 
 LINKED_LIST(host_linked_list);
 LINKED_LIST(subsys_linked_list);
@@ -25,12 +26,57 @@ LINKED_LIST(device_linked_list);
 int stopped;
 int debug;
 
+int hosts_ino;
+int subsys_ino;
+int ports_ino;
+
 static int nsdevs = 1;
-static int nvmf_portid = 1;
+static char default_nqn[] =
+	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
 
 struct nofuse_context *ctx;
 
 extern int run_fuse(struct fuse_args *args);
+
+static struct nofuse_subsys *add_subsys(const char *nqn, int type)
+{
+	struct nofuse_subsys *subsys;
+	int inode;
+
+	subsys = malloc(sizeof(*subsys));
+	if (!subsys)
+		return NULL;
+	memset(subsys, 0, sizeof(*subsys));
+	if (!subsys->nqn)
+		strcpy(subsys->nqn, default_nqn);
+	else
+		strcpy(subsys->nqn, nqn);
+	subsys->type = type;
+	if (subsys->type == NVME_NQN_CUR)
+		subsys->allow_any = 1;
+	else
+		subsys->allow_any = 0;
+	inode = inode_add_subsys(subsys, subsys_ino);
+	if (inode < 0) {
+		free(subsys);
+		return NULL;
+	}
+	subsys->ino = inode;
+
+	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
+	INIT_LINKED_LIST(&subsys->ctrl_list);
+	list_add(&subsys->node, &subsys_linked_list);
+
+	return subsys;
+}
+
+static void del_subsys(struct nofuse_subsys *subsys)
+{
+	list_del(&subsys->node);
+	pthread_mutex_destroy(&subsys->ctrl_mutex);
+	inode_del_subsys(subsys);
+	free(subsys);
+}
 
 static int open_file_ns(const char *filename)
 {
@@ -87,39 +133,20 @@ static int open_ram_ns(size_t size)
 
 static int init_subsys(void)
 {
-	struct subsystem *subsys;
+	struct nofuse_subsys *subsys, *tmp_subsys;
 
-	subsys = malloc(sizeof(*subsys));
+	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (!subsys)
 		return -ENOMEM;
-	memset(subsys, 0, sizeof(*subsys));
-	sprintf(subsys->nqn, "%s", NVME_DISC_SUBSYS_NAME);
-	subsys->type = NVME_NQN_CUR;
-	subsys->allow_any = 1;
-	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
-	INIT_LINKED_LIST(&subsys->ctrl_list);
-	list_add(&subsys->node, &subsys_linked_list);
 
-	subsys = malloc(sizeof(*subsys));
+	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_NVM);
 	if (!subsys) {
-		list_for_each_entry(subsys, &subsys_linked_list, node) {
-			list_del(&subsys->node);
-			free(subsys);
+		list_for_each_entry_safe(subsys, tmp_subsys,
+					 &subsys_linked_list, node) {
+			del_subsys(subsys);
 		}
 		return -ENOMEM;
 	}
-	memset(subsys, 0, sizeof(*subsys));
-	if (ctx->subsysnqn)
-		sprintf(subsys->nqn, "%s", ctx->subsysnqn);
-	else
-		sprintf(subsys->nqn, NVMF_UUID_FMT,
-			"62f37f51-0cc7-46d5-9865-4de22e81bd9d");
-	print_info("Using subsysten NQN %s", subsys->nqn);
-	subsys->type = NVME_NQN_NVM;
-	subsys->allow_any = 0;
-	INIT_LINKED_LIST(&subsys->ctrl_list);
-	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
-	list_add(&subsys->node, &subsys_linked_list);
 	return 0;
 }
 
@@ -127,6 +154,7 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 					 int adrfam, int port)
 {
 	struct host_iface *iface;
+	int inode;
 
 	iface = malloc(sizeof(*iface));
 	if (!iface)
@@ -144,17 +172,23 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 		free(iface);
 		return NULL;
 	}
-	iface->portid = nvmf_portid++;
 	iface->port_num = port;
 	sprintf(iface->port.trsvcid, "%d", port);
 	if (port == 8009)
 		iface->port_type = (1 << NVME_NQN_CUR);
 	else
 		iface->port_type = (1 << NVME_NQN_NVM);
+	inode = inode_add_port(&iface->port, ports_ino);
+	if (inode < 0) {
+		print_err("cannot add port, error %d\n", inode);
+		free(iface);
+		return NULL;
+	}
+	iface->port.port_id= inode;
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
 	print_info("iface %d: listening on %s address %s port %s",
-		   iface->portid,
+		   iface->port.port_id,
 		   iface->adrfam == AF_INET ? "ipv4" : "ipv6",
 		   iface->port.traddr, iface->port.trsvcid);
 
@@ -225,6 +259,25 @@ static int add_host_port(int port)
 	return iface_num;
 }
 
+static int init_inodes(void)
+{
+	hosts_ino = inode_add_root("hosts");
+	if (hosts_ino < 0)
+		return hosts_ino;
+	subsys_ino = inode_add_root("subsystems");
+	if (subsys_ino < 0) {
+		inode_del_inode(hosts_ino);
+		return subsys_ino;
+	}
+	ports_ino = inode_add_root("ports");
+	if (ports_ino < 0) {
+		inode_del_inode(subsys_ino);
+		inode_del_inode(hosts_ino);
+		return ports_ino;
+	}
+	return 0;
+}
+
 #define OPTION(t, p)				\
     { t, offsetof(struct nofuse_context, p), 1 }
 
@@ -237,6 +290,7 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--port=%d", portnum),
 	OPTION("--file=%s", filename),
 	OPTION("--ramdisk=%d", ramdisk_size),
+	OPTION("--dbname=%s", dbname),
 	FUSE_OPT_END,
 };
 
@@ -251,6 +305,7 @@ static void show_help(void)
 	print_info("  --ramdisk=<size> - create internal ramdisk with given size (in MB)");
 	print_info("  --hostnqn=<NQN> - Host NQN of the configured host");
 	print_info("  --subsysnqn=<NQN> - Subsystem NQN to use");
+	print_info("  --dbname=<filename> - Database filename");
 }
 
 static int init_args(struct fuse_args *args)
@@ -347,11 +402,10 @@ void free_interfaces(void)
 
 void free_subsys(void)
 {
-	struct subsystem *subsys, *_subsys;
+	struct nofuse_subsys *subsys, *_subsys;
 
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
-		pthread_mutex_destroy(&subsys->ctrl_mutex);
-		free(subsys);
+		del_subsys(subsys);
 	}
 }
 
@@ -365,13 +419,22 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
+	ctx->dbname = strdup("nofuse.sqlite");
 
 	if (fuse_opt_parse(&args, ctx, nofuse_options, NULL) < 0)
 		return 1;
 
+	ret = inode_open(ctx->dbname);
+	if (ret)
+		return 1;
+
+	ret = init_inodes();
+	if (ret)
+		goto out_close;
+
 	ret = init_args(&args);
 	if (ret)
-		return ret;
+		goto out_close;
 
 	stopped = 0;
 
@@ -405,6 +468,8 @@ int main(int argc, char *argv[])
 	free_devices();
 
 	free_subsys();
+out_close:
+	inode_close(ctx->dbname);
 
 	free(ctx);
 

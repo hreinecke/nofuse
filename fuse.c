@@ -61,7 +61,7 @@ static enum dir_type next_dir_type(const char *e, enum dir_type cur, void **p)
 {
 	enum dir_type next = TYPE_NONE;
 	struct host_iface *iface = NULL;
-	struct subsystem *subsys = NULL;
+	struct nofuse_subsys *subsys = NULL;
 
 	switch (cur) {
 	case TYPE_ROOT:
@@ -83,7 +83,7 @@ static enum dir_type next_dir_type(const char *e, enum dir_type cur, void **p)
 		list_for_each_entry(iface, &iface_linked_list, node) {
 			char portname[16];
 
-			sprintf(portname, "%d", iface->portid);
+			sprintf(portname, "%d", iface->port.port_id);
 			if (!strcmp(portname, e)) {
 				next = TYPE_PORT;
 				*p = iface;
@@ -153,7 +153,7 @@ static const char *subsys_attrs[NUM_SUBSYS_ATTRS] = {
 	"attr_version",
 };
 
-static int subsys_getattr(struct subsystem *subsys, char *path,
+static int subsys_getattr(struct nofuse_subsys *subsys, char *path,
 			  struct stat *stbuf)
 {
 	int res = -ENOENT;
@@ -218,7 +218,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 			list_for_each_entry(iface, &iface_linked_list, node)
 				stbuf->st_nlink++;
 		} else {
-			struct subsystem *subsys;
+			struct nofuse_subsys *subsys;
 
 			list_for_each_entry(subsys, &subsys_linked_list, node)
 				stbuf->st_nlink++;
@@ -241,7 +241,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 
 		res = port_getattr(iface, p, stbuf);
 	} else if (type == TYPE_SUBSYS) {
-		struct subsystem *subsys = s;
+		struct nofuse_subsys *subsys = s;
 
 		res = subsys_getattr(subsys, p, stbuf);
 	} else
@@ -271,7 +271,7 @@ static int fill_port(struct host_iface *iface, const char *path,
 	return 0;
 }
 
-static int fill_subsys(struct subsystem *subsys, const char *path,
+static int fill_subsys(struct nofuse_subsys *subsys, const char *path,
 		       void *buf, fuse_fill_dir_t filler)
 {
 	const char *p = path;
@@ -301,7 +301,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	int ret = -ENOENT;
 	enum dir_type type;
 	struct host_iface *iface;
-	struct subsystem *subsys;
+	struct nofuse_subsys *subsys;
 	void *s;
 
 	pathbuf = strdup(path);
@@ -336,7 +336,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			list_for_each_entry(iface, &iface_linked_list, node) {
 				char portname[16];
 
-				sprintf(portname, "%d", iface->portid);
+				sprintf(portname, "%d", iface->port.port_id);
 				filler(buf, portname, NULL,
 				       0, FUSE_FILL_DIR_PLUS);
 			}
@@ -363,7 +363,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		ret = fill_port((struct host_iface *)s, p, buf, filler);
 		break;
 	case TYPE_SUBSYS:
-		ret = fill_subsys((struct subsystem *)s, p, buf, filler);
+		ret = fill_subsys((struct nofuse_subsys *)s, p, buf, filler);
 		break;
 	default:
 		break;
@@ -397,7 +397,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 	int ret = -ENOENT;
 
 	if (!strncmp(path, "/subsystems", 11)) {
-		struct subsystem *subsys;
+		struct nofuse_subsys *subsys;
 
 		p += 11;
 		if (strlen(p) && *p == '/')
@@ -420,7 +420,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		list_for_each_entry(iface, &iface_linked_list, node) {
 			char portname[16];
 
-			sprintf(portname, "%d", iface->portid);
+			sprintf(portname, "%d", iface->port.port_id);
 			if (!strncmp(p, portname, strlen(portname))) {
 				p += strlen(portname);
 				ret = attr_open(p, port_attrs,
@@ -439,7 +439,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	int ret = -ENOENT;
 
 	if (!strncmp(path, "/subsystems", 11)) {
-		struct subsystem *subsys;
+		struct nofuse_subsys *subsys;
 
 		p += 11;
 		if (strlen(p) && *p == '/')
@@ -473,7 +473,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			const char *attr;
 			char portname[16];
 
-			sprintf(portname, "%d", iface->portid);
+			sprintf(portname, "%d", iface->port.port_id);
 			if (strncmp(p, portname, strlen(portname)))
 				continue;
 
