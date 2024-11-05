@@ -248,11 +248,41 @@ static int fill_port(int parent_ino, const char *port,
 	}
 	subdir = p;
 	p = strtok(NULL, "/");
-	if (p)
-		return -ENOENT;
-	if (!strcmp(subdir, "ana_groups") ||
-	    !strcmp(subdir, "referrals") ||
-	    !strcmp(subdir, "subsystems")) {
+	if (!strcmp(subdir, "subsystems")) {
+		const char *subsys = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+
+		printf("%s: port %s subsys %s\n", __func__, port, subsys);
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		if (subsys) {
+			if (inode_stat_subsys_port(subsys, port, NULL) < 0)
+				return -ENOENT;
+			return 0;
+		}
+		return inode_fill_subsys_port(port, buf, filler);
+	}
+	if (!strcmp(subdir, "ana_groups")) {
+		const char *ana_grp = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		if (ana_grp)
+			printf("%s: port %s ana_grp %s\n", __func__,
+			       port, ana_grp);
+		else
+			filler(buf, "1", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return 0;
+	}
+	if (!strcmp(subdir, "referrals")) {
+		if (p)
+			return -ENOENT;
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -303,8 +333,8 @@ static int fill_subsys(int parent_ino, const char *subsys,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (host) {
-			printf("%s: subsys %s host %s\n", __func__,
-			       subsys, host);
+			if (inode_stat_host_subsys(host, subsys, NULL) < 0)
+				return -ENOENT;
 			return 0;
 		}
 		return inode_fill_host_subsys(subsys, buf, filler);

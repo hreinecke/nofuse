@@ -185,7 +185,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
-	if (!(ep->iface->port_type & (1 << subsys->type))) {
+	if (ep->iface->port_type != subsys->type) {
 		print_err("non-matching subsystem '%s' type %x on port %d",
 			  subsys->nqn, ep->iface->port_type,
 			  ep->iface->port.port_id);
@@ -419,7 +419,7 @@ static int format_disc_log(void *data, u64 data_offset,
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		list_for_each_entry(iface, &iface_linked_list, node) {
-			if (iface->port_type & (1 << NVME_NQN_NVM))
+			if (iface->port_type == NVME_NQN_NVM)
 				hdr.numrec++;
 		}
 	}
@@ -442,7 +442,7 @@ static int format_disc_log(void *data, u64 data_offset,
 		if (subsys->type != NVME_NQN_NVM)
 			continue;
 		list_for_each_entry(iface, &iface_linked_list, node) {
-			if (!(iface->port_type & (1 << NVME_NQN_NVM)))
+			if (iface->port_type != NVME_NQN_NVM)
 				continue;
 			memset(&entry, 0,
 			       sizeof(struct nvmf_disc_rsp_page_entry));

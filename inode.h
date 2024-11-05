@@ -42,6 +42,14 @@ int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler);
 int inode_get_port_attr(const char *port, const char *attr, char *buf);
 int inode_del_port(struct nofuse_port *port);
 
+int inode_add_subsys_port(const char *subsysnqn, unsigned int port);
+int inode_count_subsys_port(const char *port, int *num_ports);
+int inode_fill_subsys_port(const char *port,
+			   void *buf, fuse_fill_dir_t filler);
+int inode_stat_subsys_port(const char *subsysnqn, const char *port,
+			   struct stat *stbuf);
+int inode_del_subsys_port(const char *subsysnqn, unsigned int port);
+
 #endif
 
 

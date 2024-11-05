@@ -231,7 +231,8 @@ static const char *init_sql[NUM_TABLES] = {
 "FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 "CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
-"parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
+"parent_ino INTEGER, ctime TIME, atime TIME, mtime TIME, "
+"FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
@@ -1035,9 +1036,11 @@ int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 	free(sql);
 	if (ret)
 		return -ENOENT;
-	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-	stbuf->st_mode = S_IFLNK | 0755;
-	stbuf->st_nlink = 1;
+	if (stbuf) {
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+		stbuf->st_mode = S_IFLNK | 0755;
+		stbuf->st_nlink = 1;
+	}
 	return 0;
 }
 
@@ -1062,12 +1065,10 @@ int inode_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 	return ret;
 }
 
-#if 0
-
 static char add_subsys_port_sql[] =
-	"INSERT INTO subsys_port (subsys_id, port_id) "
-	"SELECT s.id, p.id FROM subsystems AS s, ports AS p "
-	"WHERE s.nqn LIKE '%s' AND p.id = '%d';";
+	"INSERT INTO subsys_port (subsys_id, port_id, ctime) "
+	"SELECT s.id, p.id, CURRENT_TIMESTAMP FROM subsystems AS s, ports AS p "
+	"WHERE s.nqn = '%s' AND p.id = '%d';";
 
 static char update_genctr_host_subsys_sql[] =
 	"UPDATE hosts SET genctr = genctr + 1 "
@@ -1075,22 +1076,23 @@ static char update_genctr_host_subsys_sql[] =
 	"(SELECT s.nqn AS subsys_nqn, hs.host_id AS host_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id) AS hs "
-	"WHERE hs.host_id = host.id AND hs.subsys_nqn LIKE '%s';";
+	"WHERE hs.host_id = hosts.id AND hs.subsys_nqn = '%s';";
 
-int discdb_add_subsys_port(struct nvmet_subsys *subsys, struct nvmet_port *port)
+int inode_add_subsys_port(const char *subsysnqn, unsigned int port)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, add_subsys_port_sql,
-		       subsys->subsysnqn, port->port_id);
+		       subsysnqn, port);
 	if (ret < 0)
 		return ret;
+	printf("%s: sql %s\n", __func__, sql);
 	ret = sql_exec_simple(sql);
 	free(sql);
 
 	ret = asprintf(&sql, update_genctr_host_subsys_sql,
-		       subsys->subsysnqn);
+		       subsysnqn);
 	if (ret < 0)
 		return ret;
 
@@ -1107,20 +1109,20 @@ static char del_subsys_port_sql[] =
 	"sp.port_id IN "
 	"(SELECT id FROM ports WHERE id = %d);";
 
-int discdb_del_subsys_port(struct nvmet_subsys *subsys, struct nvmet_port *port)
+int inode_del_subsys_port(const char *subsysnqn, unsigned int port)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, del_subsys_port_sql,
-		       subsys->subsysnqn, port->port_id);
+		       subsysnqn, port);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
 
 	ret = asprintf(&sql, update_genctr_host_subsys_sql,
-		       subsys->subsysnqn);
+		       subsysnqn);
 	if (ret < 0)
 		return ret;
 
@@ -1135,42 +1137,85 @@ static char count_subsys_port_sql[] =
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
-	"WHERE p.trtype = '%s' AND p.traddr = '%s' AND p.trsvcid != '%d';";
+	"WHERE p.id = '%s';";
 
 
-int discdb_count_subsys_port(struct nvmet_port *port, int trsvcid)
+int inode_count_subsys_port(const char *port, int *portnum)
 {
-	char *sql, *errmsg;
-	struct sql_int_value_parm parm = {
-		.col = "portnum",
-		.val = 0,
-		.done = 0,
-	};
+	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, count_subsys_port_sql, port->trtype,
-		       port->traddr, trsvcid);
+	ret = asprintf(&sql, count_subsys_port_sql, port);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(nvme_db, sql, sql_int_value_cb,
-			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		parm.done = -EINVAL;
-	}
+	ret = sql_exec_int(sql, "portnum", portnum);
 	free(sql);
-	if (parm.done > 0) {
-		ret = parm.val;
-	} else if (parm.done < 0) {
-		ret = parm.done;
-	} else {
-		ret = 0;
-	}
 	return ret;
 }
 
+static char fill_subsys_port_sql[] =
+	"SELECT s.nqn AS subsysnqn FROM subsys_port AS sp "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN ports AS p ON p.id = sp.port_id "
+	"WHERE p.id = '%s';";
+
+int inode_fill_subsys_port(const char *port,
+			   void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = sql_exec_simple("SELECT * FROM subsys_port;");
+	ret = asprintf(&sql, fill_subsys_port_sql, port);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	free(sql);
+	return ret;
+}
+
+static char stat_subsys_port_sql[] =
+	"SELECT unixepoch(sp.ctime) AS tv FROM subsys_port AS sp "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN ports AS p ON p.id = sp.port_id "
+	"WHERE s.nqn = '%s' AND p.id = '%s';";
+
+int inode_stat_subsys_port(const char *subsysnqn, const char *port,
+			   struct stat *stbuf)
+{
+	char *sql;
+	int ret, timeval;
+
+	ret = asprintf(&sql, stat_subsys_port_sql, subsysnqn, port);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "tv", &timeval);
+	free(sql);
+	if (ret)
+		return -ENOENT;
+	if (stbuf) {
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+		stbuf->st_mode = S_IFLNK | 0755;
+		stbuf->st_nlink = 1;
+	}
+	return 0;
+}
+
+#if 0
 struct sql_disc_entry_parm {
 	u8 *buffer;
 	int cur;

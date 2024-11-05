@@ -131,19 +131,29 @@ static int open_ram_ns(size_t size)
 static int init_subsys(void)
 {
 	struct nofuse_subsys *subsys, *tmp_subsys;
+	struct host_iface *iface;
 
 	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (!subsys)
 		return -ENOMEM;
 
+	list_for_each_entry(iface, &iface_linked_list, node)
+		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
+
 	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_NVM);
 	if (!subsys) {
+		list_for_each_entry(iface, &iface_linked_list, node)
+			inode_del_subsys_port(subsys->nqn,
+					      iface->port.port_id);
 		list_for_each_entry_safe(subsys, tmp_subsys,
 					 &subsys_linked_list, node) {
 			del_subsys(subsys);
 		}
 		return -ENOMEM;
 	}
+
+	list_for_each_entry(iface, &iface_linked_list, node)
+		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
 
 	if (ctx->hostnqn)
 		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
@@ -155,7 +165,8 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 					 int adrfam, int port)
 {
 	struct host_iface *iface;
-	int inode, ports_ino = inode_get_root("ports");
+	struct nofuse_subsys *subsys;
+	int ret;
 
 	iface = malloc(sizeof(*iface));
 	if (!iface)
@@ -176,16 +187,15 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 	iface->port_num = port;
 	sprintf(iface->port.trsvcid, "%d", port);
 	if (port == 8009)
-		iface->port_type = (1 << NVME_NQN_CUR);
+		iface->port_type = NVME_NQN_CUR;
 	else
-		iface->port_type = (1 << NVME_NQN_NVM);
-	inode = inode_add_port(&iface->port, ports_ino);
-	if (inode < 0) {
-		print_err("cannot add port, error %d\n", inode);
+		iface->port_type = NVME_NQN_NVM;
+	ret = inode_add_port(&iface->port, iface->port_type);
+	if (ret < 0) {
+		print_err("cannot add port, error %d\n", ret);
 		free(iface);
 		return NULL;
 	}
-	iface->port.port_id= inode;
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
 	print_info("iface %d: listening on %s address %s port %s",
