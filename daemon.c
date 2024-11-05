@@ -37,7 +37,7 @@ extern int run_fuse(struct fuse_args *args);
 static struct nofuse_subsys *add_subsys(const char *nqn, int type)
 {
 	struct nofuse_subsys *subsys;
-	int inode, subsys_ino = inode_get_root("subsystems");
+	int ret;
 
 	subsys = malloc(sizeof(*subsys));
 	if (!subsys)
@@ -53,12 +53,11 @@ static struct nofuse_subsys *add_subsys(const char *nqn, int type)
 		subsys->allow_any = 1;
 	else
 		subsys->allow_any = 0;
-	inode = inode_add_subsys(subsys, subsys_ino);
-	if (inode < 0) {
+	ret = inode_add_subsys(subsys);
+	if (ret < 0) {
 		free(subsys);
 		return NULL;
 	}
-	subsys->ino = inode;
 
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->ctrl_list);

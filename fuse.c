@@ -33,12 +33,6 @@ enum dir_type {
 	TYPE_SUBSYS_HOST,	/* subsystems/<subsys>/allowed_hosts/<host> */
 };
 
-struct inode_table_t {
-	enum dir_type type;
-	enum dir_type next;
-	const char *table;
-};
-
 static void *nofuse_init(struct fuse_conn_info *conn,
 			 struct fuse_config *cfg)
 {
@@ -47,8 +41,24 @@ static void *nofuse_init(struct fuse_conn_info *conn,
 	return NULL;
 }
 
-static int port_getattr(char *port, int parent_ino,
-			struct stat *stbuf)
+static int host_getattr(char *host, struct stat *stbuf)
+{
+	int ret;
+	char *p;
+
+	ret = inode_stat_host(host, stbuf);
+	if (ret < 0)
+		return -ENOENT;
+
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	stbuf->st_mode = S_IFDIR | 0755;
+	stbuf->st_nlink = 2;
+	return 0;
+}
+
+static int port_getattr(char *port, struct stat *stbuf)
 {
 	int ret;
 	char *p, *attr;
@@ -60,7 +70,7 @@ static int port_getattr(char *port, int parent_ino,
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 5;
+		stbuf->st_nlink = 2;
 		return 0;
 	}
 
@@ -133,8 +143,7 @@ static int port_getattr(char *port, int parent_ino,
 	return 0;
 }
 
-static int subsys_getattr(char *subsysnqn, int parent_ino,
-			  struct stat *stbuf)
+static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 {
 	char *p, *attr;
 	int ret;
@@ -202,7 +211,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 			 struct fuse_file_info *fi)
 {
 	(void) fi;
-	int res = 0, inode;
+	int res = 0;
 	char *p = NULL, *root, *pathbuf;
 
 	memset(stbuf, 0, sizeof(struct stat));
@@ -216,42 +225,26 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		stbuf->st_nlink = 5;
 		goto out_free;
 	}
-	inode = inode_get_root(root);
-	if (inode < 0) {
-		res = -ENOENT;
-		goto out_free;
-	}
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		int nlinks;
+		int nlinks = 0;
 
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		nlinks = inode_find_links(root, inode);
-		if (nlinks < 0)
-			res = -ENOENT;
-		else {
-			printf("%s: tbl %s links %d\n",
-			       __func__, root, nlinks);
-			stbuf->st_nlink += nlinks;
-		}
+		res = inode_count_table(root, &nlinks);
+		if (res)
+			goto out_free;
+		stbuf->st_nlink += nlinks;
+		res = 0;
 		goto out_free;
 	}
 	if (!strcmp(root, hosts_dir)) {
-		res = inode_get_host_ino(p, &inode);
-		if (res < 0) {
-			res = -ENOENT;
-			goto out_free;
-		}
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		res = 0;
-		goto out_free;
+		res = host_getattr(p, stbuf);
 	} else if (!strcmp(root, ports_dir)) {
-		res = port_getattr(p, inode, stbuf);
+		res = port_getattr(p, stbuf);
 	} else if (!strcmp(root, subsys_dir)){
-		res = subsys_getattr(p, inode, stbuf);
+		res = subsys_getattr(p, stbuf);
 	} else
 		res = -ENOENT;
 
@@ -271,7 +264,7 @@ static int fill_host(const char *path,
 	return inode_fill_host_dir(buf, filler);
 }
 
-static int fill_port(int parent_ino, const char *port,
+static int fill_port(const char *port,
 		     void *buf, fuse_fill_dir_t filler)
 {
 	const char *p, *subdir;
@@ -335,7 +328,7 @@ static int fill_port(int parent_ino, const char *port,
 	return -ENOENT;
 }
 
-static int fill_subsys(int parent_ino, const char *subsys,
+static int fill_subsys(const char *subsys,
 		       void *buf, fuse_fill_dir_t filler)
 {
 	const char *p, *subdir;
@@ -395,7 +388,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	(void) fi;
 	(void) flags;
 	char *p, *root, *pathbuf;
-	int ret = -ENOENT, inode;
+	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
@@ -405,21 +398,20 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	if (!root) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		inode_fill_root(buf, filler);
+		filler(buf, hosts_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, ports_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, subsys_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		ret = 0;
 		goto out_free;
 	}
-	inode = inode_get_root(root);
-	if (inode < 0)
-		goto out_free;
 
 	p = strtok(NULL, "/");
 	if (!strcmp(root, hosts_dir))
 		ret = fill_host(p, buf, filler);
 	else if (!strcmp(root, ports_dir))
-		ret = fill_port(inode, p, buf, filler);
+		ret = fill_port(p, buf, filler);
 	else if (!strcmp(root, subsys_dir))
-		ret = fill_subsys(inode, p, buf, filler);
+		ret = fill_subsys(p, buf, filler);
 
 out_free:
 	free(pathbuf);

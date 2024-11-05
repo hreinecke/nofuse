@@ -34,11 +34,6 @@
 
 static sqlite3 *inode_db;
 
-static int hosts_ino;
-static int subsys_ino;
-static int ports_ino;
-
-
 static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 {
 	   int i;
@@ -198,41 +193,34 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 7
+#define NUM_TABLES 6
 
 static const char *init_sql[NUM_TABLES] = {
-"CREATE TABLE inode ( ino INTEGER PRIMARY KEY AUTOINCREMENT, "
-"pathname VARCHAR(256) NOT NULL, parent_ino INTEGER, mode INTEGER, "
-"ctime TIME, atime TIME, mtime TIME, data_type INTEGER, data_id INTEGER);",
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
-"ctime TIME, "
-"parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino));",
+"ctime TIME, atime TIME, mtime TIME );",
 "CREATE TABLE subsystems ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
 "attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 "attr_model VARCHAR(256), attr_serial VARCHAR(256), attr_version VARCHAR(256), "
-"type INT DEFAULT 3, parent_ino INTEGER, ctime TIME, "
-"FOREIGN KEY (parent_ino) REFERENCES inode(ino));",
+"type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
 "CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT,"
 "addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
 "addr_subtype INT DEFAULT 2, addr_treq char(32), "
 "addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
-"addr_tsas CHAR(255) DEFAULT '', parent_ino INTEGER, "
+"addr_tsas CHAR(255) DEFAULT '', "
 "ctime TIME, atime TIME, mtime TIME, "
-"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid), "
-"FOREIGN KEY (parent_ino) REFERENCES inode (ino) );"
-"CREATE UNIQUE INDEX port_addr ON ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
+"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
+"CREATE UNIQUE INDEX port_addr ON "
+"ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
-"parent_ino INTEGER, ctime TIME, atime TIME, mtime TIME, "
-"FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
+"ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (host_id) REFERENCES host(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 "CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
-"parent_ino INTEGER, ctime TIME, atime TIME, mtime TIME, "
-"FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
+"ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
@@ -259,7 +247,6 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE ports;",
 	"DROP TABLE subsystems;",
 	"DROP TABLE hosts;",
-	"DROP TABLE inode;",
 };
 
 int inode_exit(void)
@@ -270,57 +257,6 @@ int inode_exit(void)
 		ret = sql_exec_simple(exit_sql[i]);
 	}
 	return ret;
-}
-
-static char add_root_sql[] =
-	"INSERT INTO inode (pathname) VALUES ('%s');";
-static char get_root_sql[] =
-	"SELECT ino FROM inode WHERE pathname = '%s' AND parent_ino IS NULL;";
-
-int inode_add_root(const char *pathname)
-{
-	char *sql;
-	int ret, value;
-
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret)
-		return ret;
-	ret = asprintf(&sql, add_root_sql, pathname);
-	if (ret < 0)
-		goto rollback;
-
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret)
-		goto rollback;
-
-	ret = asprintf(&sql, get_root_sql, pathname);
-	if (ret < 0)
-		goto rollback;
-
-	ret = sql_exec_int(sql, "ino", &value);
-	free(sql);
-	if (ret)
-		goto rollback;
-
-	ret = sql_exec_simple("COMMIT TRANSACTION;");
-	if (ret < 0)
-		return ret;
-	return value;
-rollback:
-	ret = sql_exec_simple("ROLLBACK TRANSACTION;");
-	return ret;
-}
-
-int inode_get_root(const char *path)
-{
-	if (!strcmp(path, "hosts"))
-		return hosts_ino;
-	if (!strcmp(path, "subsystems"))
-		return subsys_ino;
-	if (!strcmp(path, "ports"))
-		return ports_ino;
-	return -1;
 }
 
 struct fill_parm_t {
@@ -355,100 +291,20 @@ static int fill_filter_cb(void *p, int argc, char **argv, char **colname)
 	return 0;
 }
 
-static char fill_root_sql[] =
-	"SELECT pathname FROM inode WHERE parent_ino IS NULL;";
+static char count_table_id_sql[] =
+	"SELECT count(id) AS num FROM %s;";
 
-int inode_fill_root(void *buf, fuse_fill_dir_t filler)
-{
-	struct fill_parm_t parm = {
-		.filler = filler,
-		.prefix = NULL,
-		.buf = buf,
-	};
-	char *errmsg;
-	int ret;
-
-	ret = sqlite3_exec(inode_db, fill_root_sql, fill_root_cb,
-			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_root_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
-	return ret;
-}
-
-static char add_inode_sql[] =
-	"INSERT INTO inode (pathname, parent_ino, ctime) VALUES ('%s','%d', CURRENT_TIMESTAMP);";
-static char get_inode_sql[] =
-	"SELECT ino FROM inode WHERE pathname = '%s' AND parent_ino = '%d';";
-
-int inode_add_inode(const char *pathname, int parent_ino)
-{
-	char *sql;
-	int ret, value;
-
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret)
-		return ret;
-	ret = asprintf(&sql, add_inode_sql, pathname, parent_ino);
-	if (ret < 0)
-		goto rollback;
-
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret)
-		goto rollback;
-
-	ret = asprintf(&sql, get_inode_sql, pathname, parent_ino);
-	if (ret < 0)
-		goto rollback;
-
-	ret = sql_exec_int(sql, "ino", &value);
-	free(sql);
-	if (ret)
-		goto rollback;
-
-	ret = sql_exec_simple("COMMIT TRANSACTION;");
-	if (ret < 0)
-		return ret;
-	return value;
-rollback:
-	ret = sql_exec_simple("ROLLBACK TRANSACTION;");
-	return ret;
-}
-
-static char del_inode_sql[] =
-	"DELETE FROM inode WHERE ino = '%d';";
-
-int inode_del_inode(int ino)
+int inode_count_table(const char *tbl, int *num)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, del_inode_sql, ino);
+	ret = asprintf(&sql, count_table_id_sql, tbl);
 	if (ret < 0)
 		return ret;
-	ret = sql_exec_simple(sql);
+	ret = sql_exec_int(sql, "num", num);
 	free(sql);
-	return ret;
-}
 
-static char find_links_sql[] =
-	"SELECT count(id) AS num FROM %s WHERE parent_ino = '%d';";
-
-int inode_find_links(const char *tbl, int parent_ino)
-{
-	char *sql;
-	int ret, value;
-
-	ret = asprintf(&sql, find_links_sql, tbl, parent_ino);
-	if (ret < 0)
-		return ret;
-	ret = sql_exec_int(sql, "num", &value);
-	free(sql);
 	return ret;
 }
 
@@ -469,22 +325,26 @@ int inode_add_host(const char *nqn)
 	return ret;
 }
 
-static char host_get_inode_sql[] =
-	"SELECT id AS ino FROM hosts "
-	"WHERE nqn = '%s';";
+static char stat_host_sql[] =
+	"SELECT unixepoch(ctime) AS tv FROM hosts WHERE nqn = '%s';";
 
-int inode_get_host_ino(const char *host, int *inode)
+int inode_stat_host(const char *hostnqn, struct stat *stbuf)
 {
-	char *sql;
-	int ret;
+		char *sql;
+	int ret, timeval;
 
-	ret = asprintf(&sql, host_get_inode_sql, host);
+	ret = asprintf(&sql, stat_host_sql, hostnqn);
 	if (ret < 0)
 		return ret;
 
-	ret = sql_exec_int(sql, "ino", inode);
+	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	return ret;
+	if (ret)
+		return -ENOENT;
+	if (stbuf) {
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	}
+	return 0;
 }
 
 static char fill_host_dir_sql[] =
@@ -529,37 +389,19 @@ int inode_del_host(const char *nqn)
 }
 
 static char add_subsys_sql[] =
-	"INSERT INTO subsystems (nqn, attr_allow_any_host, type, parent_ino, ctime) "
-	"VALUES ('%s', '%d', '%d', '%d', CURRENT_TIMESTAMP);";
+	"INSERT INTO subsystems (nqn, attr_allow_any_host, type, ctime) "
+	"VALUES ('%s', '%d', '%d', CURRENT_TIMESTAMP);";
 
-int inode_add_subsys(struct nofuse_subsys *subsys, int parent_ino)
+int inode_add_subsys(struct nofuse_subsys *subsys)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, add_subsys_sql, subsys->nqn,
-		       subsys->allow_any, subsys->type, parent_ino);
+		       subsys->allow_any, subsys->type);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
-	free(sql);
-	return ret;
-}
-
-static char subsys_get_inode_sql[] =
-	"SELECT id AS ino FROM subsystems "
-	"WHERE nqn = '%s' AND parent_ino = '%d';";
-
-int inode_get_subsys_ino(const char *subsys, int parent_ino, int *inode)
-{
-	char *sql;
-	int ret;
-
-	ret = asprintf(&sql, subsys_get_inode_sql, subsys, parent_ino);
-	if (ret < 0)
-		return ret;
-
-	ret = sql_exec_int(sql, "ino", inode);
 	free(sql);
 	return ret;
 }
@@ -580,7 +422,9 @@ int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 	free(sql);
 	if (ret)
 		return -ENOENT;
-	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	if (stbuf) {
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	}
 	return 0;
 }
 
@@ -660,14 +504,14 @@ int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 }
 
 static char del_subsys_sql[] =
-	"DELETE FROM subsystems WHERE id = '%d';";
+	"DELETE FROM subsystems WHERE nqn = '%s';";
 
 int inode_del_subsys(struct nofuse_subsys *subsys)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, del_subsys_sql, subsys->ino);
+	ret = asprintf(&sql, del_subsys_sql, subsys->nqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -762,24 +606,6 @@ int inode_add_port(struct nofuse_port *port, u8 subtype)
 	return ret;
 rollback:
 	ret = sql_exec_simple("ROLLBACK TRANSACTION;");
-	return ret;
-}
-
-static char port_get_inode_sql[] =
-	"SELECT id AS ino FROM ports "
-	"WHERE id = '%s' AND parent_ino = '%d';";
-
-int inode_get_port_ino(const char *port, int parent_ino, int *inode)
-{
-	char *sql;
-	int ret;
-
-	ret = asprintf(&sql, port_get_inode_sql, port, parent_ino);
-	if (ret < 0)
-		return ret;
-
-	ret = sql_exec_int(sql, "ino", inode);
-	free(sql);
 	return ret;
 }
 
@@ -1437,25 +1263,6 @@ int discdb_host_genctr(const char *hostnqn)
 
 #endif
 
-static int inode_create_root(void)
-{
-	hosts_ino = inode_add_root("hosts");
-	if (hosts_ino < 0)
-		return hosts_ino;
-	subsys_ino = inode_add_root("subsystems");
-	if (subsys_ino < 0) {
-		inode_del_inode(hosts_ino);
-		return subsys_ino;
-	}
-	ports_ino = inode_add_root("ports");
-	if (ports_ino < 0) {
-		inode_del_inode(subsys_ino);
-		inode_del_inode(hosts_ino);
-		return ports_ino;
-	}
-	return 0;
-}
-
 int inode_open(const char *filename)
 {
 	int ret;
@@ -1472,7 +1279,6 @@ int inode_open(const char *filename)
 		fprintf(stderr, "Can't initialize database, error %d\n", ret);
 		sqlite3_close(inode_db);
 	}
-	ret = inode_create_root();
 	return ret;
 }
 

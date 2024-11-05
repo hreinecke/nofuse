@@ -173,7 +173,6 @@ struct nofuse_subsys {
 	struct linked_list node;
 	struct linked_list ctrl_list;
 	pthread_mutex_t ctrl_mutex;
-	int ino;
 	char nqn[MAX_NQN_SIZE + 1];
 	int type;
 	bool allow_any;
