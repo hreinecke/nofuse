@@ -92,9 +92,6 @@ static int port_getattr(char *port, int parent_ino,
 	if (!strcmp(attr, "ana_groups")) {
 		const char *ana_grp = p;
 
-		p = strtok(NULL, "/");
-		if (p)
-			return -ENOENT;
 		if (!ana_grp) {
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 3;
@@ -102,8 +99,17 @@ static int port_getattr(char *port, int parent_ino,
 		}
 		if (strcmp(ana_grp, "1"))
 			return -ENOENT;
-		stbuf->st_mode = S_IFLNK | 0755;
-		stbuf->st_nlink = 1;
+		p = strtok(NULL, "/");
+		if (p) {
+			if (strcmp(p, "ana_state"))
+				return -ENOENT;
+			stbuf->st_mode = S_IFREG | 0444;
+			stbuf->st_nlink = 1;
+			stbuf->st_size = 64;
+			return 0;
+		}
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
 		return 0;
 	}
 	if (p)
@@ -293,7 +299,6 @@ static int fill_port(int parent_ino, const char *port,
 		if (p)
 			return -ENOENT;
 
-		printf("%s: port %s subsys %s\n", __func__, port, subsys);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (subsys) {
@@ -306,14 +311,16 @@ static int fill_port(int parent_ino, const char *port,
 	if (!strcmp(subdir, "ana_groups")) {
 		const char *ana_grp = p;
 
-		p = strtok(NULL, "/");
-		if (p)
-			return -ENOENT;
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		p = strtok(NULL, "/");
+		if (p) {
+			if (strcmp(p, "ana_state"))
+				return -ENOENT;
+			return 0;
+		}
 		if (ana_grp)
-			printf("%s: port %s ana_grp %s\n", __func__,
-			       port, ana_grp);
+			filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		else
 			filler(buf, "1", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -505,13 +512,26 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		attr = p;
 		p = strtok(NULL, "/");
 		if (p) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		ret = inode_get_port_attr(portid, attr, NULL);
-		if (ret < 0) {
-			ret = -ENOENT;
-			goto out_free;
+			if (strcmp(p, "ana_groups")) {
+				const char *ana_grp = p;
+
+				if (strcmp(ana_grp, "1"))
+					goto out_free;
+				p = strtok(NULL, "/");
+				if (!p)
+					goto out_free;
+				if (strcmp(p, "ana_state"))
+					goto out_free;
+			} else {
+				ret = -ENOENT;
+				goto out_free;
+			}
+		} else {
+			ret = inode_get_port_attr(portid, attr, NULL);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
@@ -572,13 +592,27 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		attr = p;
 		p = strtok(NULL, "/");
 		if (p) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		ret = inode_get_port_attr(portid, attr, buf);
-		if (ret < 0) {
-			ret = -ENOENT;
-			goto out_free;
+			if (strcmp(p, "ana_groups")) {
+				const char *ana_grp = p;
+
+				if (strcmp(ana_grp, "1"))
+					goto out_free;
+				p = strtok(NULL, "/");
+				if (!p)
+					goto out_free;
+				if (strcmp(p, "ana_state"))
+					goto out_free;
+				strcpy(buf, "optimized");
+			} else {
+				ret = -ENOENT;
+				goto out_free;
+			}
+		} else {
+			ret = inode_get_port_attr(portid, attr, buf);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
