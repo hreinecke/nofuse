@@ -131,8 +131,13 @@ static int sql_exec_int(const char *sql, char *col, int *value)
 	if (parm.done < 0)
 		fprintf(stderr, "value error for '%s': %s\n", col,
 			strerror(-parm.done));
-	else
+	else if (parm.done > 0) {
 		*value = parm.val;
+		parm.done = 0;
+	} else {
+		fprintf(stderr, "no value for '%s'\n", col);
+		*value = 0;
+	}
 	return parm.done;
 }
 
@@ -201,6 +206,7 @@ static const char *init_sql[NUM_TABLES] = {
 "ctime TIME, atime TIME, mtime TIME, data_type INTEGER, data_id INTEGER);",
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
+"ctime TIME, "
 "parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino));",
 "CREATE TABLE subsystems ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
@@ -218,7 +224,8 @@ static const char *init_sql[NUM_TABLES] = {
 "FOREIGN KEY (parent_ino) REFERENCES inode (ino) );"
 "CREATE UNIQUE INDEX port_addr ON ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
-"parent_ino INTEGER, FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
+"parent_ino INTEGER, ctime TIME, atime TIME, mtime TIME, "
+"FOREIGN KEY (parent_ino) REFERENCES inode(ino), "
 "FOREIGN KEY (host_id) REFERENCES host(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
@@ -292,7 +299,7 @@ int inode_add_root(const char *pathname)
 
 	ret = sql_exec_int(sql, "ino", &value);
 	free(sql);
-	if (ret < 0)
+	if (ret)
 		goto rollback;
 
 	ret = sql_exec_simple("COMMIT TRANSACTION;");
@@ -400,7 +407,7 @@ int inode_add_inode(const char *pathname, int parent_ino)
 
 	ret = sql_exec_int(sql, "ino", &value);
 	free(sql);
-	if (ret < 0)
+	if (ret)
 		goto rollback;
 
 	ret = sql_exec_simple("COMMIT TRANSACTION;");
@@ -445,7 +452,7 @@ int inode_find_links(const char *tbl, int parent_ino)
 }
 
 static char add_host_sql[] =
-	"INSERT INTO host (nqn, ctime) VALUES ('%s', CURRENT_TIMESTAMP);";
+	"INSERT INTO hosts (nqn, ctime) VALUES ('%s', CURRENT_TIMESTAMP);";
 
 int inode_add_host(const char *nqn)
 {
@@ -570,7 +577,7 @@ int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret < 0)
+	if (ret)
 		return -ENOENT;
 	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 	return 0;
@@ -725,7 +732,7 @@ int inode_add_port(struct nofuse_port *port, u8 subtype)
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_int(sql, "id", &portid);
-	if (ret < 0)
+	if (ret)
 		goto rollback;
 
 	fprintf(stderr, "Generated port id %d\n", portid);
@@ -789,7 +796,7 @@ int inode_stat_port(const char *port, struct stat *stbuf)
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret < 0)
+	if (ret)
 		return -ENOENT;
 	stbuf->st_mode = S_IFREG | 0444;
 	stbuf->st_nlink = 1;
@@ -874,12 +881,12 @@ int inode_get_port_attr(const char *portid, const char *attr, char *buf)
 }
 
 static char update_genctr_port_sql[] =
-	"UPDATE host SET genctr = genctr + 1 "
+	"UPDATE hosts SET genctr = genctr + 1 "
 	"FROM "
 	"(SELECT hs.host_id AS host_id, sp.id AS port_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
-	"AS hg WHERE hg.host_id = host.id AND hg.port_id = '%d';";
+	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
 
 int inode_modify_port(struct nofuse_port *port, char *attr)
 {
@@ -932,53 +939,130 @@ int inode_del_port(struct nofuse_port *port)
 	return ret;
 }
 
-#if 0
-
 static char add_host_subsys_sql[] =
-	"INSERT INTO host_subsys (host_id, subsys_id) "
-	"SELECT host.id, subsys.id FROM hosts, subsystems "
-	"WHERE host.nqn LIKE '%s' AND subsys.nqn LIKE '%s';";
+	"INSERT INTO host_subsys (host_id, subsys_id, ctime) "
+	"SELECT h.id, s.id, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
+	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
 
-int discdb_add_host_subsys(struct nvmet_host *host, struct nvmet_subsys *subsys)
+int inode_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, add_host_subsys_sql,
-		       host->hostnqn, subsys->subsysnqn);
+		       hostnqn, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
-	ret = asprintf(&sql, "UPDATE host SET genctr = genctr + 1 "
-		       "WHERE nqn LIKE '%s';", host->hostnqn);
+	ret = asprintf(&sql, "UPDATE hosts SET genctr = genctr + 1 "
+		       "WHERE nqn = '%s';", hostnqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;
+}
+
+static char fill_host_subsys_sql[] =
+	"SELECT h.nqn AS hostnqn FROM host_subsys AS hs "
+	"INNER JOIN hosts AS h ON h.id = hs.host_id "
+	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
+	"WHERE s.nqn = '%s';";
+
+int inode_fill_host_subsys(const char *subsysnqn,
+			   void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, fill_host_subsys_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	free(sql);
+	return ret;
+}
+
+static char count_host_subsys_sql[] =
+	"SELECT count(hs.host_id) AS num FROM host_subsys AS hs "
+	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
+	"WHERE s.nqn = '%s';";
+
+int inode_count_host_subsys(const char *subsysnqn, int *num_hosts)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, count_host_subsys_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "num", num_hosts);
+	free(sql);
+	return ret;
+}
+
+static char stat_host_subsys_sql[] =
+	"SELECT unixepoch(ctime) AS tv FROM host_subsys AS hs "
+	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
+	"INNER JOIN hosts AS h ON h.id = hs.host_id "
+	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
+
+int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
+			   struct stat *stbuf)
+{
+	char *sql;
+	int ret, timeval;
+
+	ret = asprintf(&sql, stat_host_subsys_sql, hostnqn, subsysnqn);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "tv", &timeval);
+	free(sql);
+	if (ret)
+		return -ENOENT;
+	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	stbuf->st_mode = S_IFLNK | 0755;
+	stbuf->st_nlink = 1;
+	return 0;
 }
 
 static char del_host_subsys_sql[] =
 	"DELETE FROM host_subsys AS hs "
 	"WHERE hs.host_id IN "
-	"(SELECT id FROM hosts WHERE nqn LIKE '%s') AND "
+	"(SELECT id FROM hosts WHERE nqn = '%s') AND "
 	"hs.subsys_id IN "
-	"(SELECT id FROM subsystems WHERE nqn LIKE '%s');";
+	"(SELECT id FROM subsystems WHERE nqn = '%s');";
 
-int discdb_del_host_subsys(struct nvmet_host *host, struct nvmet_subsys *subsys)
+int inode_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, del_host_subsys_sql,
-		       host->hostnqn, subsys->subsysnqn);
+		       hostnqn, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;
 }
+
+#if 0
 
 static char add_subsys_port_sql[] =
 	"INSERT INTO subsys_port (subsys_id, port_id) "

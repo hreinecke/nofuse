@@ -26,6 +26,14 @@ int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf);
 int inode_del_subsys(struct nofuse_subsys *subsys);
 
+int inode_add_host_subsys(const char *hostnqn, const char *subsysnqn);
+int inode_count_host_subsys(const char *subsysnqn, int *num_hosts);
+int inode_fill_host_subsys(const char *subsysnqn,
+			   void *buf, fuse_fill_dir_t filler);
+int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
+			   struct stat *stbuf);
+int inode_del_host_subsys(const char *hostnqn, const char *subsysnqn);
+
 int inode_add_port(struct nofuse_port *port, u8 subtype);
 int inode_get_port_ino(const char *port, int parent_ino, int *ino);
 int inode_stat_port(const char *port, struct stat *stbuf);

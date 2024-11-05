@@ -48,7 +48,8 @@ static struct nofuse_subsys *add_subsys(const char *nqn, int type)
 	else
 		strcpy(subsys->nqn, nqn);
 	subsys->type = type;
-	if (subsys->type == NVME_NQN_CUR)
+	if (subsys->type == NVME_NQN_CUR ||
+	    !ctx->hostnqn)
 		subsys->allow_any = 1;
 	else
 		subsys->allow_any = 0;
@@ -143,6 +144,10 @@ static int init_subsys(void)
 		}
 		return -ENOMEM;
 	}
+
+	if (ctx->hostnqn)
+		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
+
 	return 0;
 }
 

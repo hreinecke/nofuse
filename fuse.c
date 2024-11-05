@@ -111,11 +111,37 @@ static int subsys_getattr(char *subsysnqn, int parent_ino,
 	if (p)
 		return -ENOENT;
 
-	if (!strcmp(attr, "allowed_hosts") ||
-	    !strcmp(attr, "namespaces")) {
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		return 0;
+	if (!strcmp(attr, "allowed_hosts")) {
+		const char *hostnqn = strtok(NULL, "/");
+
+		if (!hostnqn) {
+			int num_hosts = 0;
+
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
+			ret = inode_count_host_subsys(subsysnqn, &num_hosts);
+			if (ret)
+				return -ENOENT;
+			stbuf->st_nlink += num_hosts;
+			return 0;
+		}
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+		printf("%s: subsys %s host %s\n", __func__, subsysnqn, hostnqn);
+		return inode_stat_host_subsys(hostnqn, subsysnqn, stbuf);
+	}
+
+	if (!strcmp(attr, "namespaces")) {
+		const char *ns = strtok(NULL, "/");
+
+		if (!ns) {
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
+			return 0;
+		}
+		printf("%s: subsys %s ns %s\n", __func__, subsysnqn, ns);
+		return -ENOENT;
 	}
 
 	if (strncmp(attr, "attr_", 5))
@@ -257,13 +283,33 @@ static int fill_subsys(int parent_ino, const char *subsys,
 	}
 	subdir = p;
 	p = strtok(NULL, "/");
-	if (p)
-		return -ENOENT;
-	if (!strcmp(subdir, "namespaces") ||
-	    !strcmp(subdir, "allowed_hosts")) {
+	if (!strcmp(subdir, "namespaces")) {
+		const char *ns = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		if (ns)
+			printf("%s: subsys %s ns %s\n", __func__, subsys, ns);
 		return 0;
+	}
+	if (!strcmp(subdir, "allowed_hosts")) {
+		const char *host = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		if (host) {
+			printf("%s: subsys %s host %s\n", __func__,
+			       subsys, host);
+			return 0;
+		}
+		return inode_fill_host_subsys(subsys, buf, filler);
 	}
 	return -ENOENT;
 }
@@ -281,6 +327,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
+	printf("%s: path %s\n", __func__, pathbuf);
 	root = strtok(pathbuf, "/");
 	if (!root) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
