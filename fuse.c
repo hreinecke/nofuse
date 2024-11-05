@@ -105,14 +105,13 @@ static int subsys_getattr(char *subsysnqn, int parent_ino,
 		stbuf->st_nlink = 2;
 		return 0;
 	}
+	printf("%s: subsys %s attr %s\n", __func__, subsysnqn, p);
 
 	attr = p;
 	p = strtok(NULL, "/");
-	if (p)
-		return -ENOENT;
 
 	if (!strcmp(attr, "allowed_hosts")) {
-		const char *hostnqn = strtok(NULL, "/");
+		const char *hostnqn = p;
 
 		if (!hostnqn) {
 			int num_hosts = 0;
@@ -133,7 +132,7 @@ static int subsys_getattr(char *subsysnqn, int parent_ino,
 	}
 
 	if (!strcmp(attr, "namespaces")) {
-		const char *ns = strtok(NULL, "/");
+		const char *ns = p;
 
 		if (!ns) {
 			stbuf->st_mode = S_IFDIR | 0755;
@@ -166,8 +165,8 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
+	printf("%s: path %s\n", __func__, pathbuf);
 	root = strtok(pathbuf, "/");
-	printf("%s: %s %s\n", __func__, pathbuf, root);
 	if (!root) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 5;
@@ -179,7 +178,6 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		goto out_free;
 	}
 
-	printf("%s: root %s\n", __func__, root);
 	p = strtok(NULL, "/");
 	if (!p) {
 		int nlinks;
@@ -353,6 +351,12 @@ out_free:
 	return ret;
 }
 
+static int nofuse_readlink(const char *path, char *buf, size_t len)
+{
+	printf("%s: path %s\n", __func__, path);
+	return -ENOENT;
+}
+
 static int nofuse_open(const char *path, struct fuse_file_info *fi)
 {
 	const char *p, *root, *attr;
@@ -362,6 +366,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
+	printf("%s: path %s\n", __func__, path);
 	root = strtok(pathbuf, "/");
 	if (!root)
 		goto out_free;
@@ -489,6 +494,7 @@ static const struct fuse_operations nofuse_oper = {
 	.init           = nofuse_init,
 	.getattr	= nofuse_getattr,
 	.readdir	= nofuse_readdir,
+	.readlink	= nofuse_readlink,
 	.open		= nofuse_open,
 	.read		= nofuse_read,
 };

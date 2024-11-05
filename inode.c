@@ -1016,7 +1016,7 @@ int inode_count_host_subsys(const char *subsysnqn, int *num_hosts)
 }
 
 static char stat_host_subsys_sql[] =
-	"SELECT unixepoch(ctime) AS tv FROM host_subsys AS hs "
+	"SELECT unixepoch(hs.ctime) AS tv FROM host_subsys AS hs "
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
 	"INNER JOIN hosts AS h ON h.id = hs.host_id "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
