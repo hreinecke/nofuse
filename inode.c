@@ -193,7 +193,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 6
+#define NUM_TABLES 7
 
 static const char *init_sql[NUM_TABLES] = {
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -204,7 +204,13 @@ static const char *init_sql[NUM_TABLES] = {
 "attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 "attr_model VARCHAR(256), attr_serial VARCHAR(256), attr_version VARCHAR(256), "
 "type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
-"CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT,"
+"CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
+"device_path VARCHAR(256), nsid INTEGER NOT NULL, "
+"subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
+"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+"ON UPDATE CASCADE ON DELETE RESTRICT );",
+"CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
 "addr_subtype INT DEFAULT 2, addr_treq char(32), "
 "addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
@@ -245,6 +251,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE host_subsys;",
 	"DROP INDEX port_addr",
 	"DROP TABLE ports;",
+	"DROP TABLE namespaces;",
 	"DROP TABLE subsystems;",
 	"DROP TABLE hosts;",
 };
@@ -519,6 +526,120 @@ int inode_del_subsys(struct nofuse_subsys *subsys)
 	return ret;
 }
 
+static char add_namespace_sql[] =
+	"INSERT INTO namespaces (device_uuid, device_path, nsid, subsys_id, ctime) "
+	"SELECT '%s', '%s', '%d', s.id, CURRENT_TIMESTAMP "
+	"FROM subsystems AS s WHERE s.nqn = '%s';";
+
+int inode_add_namespace(struct nofuse_subsys *subsys,
+			struct nofuse_namespace *ns)
+{
+	char *sql;
+	char uuid[65];
+	int ret;
+
+	uuid_unparse(ns->uuid, uuid);
+	ret = asprintf(&sql, add_namespace_sql, uuid, ns->path,
+		       ns->nsid, subsys->nqn);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
+static char count_namespaces_sql[] =
+	"SELECT count(n.id) AS num FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"WHERE s.nqn = '%s';";
+
+int inode_count_namespaces(const char *subsysnqn, int *num)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, count_namespaces_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "num", num);
+	free(sql);
+
+	return ret;
+}
+
+static char stat_namespace_sql[] =
+	"SELECT unixepoch(n.ctime) AS tv FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"WHERE s.nqn = '%s' AND n.nsid = '%s';";
+
+int inode_stat_namespace(const char *subsysnqn, const char *nsid,
+			 struct stat *stbuf)
+{
+	char *sql;
+	int ret, timeval;
+
+	ret = asprintf(&sql, stat_namespace_sql, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "tv", &timeval);
+	free(sql);
+	if (ret)
+		return -ENOENT;
+	if (stbuf)
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	return 0;
+}
+
+static char fill_namespaces_sql[] =
+	"SELECT n.nsid AS nsid FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"WHERE s.nqn = '%s';";
+
+int inode_fill_namespaces(const char *nqn, void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, fill_namespaces_sql, nqn);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+
+	free(sql);
+	return ret;
+}
+
+static char del_namespace_sql[] =
+	"DELETE FROM namespaces WHERE uuid = '%s';";
+
+int inode_del_namespace(struct nofuse_namespace *ns)
+{
+	int ret;
+	char *sql, uuid[65];
+
+	uuid_unparse(ns->uuid, uuid);
+	ret = asprintf(&sql, del_namespace_sql, uuid);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
 static char add_port_sql[] =
 	"INSERT INTO ports (addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, addr_subtype, ctime)"
 	" VALUES ('%s','%s','%s','%s','%s','%s','%d', CURRENT_TIMESTAMP);";
@@ -625,10 +746,12 @@ int inode_stat_port(const char *port, struct stat *stbuf)
 	free(sql);
 	if (ret)
 		return -ENOENT;
-	stbuf->st_mode = S_IFREG | 0444;
-	stbuf->st_nlink = 1;
-	stbuf->st_size = 256;
-	stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	if (stbuf) {
+		stbuf->st_mode = S_IFREG | 0444;
+		stbuf->st_nlink = 1;
+		stbuf->st_size = 256;
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+	}
 	return 0;
 }
 

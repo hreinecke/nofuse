@@ -76,15 +76,11 @@ struct nofuse_port {
 	char tsas[256];
 };
 
-struct nofuse_host {
-	char nqn[MAX_NQN_SIZE + 1];
-};
-
 struct ep_qe {
 	struct linked_list node;
 	int tag;
 	struct endpoint *ep;
-	struct nsdev *ns;
+	struct nofuse_namespace *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
 	struct nvme_completion resp;
@@ -145,7 +141,7 @@ struct ctrl_conn {
 	u64 cc;
 };
 
-struct nsdev {
+struct nofuse_namespace {
 	struct linked_list node;
 	struct ns_ops *ops;
 	int nsid;
@@ -153,6 +149,8 @@ struct nsdev {
 	size_t size;
 	unsigned int blksize;
 	uuid_t uuid;
+	char nguid[256];
+	char path[256];
 };
 
 struct host_iface {

@@ -18,6 +18,14 @@ int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf);
 int inode_del_subsys(struct nofuse_subsys *subsys);
 
+int inode_add_namespace(struct nofuse_subsys *subsys,
+			struct nofuse_namespace *ns);
+int inode_count_namespaces(const char *subsysnqn, int *num);
+int inode_stat_namespace(const char *subsysnqn, const char *nsid,
+			 struct stat *stbuf);
+int inode_fill_namespaces(const char *nqn, void *buf, fuse_fill_dir_t filler);
+int inode_del_namespace(struct nofuse_namespace *ns);
+
 int inode_add_host_subsys(const char *hostnqn, const char *subsysnqn);
 int inode_count_host_subsys(const char *subsysnqn, int *num_hosts);
 int inode_fill_host_subsys(const char *subsysnqn,

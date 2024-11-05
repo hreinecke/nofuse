@@ -76,14 +76,15 @@ static void del_subsys(struct nofuse_subsys *subsys)
 
 static int open_file_ns(const char *filename)
 {
-	struct nsdev *ns;
+	struct nofuse_namespace *ns;
 	struct stat st;
 
-	ns = malloc(sizeof(struct nsdev));
+	ns = malloc(sizeof(*ns));
 	if (!ns) {
 		errno = ENOMEM;
 		return -1;
 	}
+	memset(ns, 0, sizeof(*ns));
 
 	ns->fd = open(filename, O_RDWR | O_EXCL);
 	if (ns->fd < 0) {
@@ -109,13 +110,14 @@ static int open_file_ns(const char *filename)
 
 static int open_ram_ns(size_t size)
 {
-	struct nsdev *ns;
+	struct nofuse_namespace *ns;
 
-	ns = malloc(sizeof(struct nsdev));
+	ns = malloc(sizeof(*ns));
 	if (!ns) {
 		errno = ENOMEM;
 		return -1;
 	}
+	memset(ns, 0, sizeof(*ns));
 	ns->size = size * 1024 * 1024; /* size in MB */
 	ns->blksize = 4096;
 	ns->fd = -1;
@@ -131,14 +133,13 @@ static int init_subsys(void)
 {
 	struct nofuse_subsys *subsys, *tmp_subsys;
 	struct host_iface *iface;
+	struct nofuse_namespace *ns;
 
 	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (!subsys)
 		return -ENOMEM;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
-		printf("%s: add subsys %s port %d\n", __func__,
-		       subsys->nqn, iface->port.port_id);
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
 	}
 
@@ -155,9 +156,13 @@ static int init_subsys(void)
 	}
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
-		printf("%s: add subsys %s port %d\n", __func__,
-		       subsys->nqn, iface->port.port_id);
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
+	}
+
+	list_for_each_entry(ns, &device_linked_list, node) {
+		printf("%s: add subsys %s ns %d\n", __func__,
+		       subsys->nqn, ns->nsid);
+		inode_add_namespace(subsys, ns);
 	}
 
 	if (ctx->hostnqn)
@@ -370,11 +375,11 @@ void free_devices(void)
 {
 	struct linked_list *p;
 	struct linked_list *n;
-	struct nsdev *dev;
+	struct nofuse_namespace *dev;
 
 	list_for_each_safe(p, n, &device_linked_list) {
 		list_del(p);
-		dev = container_of(p, struct nsdev, node);
+		dev = container_of(p, struct nofuse_namespace, node);
 		if (dev->fd >= 0)
 			close(dev->fd);
 		free(dev);

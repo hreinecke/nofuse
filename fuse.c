@@ -188,8 +188,14 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 		const char *ns = p;
 
 		if (!ns) {
+			int num_ns = 0;
+
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
+			ret = inode_count_namespaces(subsysnqn, &num_ns);
+			if (ret)
+				return -ENOENT;
+			stbuf->st_nlink += num_ns;
 			return 0;
 		}
 		printf("%s: subsys %s ns %s\n", __func__, subsysnqn, ns);
@@ -358,9 +364,12 @@ static int fill_subsys(const char *subsys,
 
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		if (ns)
-			printf("%s: subsys %s ns %s\n", __func__, subsys, ns);
-		return 0;
+		if (ns) {
+			if (inode_stat_namespace(subsys, ns, NULL) < 0)
+				return -ENOENT;
+			return 0;
+		}
+		return inode_fill_namespaces(subsys, buf, filler);
 	}
 	if (!strcmp(subdir, "allowed_hosts")) {
 		const char *host = p;

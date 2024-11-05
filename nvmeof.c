@@ -285,7 +285,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 
 static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len)
 {
-	struct nsdev *ns = NULL, *_ns;
+	struct nofuse_namespace *ns = NULL, *_ns;
 	struct nvme_id_ns id;
 
 	list_for_each_entry(_ns, &device_linked_list, node) {
@@ -316,7 +316,7 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 
 static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 {
-	struct nsdev *ns;
+	struct nofuse_namespace *ns;
 	u8 *ns_list = id_buf;
 	int id_len = len;
 
@@ -334,7 +334,7 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 
 static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_list, u64 len)
 {
-	struct nsdev *ns = NULL, *_ns;
+	struct nofuse_namespace *ns = NULL, *_ns;
 	int desc_len = len;
 
 	memset(desc_list, 0, len);
@@ -516,7 +516,7 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 		       struct nvme_command *cmd)
 {
-	struct nsdev *ns;
+	struct nofuse_namespace *ns;
 	int nsid = le32toh(cmd->rw.nsid);
 
 	list_for_each_entry(ns, &device_linked_list, node) {
@@ -550,7 +550,7 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 			struct nvme_command *cmd)
 {
-	struct nsdev *ns;
+	struct nofuse_namespace *ns;
 	u8 sgl_type = cmd->rw.dptr.sgl.type;
 	int nsid = le32toh(cmd->rw.nsid);
 	int ret;
