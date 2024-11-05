@@ -137,8 +137,11 @@ static int init_subsys(void)
 	if (!subsys)
 		return -ENOMEM;
 
-	list_for_each_entry(iface, &iface_linked_list, node)
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		printf("%s: add subsys %s port %d\n", __func__,
+		       subsys->nqn, iface->port.port_id);
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
+	}
 
 	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_NVM);
 	if (!subsys) {
@@ -152,8 +155,11 @@ static int init_subsys(void)
 		return -ENOMEM;
 	}
 
-	list_for_each_entry(iface, &iface_linked_list, node)
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		printf("%s: add subsys %s port %d\n", __func__,
+		       subsys->nqn, iface->port.port_id);
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
+	}
 
 	if (ctx->hostnqn)
 		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
@@ -165,7 +171,6 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 					 int adrfam, int port)
 {
 	struct host_iface *iface;
-	struct nofuse_subsys *subsys;
 	int ret;
 
 	iface = malloc(sizeof(*iface));
@@ -224,8 +229,13 @@ static int get_iface(const char *ifname)
 		if (ifa->ifa_addr == NULL)
 			continue;
 
-		if (strcmp(ifa->ifa_name, ifname))
-			continue;
+		if (ifname) {
+			if (strcmp(ifa->ifa_name, ifname))
+				continue;
+		} else {
+			if (strcmp(ifa->ifa_name, "lo"))
+				continue;
+		}
 
 		if (ifa->ifa_addr->sa_family == AF_INET)
 			addrlen = sizeof(struct sockaddr_in);
@@ -302,18 +312,16 @@ static void show_help(void)
 
 static int init_args(struct fuse_args *args)
 {
-	int iface_num = 0, tls_keyring;
+	int tls_keyring;
 
 	debug = ctx->debug;
 
-	if (ctx->interface) {
-		if (get_iface(ctx->interface) < 0) {
-			print_err("Invalid interface %s\n",
-				  ctx->interface);
-			return 1;
-		}
-		iface_num++;
+	if (get_iface(ctx->interface) < 0) {
+		print_err("Invalid interface %s\n",
+			  ctx->interface ? ctx->interface : "lo");
+		return 1;
 	}
+
 	if (ctx->portnum) {
 		add_host_port(ctx->portnum);
 	}
@@ -343,14 +351,6 @@ static int init_args(struct fuse_args *args)
 			print_err("Failed to create default namespace");
 			return 1;
 		}
-	}
-
-	if (list_empty(&iface_linked_list)) {
-		if (get_iface("lo") < 0) {
-			print_err("Failed to initialize iface 'lo'");
-			return 1;
-		}
-		iface_num++;
 	}
 
 	if (list_empty(&iface_linked_list)) {

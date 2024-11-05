@@ -1087,7 +1087,7 @@ int inode_add_subsys_port(const char *subsysnqn, unsigned int port)
 		       subsysnqn, port);
 	if (ret < 0)
 		return ret;
-	printf("%s: sql %s\n", __func__, sql);
+
 	ret = sql_exec_simple(sql);
 	free(sql);
 
@@ -1170,7 +1170,6 @@ int inode_fill_subsys_port(const char *port,
 	char *sql, *errmsg;
 	int ret;
 
-	ret = sql_exec_simple("SELECT * FROM subsys_port;");
 	ret = asprintf(&sql, fill_subsys_port_sql, port);
 	if (ret < 0)
 		return ret;

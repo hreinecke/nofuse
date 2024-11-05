@@ -66,12 +66,50 @@ static int port_getattr(char *port, int parent_ino,
 
 	attr = p;
 	p = strtok(NULL, "/");
+
+	if (!strcmp(attr, "subsystems")) {
+		const char *subsys = p;
+
+		printf("%s: port %s subsys %s\n", __func__,
+		       port, subsys);
+		if (!subsys) {
+			int num_subsys = 0;
+
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
+			ret = inode_count_subsys_port(port, &num_subsys);
+			if (ret)
+				return -ENOENT;
+			stbuf->st_nlink += num_subsys;
+			return 0;
+		}
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+		printf("%s: port %s subsys %s\n", __func__, port, subsys);
+		return inode_stat_subsys_port(subsys, port, stbuf);
+	}
+	if (!strcmp(attr, "ana_groups")) {
+		const char *ana_grp = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+		if (!ana_grp) {
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 3;
+			return 0;
+		}
+		if (strcmp(ana_grp, "1"))
+			return -ENOENT;
+		stbuf->st_mode = S_IFLNK | 0755;
+		stbuf->st_nlink = 1;
+		return 0;
+	}
 	if (p)
 		return -ENOENT;
 
-	if (!strcmp(attr, "ana_groups") ||
-	    !strcmp(attr, "referrals") ||
-	    !strcmp(attr, "subsystems")) {
+	if (!strcmp(attr, "referrals")) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
 		return 0;
