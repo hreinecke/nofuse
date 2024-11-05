@@ -353,8 +353,58 @@ out_free:
 
 static int nofuse_readlink(const char *path, char *buf, size_t len)
 {
-	printf("%s: path %s\n", __func__, path);
-	return -ENOENT;
+	char *p, *pathbuf, *root, *attr;
+	int ret = -ENOENT;
+
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+	printf("%s: path %s\n", __func__, pathbuf);
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		const char *port, *subsys;
+
+		port = strtok(NULL, "/");
+		if (!port)
+			goto out_free;
+		attr = strtok(NULL, "/");
+		if (!attr)
+			goto out_free;
+		if (strcmp(attr, "subsystems"))
+			goto out_free;
+		subsys = strtok(NULL, "/");
+		if (!subsys)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		sprintf(buf, "../../../subsystems/%s", subsys);
+		ret = 0;
+	} else if (!strcmp(root, subsys_dir)) {
+		const char *subsys, *host;
+
+		subsys = strtok(NULL, "/");
+		if (!subsys)
+			goto out_free;
+		attr = strtok(NULL, "/");
+		if (!attr)
+			goto out_free;
+		if (strcmp(attr, "allowed_hosts"))
+			goto out_free;
+		host = strtok(NULL, "/");
+		if (!host)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		sprintf(buf, "../../../hosts/%s", host);
+		ret = 0;
+	}
+out_free:
+	free(pathbuf);
+	return ret;
 }
 
 static int nofuse_open(const char *path, struct fuse_file_info *fi)
@@ -395,7 +445,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			ret = -ENOENT;
 			goto out_free;
 		}
-	} else if (!strcmp(root, hosts_dir)) {
+	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
 
 		p = strtok(NULL, "/");
