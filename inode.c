@@ -193,7 +193,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 9
+#define NUM_TABLES 10
 
 static const char *init_sql[NUM_TABLES] = {
 "CREATE TABLE ana_states ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -219,15 +219,18 @@ static const char *init_sql[NUM_TABLES] = {
 "addr_tsas CHAR(255) DEFAULT '', "
 "ctime TIME, atime TIME, mtime TIME, "
 "UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
-"CREATE UNIQUE INDEX port_addr ON "
+"CREATE UNIQUE INDEX port_addr_idx ON "
 "ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "grpid INT, ana_state INT, port_id INTEGER, "
 "ctime TIME, atime TIME, mtime TIME, "
+"UNIQUE(port_id, grpid), "
 "FOREIGN KEY (ana_state) REFERENCES ana_states(state) "
 "ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
+"CREATE UNIQUE INDEX ana_group_idx ON "
+"ana_groups(port_id, grpid);",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
 "ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (host_id) REFERENCES host(id) "
@@ -284,8 +287,9 @@ static const char *exit_sql[NUM_TABLES] =
 {
 	"DROP TABLE subsys_port;",
 	"DROP TABLE host_subsys;",
+	"DROP INDEX ana_group_idx;",
 	"DROP TABLE ana_groups;",
-	"DROP INDEX port_addr;",
+	"DROP INDEX port_addr_idx;",
 	"DROP TABLE ports;",
 	"DROP TABLE namespaces;",
 	"DROP TABLE subsystems;",
