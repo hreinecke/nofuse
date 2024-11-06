@@ -771,8 +771,9 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	value = strdup(buf);
 	if (!value)
 		goto out_free_path;
-	if (strlen(value) > 0 && value[strlen(value) - 1] == '\n')
-		value[strlen(value) - 1] = '\0';
+	p = strrchr(value, '\n');
+	if (p)
+		*p = '\0';
 	printf("%s: path %s value %s\n", __func__, pathbuf, value);
 	root = strtok(pathbuf, "/");
 	if (!root)
@@ -795,8 +796,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		if (!p || strcmp(p, "ana_state"))
 			goto out_free;
 
-		printf("%s: port %s ana_grp %s\n", __func__,
-		       port, ana_grp);
+		printf("%s: port %s ana_grp %s value %s\n", __func__,
+		       port, ana_grp, value);
 		ret = inode_set_ana_group(port, ana_grp, value);
 		if (ret < 0) {
 			ret = -ENOENT;

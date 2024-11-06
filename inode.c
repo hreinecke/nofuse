@@ -1130,7 +1130,7 @@ int inode_get_ana_group(const char *port, const char *ana_grpid,
 }
 
 static char set_ana_group_sql[] =
-	"UPDATE ana_groups SET ana_state = hg.ana_id "
+	"UPDATE OR FAIL ana_groups SET ana_state = hg.ana_id "
 	"FROM "
 	"(SELECT id AS ana_id, desc AS ana_state "
 	"FROM ana_states) AS hg "
@@ -1145,6 +1145,7 @@ int inode_set_ana_group(const char *port, const char *ana_grpid,
 	ret = asprintf(&sql, set_ana_group_sql, buf, port, ana_grpid);
 	if (ret < 0)
 		return ret;
+	printf("%s: %s\n", __func__, sql);
 	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;
