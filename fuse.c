@@ -213,8 +213,6 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 			return -ENOENT;
 		printf("%s: subsys %s ns %s attr %s\n", __func__,
 		       subsysnqn, ns, attr);
-		if (!strcmp(attr, "ana_grpid"))
-			goto found;
 		ret = inode_get_namespace_attr(subsysnqn, ns, attr, NULL);
 		if (ret < 0)
 			return -ENOENT;
@@ -586,11 +584,8 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			ret = -ENOENT;
 			goto out_free;
 		}
-		if (!strcmp(attr, "ana_grpid"))
-			ret = 0;
-		else
-			ret = inode_get_namespace_attr(subsysnqn,
-						       nsid, attr, NULL);
+		ret = inode_get_namespace_attr(subsysnqn,
+					       nsid, attr, NULL);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
@@ -688,12 +683,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			ret = -ENOENT;
 			goto out_free;
 		}
-		if (!strcmp(attr, "ana_grpid")) {
-			strcpy(buf, "1");
-			ret = 0;
-		} else
-			ret = inode_get_namespace_attr(subsysnqn,
-						       nsid, attr, buf);
+		ret = inode_get_namespace_attr(subsysnqn,
+					       nsid, attr, buf);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;

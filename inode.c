@@ -193,7 +193,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 7
+#define NUM_TABLES 8
 
 static const char *init_sql[NUM_TABLES] = {
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -206,8 +206,8 @@ static const char *init_sql[NUM_TABLES] = {
 "type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
 "CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-"device_path VARCHAR(256), device_enable INT DEFAULT 0, nsid INTEGER NOT NULL, "
-"subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
+"device_path VARCHAR(256), device_enable INT DEFAULT 0, device_ana_grpid INT, "
+"nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -219,6 +219,10 @@ static const char *init_sql[NUM_TABLES] = {
 "UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
 "CREATE UNIQUE INDEX port_addr ON "
 "ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
+"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"grpid INT, ana_state INT, port_id INTEGER, "
+"FOREIGN KEY (port_id) REFERENCES ports(id) "
+"ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
 "ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (host_id) REFERENCES host(id) "
@@ -249,7 +253,8 @@ static const char *exit_sql[NUM_TABLES] =
 {
 	"DROP TABLE subsys_port;",
 	"DROP TABLE host_subsys;",
-	"DROP INDEX port_addr",
+	"DROP TABLE ana_groups;",
+	"DROP INDEX port_addr;",
 	"DROP TABLE ports;",
 	"DROP TABLE namespaces;",
 	"DROP TABLE subsystems;",
@@ -636,9 +641,10 @@ static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 	for (i = 0; i < argc; i++) {
 		if (strncmp(colname[i], prefix, strlen(prefix)))
 			continue;
-		if (!strcmp(colname[i], "device_enable"))
-			parm->filler(parm->buf, "enable", NULL,
-				     0, FUSE_FILL_DIR_PLUS);
+		if (!strcmp(colname[i], "device_enable") ||
+		    !strcmp(colname[i], "device_ana_grpid"))
+			parm->filler(parm->buf, colname[i] + strlen(prefix),
+				     NULL, 0, FUSE_FILL_DIR_PLUS);
 		else
 			parm->filler(parm->buf, colname[i], NULL,
 				     0, FUSE_FILL_DIR_PLUS);
@@ -668,10 +674,8 @@ int inode_fill_namespace(const char *nqn, const char *nsid,
 		fprintf(stderr, "SQL error: %s\n", errmsg);
 		sqlite3_free(errmsg);
 		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else {
-		filler(buf, "ana_grpid", NULL, 0, FUSE_FILL_DIR_PLUS);
+	} else
 		ret = 0;
-	}
 
 	free(sql);
 	return ret;
@@ -690,6 +694,8 @@ int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
 
 	if (!strcmp(attr, "enable"))
 		attr = "device_enable";
+	if (!strcmp(attr, "ana_grpid"))
+		attr = "device_ana_grpid";
 	ret = asprintf(&sql, get_namespace_attr_sql, attr, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
