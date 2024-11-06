@@ -603,9 +603,9 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			if (ret < 0) {
 				printf("%s: error %d\n", __func__, ret);
 				ret = -ENOENT;
-				goto out_free;
-			}
-			ret = 0;
+			} else
+				ret = 0;
+			goto out_free;
 		} else {
 			ret = inode_get_port_attr(portid, attr, NULL);
 			if (ret < 0) {
@@ -758,6 +758,59 @@ out_free:
 	return ret;
 }
 
+static int nofuse_write(const char *path, const char *buf, size_t len,
+			off_t offset, struct fuse_file_info *fi)
+{
+	char *pathbuf, *root, *p, *value;
+	int ret = -ENOENT;
+
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+
+	value = strdup(buf);
+	if (!value)
+		goto out_free_path;
+	if (strlen(value) > 0 && value[strlen(value) - 1] == '\n')
+		value[strlen(value) - 1] = '\0';
+	printf("%s: path %s value %s\n", __func__, pathbuf, value);
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
+
+	p = strtok(NULL, "/");
+	if (!p)
+		goto out_free;
+
+	if (!strcmp(root, ports_dir)) {
+		char *port = p, *attr, *ana_grp;
+
+		attr = strtok(NULL, "/");
+		if (!attr || strcmp(attr, "ana_groups"))
+			goto out_free;
+		ana_grp = strtok(NULL, "/");
+		if (!ana_grp)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (!p || strcmp(p, "ana_state"))
+			goto out_free;
+
+		printf("%s: port %s ana_grp %s\n", __func__,
+		       port, ana_grp);
+		ret = inode_set_ana_group(port, ana_grp, value);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		ret = strlen(buf);
+	}
+out_free:
+	free(value);
+out_free_path:
+	free(pathbuf);
+	return ret;
+}
+
 static const struct fuse_operations nofuse_oper = {
 	.init           = nofuse_init,
 	.getattr	= nofuse_getattr,
@@ -766,6 +819,7 @@ static const struct fuse_operations nofuse_oper = {
 	.readlink	= nofuse_readlink,
 	.open		= nofuse_open,
 	.read		= nofuse_read,
+	.write		= nofuse_write,
 };
 
 int run_fuse(struct fuse_args *args)

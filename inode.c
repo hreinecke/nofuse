@@ -1069,7 +1069,7 @@ int inode_stat_ana_group(const char *port, const char *ana_grpid,
 		return ret;
 	if (stbuf) {
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-		stbuf->st_mode = S_IFREG | 0444;
+		stbuf->st_mode = S_IFREG | 0644;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = 64;
 	}
@@ -1125,6 +1125,27 @@ int inode_get_ana_group(const char *port, const char *ana_grpid,
 		return ret;
 	printf("%s: %s\n", __func__, sql);
 	ret = sql_exec_str(sql, "ana_state", buf);
+	free(sql);
+	return ret;
+}
+
+static char set_ana_group_sql[] =
+	"UPDATE ana_groups SET ana_state = hg.ana_id "
+	"FROM "
+	"(SELECT id AS ana_id, desc AS ana_state "
+	"FROM ana_states) AS hg "
+	"WHERE hg.ana_state = '%s' AND port_id = '%s' AND grpid = '%s';";
+
+int inode_set_ana_group(const char *port, const char *ana_grpid,
+			const void *buf)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, set_ana_group_sql, buf, port, ana_grpid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;
 }
