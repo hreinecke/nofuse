@@ -206,7 +206,7 @@ static const char *init_sql[NUM_TABLES] = {
 "type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
 "CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-"device_path VARCHAR(256), nsid INTEGER NOT NULL, "
+"device_path VARCHAR(256), device_enable INT DEFAULT 0, nsid INTEGER NOT NULL, "
 "subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
@@ -590,12 +590,12 @@ int inode_stat_namespace(const char *subsysnqn, const char *nsid,
 	return 0;
 }
 
-static char fill_namespaces_sql[] =
+static char fill_namespace_dir_sql[] =
 	"SELECT n.nsid AS nsid FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
-int inode_fill_namespaces(const char *nqn, void *buf, fuse_fill_dir_t filler)
+int inode_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -605,7 +605,7 @@ int inode_fill_namespaces(const char *nqn, void *buf, fuse_fill_dir_t filler)
 	char *sql, *errmsg;
 	int ret;
 
-	ret = asprintf(&sql, fill_namespaces_sql, nqn);
+	ret = asprintf(&sql, fill_namespace_dir_sql, nqn);
 	if (ret < 0)
 		return ret;
 	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
@@ -618,6 +618,82 @@ int inode_fill_namespaces(const char *nqn, void *buf, fuse_fill_dir_t filler)
 	} else
 		ret = 0;
 
+	free(sql);
+	return ret;
+}
+
+static char fill_namespace_sql[] =
+	"SELECT n.* FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"WHERE s.nqn = '%s' AND n.nsid = '%s';";
+
+static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
+{
+	struct fill_parm_t *parm = p;
+	const char prefix[] = "device_";
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (strncmp(colname[i], prefix, strlen(prefix)))
+			continue;
+		if (!strcmp(colname[i], "device_enable"))
+			parm->filler(parm->buf, "enable", NULL,
+				     0, FUSE_FILL_DIR_PLUS);
+		else
+			parm->filler(parm->buf, colname[i], NULL,
+				     0, FUSE_FILL_DIR_PLUS);
+	}
+	return 0;
+}
+
+int inode_fill_namespace(const char *nqn, const char *nsid,
+			 void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, fill_namespace_sql, nqn, nsid);
+	if (ret < 0)
+		return ret;
+
+	ret = sqlite3_exec(inode_db, sql, fill_ns_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else {
+		filler(buf, "ana_grpid", NULL, 0, FUSE_FILL_DIR_PLUS);
+		ret = 0;
+	}
+
+	free(sql);
+	return ret;
+}
+
+static char get_namespace_attr_sql[] =
+	"SELECT ns.%s FROM namespaces AS ns "
+	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
+	"WHERE s.nqn = '%s' AND ns.nsid = '%s';";
+
+int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
+			     const char *attr, char *buf)
+{
+	int ret;
+	char *sql;
+
+	if (!strcmp(attr, "enable"))
+		attr = "device_enable";
+	ret = asprintf(&sql, get_namespace_attr_sql, attr, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_str(sql, attr, buf);
 	free(sql);
 	return ret;
 }

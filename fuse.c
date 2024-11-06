@@ -198,8 +198,27 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 			stbuf->st_nlink += num_ns;
 			return 0;
 		}
+		ret = inode_stat_namespace(subsysnqn, ns, stbuf);
+		if (ret)
+			return -ENOENT;
 		printf("%s: subsys %s ns %s\n", __func__, subsysnqn, ns);
-		return -ENOENT;
+		attr = strtok(NULL, "/");
+		if (!attr) {
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
+			return 0;
+		}
+		p = strtok(NULL, "/");
+		if (p)
+			return -ENOENT;
+		printf("%s: subsys %s ns %s attr %s\n", __func__,
+		       subsysnqn, ns, attr);
+		if (!strcmp(attr, "ana_grpid"))
+			goto found;
+		ret = inode_get_namespace_attr(subsysnqn, ns, attr, NULL);
+		if (ret < 0)
+			return -ENOENT;
+		goto found;
 	}
 
 	if (strncmp(attr, "attr_", 5))
@@ -207,6 +226,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 	ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
+found:
 	stbuf->st_mode = S_IFREG | 0444;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;
@@ -358,18 +378,19 @@ static int fill_subsys(const char *subsys,
 	if (!strcmp(subdir, "namespaces")) {
 		const char *ns = p;
 
+		if (!ns) {
+			filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+			filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+			return inode_fill_namespace_dir(subsys, buf, filler);
+		}
 		p = strtok(NULL, "/");
 		if (p)
 			return -ENOENT;
 
+		printf("%s: subsys %s ns %s\n", __func__, subsys, ns);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		if (ns) {
-			if (inode_stat_namespace(subsys, ns, NULL) < 0)
-				return -ENOENT;
-			return 0;
-		}
-		return inode_fill_namespaces(subsys, buf, filler);
+		return inode_fill_namespace(subsys, ns, buf, filler);
 	}
 	if (!strcmp(subdir, "allowed_hosts")) {
 		const char *host = p;
@@ -535,7 +556,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			}
 		}
 	} else if (!strcmp(root, subsys_dir)) {
-		const char *subsysnqn = p;
+		const char *subsysnqn = p, *nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -543,12 +564,33 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 
 		attr = p;
 		p = strtok(NULL, "/");
+		if (!p) {
+			ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
+		} else if (strcmp(attr, "namespaces")) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		nsid = p;
+		p = strtok(NULL, "/");
+		if (!p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		attr = p;
+		p = strtok(NULL, "/");
 		if (p) {
 			ret = -ENOENT;
 			goto out_free;
 		}
-
-		ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
+		if (!strcmp(attr, "ana_grpid"))
+			ret = 0;
+		else
+			ret = inode_get_namespace_attr(subsysnqn,
+						       nsid, attr, NULL);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
@@ -616,7 +658,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 		}
 	} else if (!strcmp(root, subsys_dir)) {
-		const char *subsysnqn = p;
+		const char *subsysnqn = p, *nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -624,12 +666,34 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 
 		attr = p;
 		p = strtok(NULL, "/");
+		if (!p) {
+			ret = inode_get_subsys_attr(subsysnqn, attr, buf);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
+		} else if (strcmp(attr, "namespaces")) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		nsid = p;
+		p = strtok(NULL, "/");
+		if (!p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		attr = p;
+		p = strtok(NULL, "/");
 		if (p) {
 			ret = -ENOENT;
 			goto out_free;
 		}
-
-		ret = inode_get_subsys_attr(subsysnqn, attr, buf);
+		if (!strcmp(attr, "ana_grpid")) {
+			strcpy(buf, "1");
+			ret = 0;
+		} else
+			ret = inode_get_namespace_attr(subsysnqn,
+						       nsid, attr, buf);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
