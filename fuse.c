@@ -114,6 +114,12 @@ static int port_getattr(char *port, struct stat *stbuf)
 			return 0;
 		}
 
+		printf("%s: port %s ana group %s\n",
+		       __func__, port, ana_grp);
+		ret = inode_stat_ana_group(port, ana_grp, stbuf);
+		if (ret < 0)
+			return ret;
+
 		p = strtok(NULL, "/");
 		if (!p) {
 			stbuf->st_mode = S_IFDIR | 0755;
@@ -122,9 +128,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 		}
 		if (strcmp(p, "ana_state"))
 			return -ENOENT;
-		printf("%s: port %s ana group %s\n",
-		       __func__, port, ana_grp);
-		return inode_stat_ana_group(port, ana_grp, stbuf);
+		return 0;
 	}
 	if (p)
 		return -ENOENT;
@@ -451,6 +455,55 @@ out_free:
 	return ret;
 }
 
+static int nofuse_mkdir(const char *path, mode_t mode)
+{
+	char *pathbuf, *root, *p;
+	int ret = -ENOENT;
+
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+	printf("%s: path %s\n", __func__, pathbuf);
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
+	p = strtok(NULL, "/");
+	if (!p)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		char *port = p, *eptr = NULL;
+		int portid, ana_grpid;
+
+		portid = strtoul(port, &eptr, 10);
+		if (port == eptr)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (!p || strcmp(p, "ana_groups"))
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		eptr = NULL;
+		ana_grpid = strtoul(p, &eptr, 10);
+		if (p == eptr)
+			goto out_free;
+		printf("%s: port %d ana group %d\n", __func__,
+		       portid, ana_grpid);
+		ret = inode_add_ana_group(portid, ana_grpid,
+					  NVME_ANA_OPTIMIZED);
+		if (ret < 0) {
+			printf("%s: cannot add ana group %d to "
+			       "port %d, error %d\n", __func__,
+			       portid, ana_grpid, ret);
+			ret = -ENOENT;
+			goto out_free;
+		}
+	}
+out_free:
+	free(pathbuf);
+	return ret;
+}
+
 static int nofuse_readlink(const char *path, char *buf, size_t len)
 {
 	char *p, *pathbuf, *root, *attr;
@@ -709,6 +762,7 @@ static const struct fuse_operations nofuse_oper = {
 	.init           = nofuse_init,
 	.getattr	= nofuse_getattr,
 	.readdir	= nofuse_readdir,
+	.mkdir		= nofuse_mkdir,
 	.readlink	= nofuse_readlink,
 	.open		= nofuse_open,
 	.read		= nofuse_read,

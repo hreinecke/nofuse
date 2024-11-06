@@ -132,6 +132,7 @@ static int sql_exec_int(const char *sql, char *col, int *value)
 	} else {
 		fprintf(stderr, "no value for '%s'\n", col);
 		*value = 0;
+		parm.done = -ENOENT;
 	}
 	return parm.done;
 }
@@ -387,8 +388,8 @@ int inode_stat_host(const char *hostnqn, struct stat *stbuf)
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf) {
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 	}
@@ -468,8 +469,8 @@ int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf) {
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 	}
@@ -624,8 +625,8 @@ int inode_stat_namespace(const char *subsysnqn, const char *nsid,
 		return ret;
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf)
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 	return 0;
@@ -816,7 +817,7 @@ int inode_add_port(struct nofuse_port *port, u8 subtype)
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_int(sql, "id", &portid);
-	if (ret)
+	if (ret < 0)
 		goto rollback;
 
 	fprintf(stderr, "Generated port id %d\n", portid);
@@ -862,8 +863,8 @@ int inode_stat_port(const char *port, struct stat *stbuf)
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf) {
 		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
@@ -1064,8 +1065,8 @@ int inode_stat_ana_group(const char *port, const char *ana_grpid,
 	sql_exec_simple("SELECT * FROM ana_groups;");
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf) {
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 		stbuf->st_mode = S_IFREG | 0444;
@@ -1242,8 +1243,8 @@ int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf) {
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 		stbuf->st_mode = S_IFLNK | 0755;
@@ -1412,8 +1413,8 @@ int inode_stat_subsys_port(const char *subsysnqn, const char *port,
 
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
-	if (ret)
-		return -ENOENT;
+	if (ret < 0)
+		return ret;
 	if (stbuf) {
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
 		stbuf->st_mode = S_IFLNK | 0755;
