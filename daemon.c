@@ -18,7 +18,6 @@
 #include "tls.h"
 #include "inode.h"
 
-LINKED_LIST(host_linked_list);
 LINKED_LIST(subsys_linked_list);
 LINKED_LIST(iface_linked_list);
 LINKED_LIST(device_linked_list);
