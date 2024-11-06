@@ -504,6 +504,51 @@ out_free:
 	return ret;
 }
 
+static int nofuse_rmdir(const char *path)
+{
+	char *pathbuf, *root, *p;
+	int ret = -ENOENT;
+
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+	printf("%s: path %s\n", __func__, pathbuf);
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
+	p = strtok(NULL, "/");
+	if (!p)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		char *port = p, *ana_grpid;
+
+		p = strtok(NULL, "/");
+		if (!p || strcmp(p, "ana_groups"))
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		ana_grpid = p;
+		printf("%s: port %s ana group %s\n", __func__,
+		       port, ana_grpid);
+		if (!strcmp(ana_grpid, "1")) {
+			ret = -EACCES;
+			goto out_free;
+		}
+		ret = inode_del_ana_group(port, ana_grpid);
+		if (ret < 0) {
+			printf("%s: cannot remove ana group %s from "
+			       "port %s, error %d\n", __func__,
+			       ana_grpid, port, ret);
+			ret = -ENOENT;
+			goto out_free;
+		}
+	}
+out_free:
+	free(pathbuf);
+	return ret;
+}
+
 static int nofuse_readlink(const char *path, char *buf, size_t len)
 {
 	char *p, *pathbuf, *root, *attr;
@@ -843,6 +888,7 @@ static const struct fuse_operations nofuse_oper = {
 	.getattr	= nofuse_getattr,
 	.readdir	= nofuse_readdir,
 	.mkdir		= nofuse_mkdir,
+	.rmdir		= nofuse_rmdir,
 	.readlink	= nofuse_readlink,
 	.open		= nofuse_open,
 	.read		= nofuse_read,
