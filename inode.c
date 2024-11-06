@@ -193,9 +193,11 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 8
+#define NUM_TABLES 9
 
 static const char *init_sql[NUM_TABLES] = {
+"CREATE TABLE ana_states ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"state INT UNIQUE NOT NULL, desc VARCHAR(32) );",
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
 "ctime TIME, atime TIME, mtime TIME );",
@@ -221,6 +223,9 @@ static const char *init_sql[NUM_TABLES] = {
 "ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "grpid INT, ana_state INT, port_id INTEGER, "
+"ctime TIME, atime TIME, mtime TIME, "
+"FOREIGN KEY (ana_state) REFERENCES ana_states(state) "
+"ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
@@ -237,12 +242,38 @@ static const char *init_sql[NUM_TABLES] = {
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
+#define NUM_ANA_STATES 5
+
+const char *ana_state_names[NUM_ANA_STATES] =
+{
+	"optimized",
+	"non-optimized",
+	"inaccessible",
+	"persistent-loss",
+	"change",
+};
+
 int inode_init(void)
 {
 	int i, ret;
 
 	for (i = 0; i < NUM_TABLES; i++) {
 		ret = sql_exec_simple(init_sql[i]);
+		if (ret)
+			break;
+	}
+	if (ret)
+		return ret;
+	for (i = 0; i < NUM_ANA_STATES; i++) {
+		char *sql;
+
+		ret = asprintf(&sql, "INSERT INTO ana_states (state, desc) "
+			       "VALUES ('%d', '%s');", i + 1,
+			       ana_state_names[i]);
+		if (ret < 0)
+			break;
+		ret = sql_exec_simple(sql);
+		free(sql);
 		if (ret)
 			break;
 	}
@@ -259,6 +290,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE namespaces;",
 	"DROP TABLE subsystems;",
 	"DROP TABLE hosts;",
+	"DROP TABLE ana_states;",
 };
 
 int inode_exit(void)
@@ -968,6 +1000,147 @@ int inode_del_port(struct nofuse_port *port)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	return ret;
+}
+
+static char add_ana_group_sql[] =
+	"INSERT INTO ana_groups (grpid, ana_state, port_id, ctime) "
+	"SELECT '%d', a.id, p.id, CURRENT_TIMESTAMP "
+	"FROM ports AS p, ana_states AS a WHERE p.id = '%d' "
+	"AND a.state = '%d';";
+
+int inode_add_ana_group(int port, int grpid, int ana_state)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, add_ana_group_sql, grpid, port, ana_state);
+	if (ret < 0)
+		return ret;
+	printf("%s: %s\n", __func__, sql);
+	ret = sql_exec_simple(sql);
+	free(sql);
+
+	return ret;
+}
+
+static char count_ana_groups_sql[] =
+	"SELECT count(ag.id) AS num FROM ana_groups AS ag "
+	"INNER JOIN ports AS p ON p.id = ag.port_id "
+	"WHERE p.id = '%s';";
+
+int inode_count_ana_groups(const char *port, int *num)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, count_ana_groups_sql, port);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "num", num);
+	free(sql);
+
+	return ret;
+}
+
+static char stat_ana_group_sql[] =
+	"SELECT unixepoch(ag.ctime) AS tv FROM ana_groups AS ag "
+	"INNER JOIN ports AS p ON p.id = ag.port_id "
+	"WHERE p.id = '%s' AND ag.grpid = '%s';";
+
+int inode_stat_ana_group(const char *port, const char *ana_grpid,
+			 struct stat *stbuf)
+{
+	int ret, timeval;
+	char *sql;
+
+	ret = asprintf(&sql, stat_ana_group_sql, port, ana_grpid);
+	if (ret < 0)
+		return ret;
+	sql_exec_simple("SELECT * FROM ana_groups;");
+	ret = sql_exec_int(sql, "tv", &timeval);
+	free(sql);
+	if (ret)
+		return -ENOENT;
+	if (stbuf) {
+		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
+		stbuf->st_mode = S_IFREG | 0444;
+		stbuf->st_nlink = 1;
+		stbuf->st_size = 64;
+	}
+	return 0;
+}
+
+static char fill_ana_groups_sql[] =
+	"SELECT ag.grpid AS grpid FROM ana_groups AS ag "
+	"INNER JOIN ports AS p ON p.id = ag.port_id "
+	"WHERE p.id = '%s';";
+
+int inode_fill_ana_groups(const char *port,
+			  void *buf, fuse_fill_dir_t filler)
+{
+	struct fill_parm_t parm = {
+		.filler = filler,
+		.prefix = NULL,
+		.buf = buf,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, fill_ana_groups_sql, port);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	free(sql);
+	return ret;
+}
+
+static char get_ana_group_sql[] =
+	"SELECT s.desc AS ana_state FROM ana_groups AS ag "
+	"INNER JOIN ports AS p ON p.id = ag.port_id "
+	"INNER JOIN ana_states AS s ON s.id = ag.ana_state "
+	"WHERE p.id = '%s' AND ag.grpid = '%s';";
+
+int inode_get_ana_group(const char *port, const char *ana_grpid,
+			void *buf)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, get_ana_group_sql, port, ana_grpid);
+	if (ret < 0)
+		return ret;
+	printf("%s: %s\n", __func__, sql);
+	ret = sql_exec_str(sql, "ana_state", buf);
+	free(sql);
+	return ret;
+}
+
+static char del_ana_group_sql[] =
+	"DELETE FROM ana_groups AS ag WHERE ag.port_id IN "
+	"(SELECT id FROM ports WHERE id = '%s') AND "
+	"ag.grpid = '%s';";
+
+int inode_del_ana_group(const char *port, const char *grpid)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, del_ana_group_sql, port, grpid);
+	if (ret < 0)
+		return ret;
+	printf("%s: %s\n", __func__, sql);
+	ret = sql_exec_simple(sql);
+	free(sql);
+
 	return ret;
 }
 

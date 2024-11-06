@@ -205,6 +205,13 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 		free(iface);
 		return NULL;
 	}
+	ret = inode_add_ana_group(iface->port.port_id, 1, NVME_ANA_OPTIMIZED);
+	if (ret < 0) {
+		print_err("cannot add ana group to port, error %d\n", ret);
+		inode_del_port(&iface->port);
+		free(iface);
+		return NULL;
+	}
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
 	print_info("iface %d: listening on %s address %s port %s",
