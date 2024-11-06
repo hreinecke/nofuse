@@ -660,6 +660,20 @@ out_free:
 	return ret;
 }
 
+struct value_map_t {
+	int val;
+	char *desc;
+};
+
+struct value_map_t ana_value_map[] =
+{
+	{ NVME_ANA_OPTIMIZED, "optimized" },
+	{ NVME_ANA_NONOPTIMIZED, "non-optimized" },
+	{ NVME_ANA_INACCESSIBLE, "inaccessible" },
+	{ NVME_ANA_PERSISTENT_LOSS, "persistent-loss" },
+	{ NVME_ANA_CHANGE, "change" },
+};
+
 static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
@@ -693,16 +707,23 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       portid, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
+			int ana_state, i;
 
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
 			printf("%s: port %s ana_grp %s\n", __func__,
 			       portid, ana_grp);
-			ret = inode_get_ana_group(portid, ana_grp, buf);
+			ret = inode_get_ana_group(portid, ana_grp, &ana_state);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
+			}
+			for (i = 0; i < 5; i++) {
+				if (ana_value_map[i].val == ana_state) {
+					strcpy(buf, ana_value_map[i].desc);
+					break;
+				}
 			}
 			ret = 0;
 		} else {
@@ -761,20 +782,15 @@ out_free:
 static int nofuse_write(const char *path, const char *buf, size_t len,
 			off_t offset, struct fuse_file_info *fi)
 {
-	char *pathbuf, *root, *p, *value;
+	char *pathbuf, *root, *p;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 
-	value = strdup(buf);
-	if (!value)
-		goto out_free_path;
-	p = strrchr(value, '\n');
-	if (p)
-		*p = '\0';
-	printf("%s: path %s value %s\n", __func__, pathbuf, value);
+	printf("%s: path %s buf %s len %ld off %ld\n", __func__,
+	       pathbuf, buf, len, offset);
 	root = strtok(pathbuf, "/");
 	if (!root)
 		goto out_free;
@@ -785,6 +801,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 	if (!strcmp(root, ports_dir)) {
 		char *port = p, *attr, *ana_grp;
+		int ana_state = 0, i;
 
 		attr = strtok(NULL, "/");
 		if (!attr || strcmp(attr, "ana_groups"))
@@ -796,18 +813,27 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		if (!p || strcmp(p, "ana_state"))
 			goto out_free;
 
-		printf("%s: port %s ana_grp %s value %s\n", __func__,
-		       port, ana_grp, value);
-		ret = inode_set_ana_group(port, ana_grp, value);
+		for (i = 0; i < 5; i++) {
+			if (!strncmp(ana_value_map[i].desc, buf,
+				     strlen(ana_value_map[i].desc))) {
+				ana_state = ana_value_map[i].val;
+				break;
+			}
+		}
+		if (ana_state == 0) {
+			ret = -EINVAL;
+			goto out_free;
+		}
+		printf("%s: port %s ana_grp %s state %d\n", __func__,
+		       port, ana_grp, ana_state);
+		ret = inode_set_ana_group(port, ana_grp, ana_state);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = strlen(buf);
+		ret = len;
 	}
 out_free:
-	free(value);
-out_free_path:
 	free(pathbuf);
 	return ret;
 }

@@ -127,7 +127,8 @@ static int sql_exec_int(const char *sql, char *col, int *value)
 		fprintf(stderr, "value error for '%s': %s\n", col,
 			strerror(-parm.done));
 	else if (parm.done > 0) {
-		*value = parm.val;
+		if (value)
+			*value = parm.val;
 		parm.done = 0;
 	} else {
 		fprintf(stderr, "no value for '%s'\n", col);
@@ -194,11 +195,9 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 10
+#define NUM_TABLES 9
 
 static const char *init_sql[NUM_TABLES] = {
-"CREATE TABLE ana_states ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"state INT UNIQUE NOT NULL, desc VARCHAR(32) );",
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
 "ctime TIME, atime TIME, mtime TIME );",
@@ -223,11 +222,9 @@ static const char *init_sql[NUM_TABLES] = {
 "CREATE UNIQUE INDEX port_addr_idx ON "
 "ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"grpid INT, ana_state INT, port_id INTEGER, "
+"grpid INT, ana_state INT DEFAULT 1, port_id INTEGER, "
 "ctime TIME, atime TIME, mtime TIME, "
 "UNIQUE(port_id, grpid), "
-"FOREIGN KEY (ana_state) REFERENCES ana_states(state) "
-"ON UPDATE CASCADE ON DELETE RESTRICT, "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE UNIQUE INDEX ana_group_idx ON "
@@ -246,38 +243,12 @@ static const char *init_sql[NUM_TABLES] = {
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
-#define NUM_ANA_STATES 5
-
-const char *ana_state_names[NUM_ANA_STATES] =
-{
-	"optimized",
-	"non-optimized",
-	"inaccessible",
-	"persistent-loss",
-	"change",
-};
-
 int inode_init(void)
 {
 	int i, ret;
 
 	for (i = 0; i < NUM_TABLES; i++) {
 		ret = sql_exec_simple(init_sql[i]);
-		if (ret)
-			break;
-	}
-	if (ret)
-		return ret;
-	for (i = 0; i < NUM_ANA_STATES; i++) {
-		char *sql;
-
-		ret = asprintf(&sql, "INSERT INTO ana_states (state, desc) "
-			       "VALUES ('%d', '%s');", i + 1,
-			       ana_state_names[i]);
-		if (ret < 0)
-			break;
-		ret = sql_exec_simple(sql);
-		free(sql);
 		if (ret)
 			break;
 	}
@@ -295,7 +266,6 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE namespaces;",
 	"DROP TABLE subsystems;",
 	"DROP TABLE hosts;",
-	"DROP TABLE ana_states;",
 };
 
 int inode_exit(void)
@@ -1009,10 +979,9 @@ int inode_del_port(struct nofuse_port *port)
 }
 
 static char add_ana_group_sql[] =
-	"INSERT INTO ana_groups (grpid, ana_state, port_id, ctime) "
-	"SELECT '%d', a.id, p.id, CURRENT_TIMESTAMP "
-	"FROM ports AS p, ana_states AS a WHERE p.id = '%d' "
-	"AND a.state = '%d';";
+	"INSERT INTO ana_groups (grpid, port_id, ctime) "
+	"SELECT '%d', p.id, CURRENT_TIMESTAMP "
+	"FROM ports AS p WHERE p.id = '%d';";
 
 int inode_add_ana_group(int port, int grpid, int ana_state)
 {
@@ -1109,13 +1078,12 @@ int inode_fill_ana_groups(const char *port,
 }
 
 static char get_ana_group_sql[] =
-	"SELECT s.desc AS ana_state FROM ana_groups AS ag "
+	"SELECT ag.ana_state AS ana_state FROM ana_groups AS ag "
 	"INNER JOIN ports AS p ON p.id = ag.port_id "
-	"INNER JOIN ana_states AS s ON s.id = ag.ana_state "
 	"WHERE p.id = '%s' AND ag.grpid = '%s';";
 
 int inode_get_ana_group(const char *port, const char *ana_grpid,
-			void *buf)
+			int *ana_state)
 {
 	int ret;
 	char *sql;
@@ -1124,25 +1092,22 @@ int inode_get_ana_group(const char *port, const char *ana_grpid,
 	if (ret < 0)
 		return ret;
 	printf("%s: %s\n", __func__, sql);
-	ret = sql_exec_str(sql, "ana_state", buf);
+	ret = sql_exec_int(sql, "ana_state", ana_state);
 	free(sql);
 	return ret;
 }
 
 static char set_ana_group_sql[] =
-	"UPDATE OR FAIL ana_groups SET ana_state = hg.ana_id "
-	"FROM "
-	"(SELECT id AS ana_id, desc AS ana_state "
-	"FROM ana_states) AS hg "
-	"WHERE hg.ana_state = '%s' AND port_id = '%s' AND grpid = '%s';";
+	"UPDATE ana_groups SET ana_state = '%d' "
+	"WHERE port_id = '%s' AND grpid = '%s';";
 
 int inode_set_ana_group(const char *port, const char *ana_grpid,
-			const void *buf)
+			int ana_state)
 {
 	int ret;
 	char *sql;
 
-	ret = asprintf(&sql, set_ana_group_sql, buf, port, ana_grpid);
+	ret = asprintf(&sql, set_ana_group_sql, ana_state, port, ana_grpid);
 	if (ret < 0)
 		return ret;
 	printf("%s: %s\n", __func__, sql);

@@ -38,9 +38,9 @@ int inode_stat_ana_group(const char *port, const char *ana_grpid,
 int inode_fill_ana_groups(const char *port,
 			  void *buf, fuse_fill_dir_t filler);
 int inode_get_ana_group(const char *port, const char *ana_grpid,
-			void *buf);
+			int *ana_state);
 int inode_set_ana_group(const char *port, const char *ana_grpid,
-			const void *buf);
+			int ana_state);
 int inode_del_ana_group(const char *port, const char *grpid);
 
 int inode_add_host_subsys(const char *hostnqn, const char *subsysnqn);
