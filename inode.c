@@ -214,7 +214,7 @@ static const char *init_sql[NUM_TABLES] = {
 "type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
 "CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-"device_path VARCHAR(256), device_enable INT DEFAULT 0, device_ana_grpid INT, "
+"device_path VARCHAR(256), device_enable INT DEFAULT 0, ana_grpid INT, "
 "nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
@@ -652,10 +652,14 @@ static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 	int i;
 
 	for (i = 0; i < argc; i++) {
+		if (!strcmp(colname[i], "ana_grpid")) {
+			parm->filler(parm->buf, colname[i], NULL,
+				     0, FUSE_FILL_DIR_PLUS);
+			continue;
+		}
 		if (strncmp(colname[i], prefix, strlen(prefix)))
 			continue;
-		if (!strcmp(colname[i], "device_enable") ||
-		    !strcmp(colname[i], "device_ana_grpid"))
+		if (!strcmp(colname[i], "device_enable"))
 			parm->filler(parm->buf, colname[i] + strlen(prefix),
 				     NULL, 0, FUSE_FILL_DIR_PLUS);
 		else
@@ -707,12 +711,55 @@ int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
 
 	if (!strcmp(attr, "enable"))
 		attr = "device_enable";
-	if (!strcmp(attr, "ana_grpid"))
-		attr = "device_ana_grpid";
 	ret = asprintf(&sql, get_namespace_attr_sql, attr, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_str(sql, attr, buf);
+	free(sql);
+	return ret;
+}
+
+static char get_namespace_anagrp_sql[] =
+	"SELECT ns.ana_grpid AS grpid FROM namespaces AS ns "
+	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
+	"WHERE s.nqn = '%s' AND ns.nsid = '%s';";
+
+int inode_get_namespace_anagrp(const char *subsysnqn, const char *nsid,
+			       int *ana_grpid)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, get_namespace_anagrp_sql, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "grpid", ana_grpid);
+	free(sql);
+	return ret;
+}
+
+static char set_namespace_anagrp_sql[] =
+	"UPDATE namespaces SET ana_grpid = sel.grpid "
+	"FROM "
+	"(SELECT s.nqn AS subsysnqn, p.id AS portid, ag.grpid AS grpid "
+	"FROM  subsys_port AS sp "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN ports AS p ON p.id = sp.port_id "
+	"INNER JOIN ana_groups AS ag ON ag.port_id = p.id) AS sel "
+	"WHERE sel.subsysnqn = '%s' "
+	"AND sel.portid = '%s' AND sel.grpid = '%d';";
+
+int inode_set_namespace_anagrp(const char *subsysnqn, const char *nsid,
+			       int ana_grpid)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, set_namespace_anagrp_sql,
+		       subsysnqn, nsid, ana_grpid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;
 }

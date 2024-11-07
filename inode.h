@@ -29,6 +29,10 @@ int inode_fill_namespace(const char *nqn, const char *nsid,
 			 void *buf, fuse_fill_dir_t filler);
 int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
 			     const char *attr, char *buf);
+int inode_get_namespace_anagrp(const char *subsysnqn, const char *nsid,
+			       int *ana_grpid);
+int inode_set_namespace_anagrp(const char *subsysnqn, const char *nsid,
+			       int ana_grpid);
 int inode_del_namespace(struct nofuse_namespace *ns);
 
 int inode_add_ana_group(int port, int grpid, int ana_state);

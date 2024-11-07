@@ -705,6 +705,10 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			ret = -ENOENT;
 			goto out_free;
 		}
+		if (!strcmp(attr, "ana_grpid")) {
+			ret = inode_get_namespace_anagrp(subsysnqn, nsid, NULL);
+			goto out_free;
+		}
 		ret = inode_get_namespace_attr(subsysnqn,
 					       nsid, attr, NULL);
 		if (ret < 0) {
@@ -818,11 +822,23 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = inode_get_namespace_attr(subsysnqn,
+		if (!strcmp(attr, "ana_grpid")) {
+			int anagrp;
+
+			ret = inode_get_namespace_anagrp(subsysnqn, nsid,
+							 &anagrp);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
+			sprintf(buf, "%d", anagrp);
+		} else {
+			ret = inode_get_namespace_attr(subsysnqn,
 					       nsid, attr, buf);
-		if (ret < 0) {
-			ret = -ENOENT;
-			goto out_free;
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
 		}
 	}
 	if (strlen(buf))
@@ -941,16 +957,42 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			ret = -ENOENT;
 			goto out_free;
 		}
+		printf("%s: subsys %s nsid %s attr %s\n", __func__,
+		       subsysnqn, nsid, attr);
+		if (!strcmp(attr, "ana_grpid")) {
+			int ana_grp, new_ana_grp;
+			char *eptr;
+
+			ana_grp = strtoul(buf, &eptr, 10);
+			if (buf == eptr) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			ret = inode_set_namespace_anagrp(subsysnqn, nsid,
+							 ana_grp);
+			if (ret < 0)
+				goto out_free;
+			ret = inode_get_namespace_anagrp(subsysnqn, nsid,
+							 &new_ana_grp);
+			if (ret < 0)
+				goto out_free;
+			if (new_ana_grp != ana_grp) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			ret = len;
+		} else {
 #if 0
-		ret = inode_set_namespace_attr(subsysnqn, nsid,
-					       attr, buf);
-		if (ret < 0) {
-			ret = -ENOENT;
-			goto out_free;
-		}
+			ret = inode_set_namespace_attr(subsysnqn, nsid,
+						       attr, buf);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
 #else
-		ret = -EACCES;
+			ret = -EACCES;
 #endif
+		}
 	}
 out_free:
 	free(pathbuf);
