@@ -731,10 +731,9 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		}
 		ret = inode_get_namespace_attr(subsysnqn, nsid,
 					       attr, NULL);
-		if (ret < 0) {
+		if (ret < 0)
 			ret = -ENOENT;
-			goto out_free;
-		}
+		goto out_free;
 	}
 	if ((fi->flags & O_ACCMODE) != O_RDONLY)
 		ret = -EACCES;
@@ -1004,16 +1003,13 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			}
 			ret = len;
 		} else {
-#if 0
 			ret = inode_set_namespace_attr(subsysnqn, nsid,
 						       attr, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
 			}
-#else
-			ret = -EACCES;
-#endif
+			ret = len;
 		}
 	}
 out_free:
