@@ -199,8 +199,8 @@ static int init_subsys(void)
 	return 0;
 }
 
-static struct host_iface *new_host_iface(const char *ifaddr,
-					 int adrfam, int port)
+static struct host_iface *add_iface(const char *ifaddr,
+				    int adrfam, int port)
 {
 	struct host_iface *iface;
 	int ret;
@@ -289,7 +289,7 @@ static int get_iface(const char *ifname)
 			print_err("getnameinfo failed, error %d", ret);
 			continue;
 		}
-		iface = new_host_iface(host, ifa->ifa_addr->sa_family, 8009);
+		iface = add_iface(host, ifa->ifa_addr->sa_family, 8009);
 		if (iface)
 			list_add_tail(&iface->node, &iface_linked_list);
         }
@@ -308,7 +308,7 @@ static int add_host_port(int port)
 			continue;
 		if (iface->port_num != 8009)
 			continue;
-		new = new_host_iface(iface->port.traddr, iface->adrfam, port);
+		new = add_iface(iface->port.traddr, iface->adrfam, port);
 		if (new) {
 			list_add_tail(&new->node, &tmp_iface_list);
 			iface_num++;
