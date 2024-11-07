@@ -165,7 +165,8 @@ static int tcp_init_listener(struct host_iface *iface)
 {
 	struct sockaddr_in addr;
 	struct sockaddr_in6 addr6;
-	int listenfd;
+	char *eptr = NULL;
+	int listenfd, port;
 	int ret;
 
 	listenfd = socket(iface->adrfam, SOCK_STREAM|SOCK_NONBLOCK, 0);
@@ -175,10 +176,17 @@ static int tcp_init_listener(struct host_iface *iface)
 		return -errno;
 	}
 
+	port = strtoul(iface->port.trsvcid, &eptr, 10);
+	if (iface->port.trsvcid == eptr) {
+		print_err("iface %d: invalid trsvcid '%s'\n",
+			  iface->port.port_id, iface->port.trsvcid);
+		return -EINVAL;
+	}
+
 	if (iface->adrfam == AF_INET) {
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = iface->adrfam;
-		addr.sin_port = htons(iface->port_num);
+		addr.sin_port = htons(port);
 		inet_pton(AF_INET, iface->port.traddr, &addr.sin_addr);
 
 		ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
@@ -191,7 +199,7 @@ static int tcp_init_listener(struct host_iface *iface)
 	} else {
 		memset(&addr6, 0, sizeof(addr6));
 		addr6.sin6_family = iface->adrfam;
-		addr6.sin6_port = htons(iface->port_num);
+		addr6.sin6_port = htons(port);
 		inet_pton(AF_INET6, iface->port.traddr, &addr6.sin6_addr);
 
 		ret = bind(listenfd, (struct sockaddr *) &addr6, sizeof(addr6));
