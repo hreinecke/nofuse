@@ -191,7 +191,13 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	}
 	if (parm.done < 0)
 		fprintf(stderr, "value error for '%s': %s\n", col,
-			strerror(parm.done));
+			strerror(-parm.done));
+	else if (parm.done > 0)
+		parm.done = 0;
+	else {
+		fprintf(stderr, "no value for '%s'\n", col);
+		parm.done = -ENOENT;
+	}
 	return parm.done;
 }
 
@@ -922,39 +928,24 @@ int inode_get_port_attr(const char *portid, const char *attr, char *buf)
 static char update_genctr_port_sql[] =
 	"UPDATE hosts SET genctr = genctr + 1 "
 	"FROM "
-	"(SELECT hs.host_id AS host_id, sp.id AS port_id "
+	"(SELECT hs.host_id AS host_id, sp.port_id AS port_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
-	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
+	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%s';";
 
-int inode_modify_port(struct nofuse_port *port, char *attr)
+int inode_set_port_attr(const char *port, const char *attr, char *value)
 {
-	char *value, *sql;
+	char *sql;
 	int ret;
 
-	if (!strcmp(attr, "trtype"))
-		value = port->trtype;
-	else if (!strcmp(attr, "traddr"))
-		value = port->traddr;
-	else if (!strcmp(attr, "trsvcid"))
-		value = port->trsvcid;
-	else if (!strcmp(attr, "adrfam"))
-		value = port->adrfam;
-	else if (!strcmp(attr, "tsas"))
-		value = port->tsas;
-	else if (!strcmp(attr, "treq"))
-		value = port->treq;
-	else
-		return -EINVAL;
-
 	ret = asprintf(&sql, "UPDATE ports SET %s = '%s' "
-		       "WHERE id = '%d';", attr, value,
-		       port->port_id);
-	if (ret < 0)
+		       "WHERE id = '%s';", attr, value, port);
+	if (ret < 0) {
 		return ret;
+	}
 	ret = sql_exec_simple(sql);
 	free(sql);
-	ret = asprintf(&sql, update_genctr_port_sql, port->port_id);
+	ret = asprintf(&sql, update_genctr_port_sql, port);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);

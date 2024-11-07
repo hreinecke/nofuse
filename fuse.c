@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <assert.h>
+#include <ctype.h>
 
 #include "common.h"
 #include "inode.h"
@@ -611,6 +612,24 @@ out_free:
 	return ret;
 }
 
+static int parse_namespace_attr(const char *p,
+				const char **nsid, const char **attr)
+{
+	*nsid = NULL;
+	*attr = NULL;
+	if (!p)
+		return -EINVAL;
+	*nsid = p;
+	p = strtok(NULL, "/");
+	if (!p)
+		return -EINVAL;
+	*attr = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -EINVAL;
+	return 0;
+}
+
 static int nofuse_open(const char *path, struct fuse_file_info *fi)
 {
 	const char *p, *root, *attr;
@@ -659,10 +678,9 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			goto out_free;
 		} else {
 			ret = inode_get_port_attr(portid, attr, NULL);
-			if (ret < 0) {
+			if (ret < 0)
 				ret = -ENOENT;
-				goto out_free;
-			}
+			goto out_free;
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p, *nsid;
@@ -675,23 +693,15 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		p = strtok(NULL, "/");
 		if (!p) {
 			ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
-			if (ret < 0) {
+			if (ret < 0)
 				ret = -ENOENT;
-				goto out_free;
-			}
+			goto out_free;
 		} else if (strcmp(attr, "namespaces")) {
 			ret = -ENOENT;
 			goto out_free;
 		}
-		nsid = p;
-		p = strtok(NULL, "/");
-		if (!p) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		attr = p;
-		p = strtok(NULL, "/");
-		if (p) {
+		ret = parse_namespace_attr(p, &nsid, &attr);
+		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
 		}
@@ -746,26 +756,27 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	if (!p)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *portid = p;
+		const char *port = p;
 
-		p = strtok(NULL, "/");
-		if (!p)
+		attr = strtok(NULL, "/");
+		if (!attr)
 			goto out_free;
 
-		attr = p;
 		p = strtok(NULL, "/");
 		printf("%s: port %s attr %s p %s\n", __func__,
-		       portid, attr, p);
+		       port, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
 			int ana_state, i;
 
+			if (!ana_grp)
+				goto out_free;
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
 			printf("%s: port %s ana_grp %s\n", __func__,
-			       portid, ana_grp);
-			ret = inode_get_ana_group(portid, ana_grp, &ana_state);
+			       port, ana_grp);
+			ret = inode_get_ana_group(port, ana_grp, &ana_state);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -778,7 +789,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 			ret = 0;
 		} else {
-			ret = inode_get_port_attr(portid, attr, buf);
+			ret = inode_get_port_attr(port, attr, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -795,23 +806,15 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		p = strtok(NULL, "/");
 		if (!p) {
 			ret = inode_get_subsys_attr(subsysnqn, attr, buf);
-			if (ret < 0) {
+			if (ret < 0)
 				ret = -ENOENT;
-				goto out_free;
-			}
+			goto out_free;
 		} else if (strcmp(attr, "namespaces")) {
 			ret = -ENOENT;
 			goto out_free;
 		}
-		nsid = p;
-		p = strtok(NULL, "/");
-		if (!p) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		attr = p;
-		p = strtok(NULL, "/");
-		if (p) {
+		ret = parse_namespace_attr(p, &nsid, &attr);
+		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
 		}
@@ -833,56 +836,121 @@ out_free:
 static int nofuse_write(const char *path, const char *buf, size_t len,
 			off_t offset, struct fuse_file_info *fi)
 {
-	char *pathbuf, *root, *p;
-	int ret = -ENOENT;
+	const char *p, *root, *attr;
+	char *pathbuf, *value, *ptr;
+	int ret = -ENOENT, _len = len;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 
-	printf("%s: path %s buf %s len %ld off %ld\n", __func__,
-	       pathbuf, buf, len, offset);
+	value = strdup(buf);
+	while (strlen(value)) {
+		ptr = value + strlen(value);
+		ptr--;
+		if (!isspace(*ptr))
+			break;
+		*ptr = '\0';
+		_len--;
+	}
+
+	printf("%s: path %s buf %s len %d off %ld\n", __func__,
+	       pathbuf, value, _len, offset);
 	root = strtok(pathbuf, "/");
 	if (!root)
+		goto out_free;
+
+	if (!strcmp(root, hosts_dir))
 		goto out_free;
 
 	p = strtok(NULL, "/");
 	if (!p)
 		goto out_free;
-
 	if (!strcmp(root, ports_dir)) {
-		char *port = p, *attr, *ana_grp;
-		int ana_state = 0, i;
+		const char *port = p;
 
 		attr = strtok(NULL, "/");
-		if (!attr || strcmp(attr, "ana_groups"))
-			goto out_free;
-		ana_grp = strtok(NULL, "/");
-		if (!ana_grp)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p || strcmp(p, "ana_state"))
+		if (!attr)
 			goto out_free;
 
-		for (i = 0; i < 5; i++) {
-			if (!strncmp(ana_value_map[i].desc, buf,
-				     strlen(ana_value_map[i].desc))) {
-				ana_state = ana_value_map[i].val;
-				break;
+		p = strtok(NULL, "/");
+		printf("%s: port %s attr %s p %s\n", __func__,
+		       port, attr, p);
+
+		if (!strcmp(attr, "ana_groups")) {
+			const char *ana_grp = p;
+			int ana_state = 0, i;
+
+			if (!ana_grp)
+				goto out_free;
+			p = strtok(NULL, "/");
+			if (!p || strcmp(p, "ana_state"))
+				goto out_free;
+
+			for (i = 0; i < 5; i++) {
+				if (!strncmp(ana_value_map[i].desc, buf,
+					     strlen(ana_value_map[i].desc))) {
+					ana_state = ana_value_map[i].val;
+					break;
+				}
 			}
+			if (ana_state == 0) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			printf("%s: port %s ana_grp %s state %d\n", __func__,
+			       port, ana_grp, ana_state);
+			ret = inode_set_ana_group(port, ana_grp, ana_state);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
+			ret = len;
+		} else {
+			ret = inode_set_port_attr(port, attr, value);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
+			}
+			ret = len;
 		}
-		if (ana_state == 0) {
-			ret = -EINVAL;
+	} else if (!strcmp(root, subsys_dir)) {
+		const char *subsysnqn = p, *nsid;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+
+		attr = p;
+		p = strtok(NULL, "/");
+		if (!p) {
+#if 0
+			ret = inode_set_subsys_attr(subsysnqn, attr, buf);
+			if (ret < 0)
+				ret = -ENOENT;
+#else
+			ret = -EACCES;
+#endif
+			goto out_free;
+		} else if (strcmp(attr, "namespaces")) {
+			ret = -ENOENT;
 			goto out_free;
 		}
-		printf("%s: port %s ana_grp %s state %d\n", __func__,
-		       port, ana_grp, ana_state);
-		ret = inode_set_ana_group(port, ana_grp, ana_state);
+		ret = parse_namespace_attr(p, &nsid, &attr);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = len;
+#if 0
+		ret = inode_set_namespace_attr(subsysnqn, nsid,
+					       attr, buf);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+#else
+		ret = -EACCES;
+#endif
 	}
 out_free:
 	free(pathbuf);
