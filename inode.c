@@ -545,7 +545,7 @@ static char add_namespace_sql[] =
 	"SELECT '%s', '%d', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s';";
 
-int inode_add_namespace(struct nofuse_subsys *subsys,
+int inode_add_namespace(const char *subsysnqn,
 			struct nofuse_namespace *ns)
 {
 	char *sql;
@@ -556,7 +556,7 @@ int inode_add_namespace(struct nofuse_subsys *subsys,
 	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
 	ret = asprintf(&sql, add_namespace_sql, uuid_str,
-		       ns->nsid, subsys->nqn);
+		       ns->nsid, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);

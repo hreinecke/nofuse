@@ -102,7 +102,7 @@ static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
 	ns->ops = uring_register_ops();
 
 	ns->nsid = ++subsys->max_namespaces;
-	ret = inode_add_namespace(subsys, ns);
+	ret = inode_add_namespace(subsys->nqn, ns);
 	if (ret < 0) {
 		subsys->max_namespaces--;
 		close(ns->fd);
@@ -131,7 +131,7 @@ static int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
 	ns->fd = -1;
 	ns->ops = null_register_ops();
 	ns->nsid = ++subsys->max_namespaces;
-	ret = inode_add_namespace(subsys, ns);
+	ret = inode_add_namespace(subsys->nqn, ns);
 	if (ret < 0) {
 		subsys->max_namespaces--;
 		free(ns);
