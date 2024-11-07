@@ -64,12 +64,16 @@ struct nofuse_subsys *add_subsys(const char *nqn, int type)
 	return subsys;
 }
 
-static void del_subsys(struct nofuse_subsys *subsys)
+static int del_subsys(struct nofuse_subsys *subsys)
 {
+	int ret;
+
 	list_del(&subsys->node);
 	pthread_mutex_destroy(&subsys->ctrl_mutex);
-	inode_del_subsys(subsys);
-	free(subsys);
+	ret = inode_del_subsys(subsys);
+	if (ret == 0)
+		free(subsys);
+	return ret;
 }
 
 static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
@@ -147,6 +151,7 @@ static int init_subsys(void)
 {
 	struct nofuse_subsys *subsys, *tmp_subsys;
 	struct host_iface *iface;
+	int ret;
 
 	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (!subsys)
@@ -158,14 +163,23 @@ static int init_subsys(void)
 
 	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_NVM);
 	if (!subsys) {
-		list_for_each_entry(iface, &iface_linked_list, node)
-			inode_del_subsys_port(subsys->nqn,
-					      iface->port.port_id);
+		ret = -ENOMEM;
+
+		list_for_each_entry(iface, &iface_linked_list, node) {
+			ret = inode_del_subsys_port(subsys->nqn,
+						    iface->port.port_id);
+			if (ret < 0)
+				break;
+		}
+		if (ret)
+			return ret;
 		list_for_each_entry_safe(subsys, tmp_subsys,
 					 &subsys_linked_list, node) {
-			del_subsys(subsys);
+			ret = del_subsys(subsys);
+			if (ret < 0)
+				break;
 		}
-		return -ENOMEM;
+		return ret;
 	}
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
@@ -403,13 +417,19 @@ void free_interfaces(void)
 	}
 }
 
-void free_subsys(void)
+int free_subsys(const char *subsysnqn)
 {
 	struct nofuse_subsys *subsys, *_subsys;
+	int ret = 0;
 
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
-		del_subsys(subsys);
+		if (!subsysnqn || strcmp(subsys->nqn, subsysnqn))
+			continue;
+		ret = del_subsys(subsys);
+		if (ret < 0)
+			break;
 	}
+	return ret;
 }
 
 int main(int argc, char *argv[])
@@ -466,7 +486,7 @@ int main(int argc, char *argv[])
 
 	free_devices();
 
-	free_subsys();
+	free_subsys(NULL);
 out_close:
 	inode_close(ctx->dbname);
 

@@ -518,9 +518,9 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			struct nofuse_subsys *subsys;
 
 			subsys = add_subsys(subsysnqn, NVME_NQN_NVM);
-			if (!subsys)
-				goto out_free;
-			ret = 0;
+			if (subsys)
+				ret = 0;
+			goto out_free;
 		}
 	}
 out_free:
@@ -565,6 +565,15 @@ static int nofuse_rmdir(const char *path)
 			       "port %s, error %d\n", __func__,
 			       ana_grpid, port, ret);
 			ret = -ENOENT;
+			goto out_free;
+		}
+	}
+	if (!strcmp(root, subsys_dir)) {
+		char *subsysnqn = p;
+
+		p = strtok(NULL, "/");
+		if (!p) {
+			ret = free_subsys(subsysnqn);
 			goto out_free;
 		}
 	}

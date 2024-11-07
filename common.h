@@ -203,5 +203,6 @@ void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
 struct nofuse_subsys *add_subsys(const char *nqn, int type);
+int free_subsys(const char *subsysnqn);
 
 #endif
