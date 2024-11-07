@@ -121,6 +121,7 @@ static int open_ram_ns(size_t size)
 	ns->blksize = 4096;
 	ns->fd = -1;
 	ns->ops = null_register_ops();
+	strcpy(ns->path, "/dev/null");
 
 	ns->nsid = nsdevs++;
 	uuid_generate(ns->uuid);
