@@ -290,6 +290,8 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 	struct nvme_id_ns id;
 
 	list_for_each_entry(_ns, &device_linked_list, node) {
+		if (_ns->subsys != ep->ctrl->subsys)
+			continue;
 		if (_ns->nsid == nsid) {
 			ns = _ns;
 			break;
@@ -326,6 +328,8 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 		u32 nsid = htole32(ns->nsid);
 		if (len < 4)
 			break;
+		if (ns->subsys != ep->ctrl->subsys)
+			continue;
 		memcpy(ns_list, &nsid, 4);
 		ns_list += 4;
 		len -= 4;
@@ -521,6 +525,8 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 	int nsid = le32toh(cmd->rw.nsid);
 
 	list_for_each_entry(ns, &device_linked_list, node) {
+		if (ns->subsys != ep->ctrl->subsys)
+			continue;
 		if (ns->nsid == nsid) {
 			qe->ns = ns;
 			break;
@@ -557,6 +563,8 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 	int ret;
 
 	list_for_each_entry(ns, &device_linked_list, node) {
+		if (ns->subsys != ep->ctrl->subsys)
+			continue;
 		if (ns->nsid == nsid) {
 			qe->ns = ns;
 			break;

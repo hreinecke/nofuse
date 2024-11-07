@@ -144,6 +144,7 @@ struct ctrl_conn {
 struct nofuse_namespace {
 	struct linked_list node;
 	struct ns_ops *ops;
+	struct nofuse_subsys *subsys;
 	int nsid;
 	int fd;
 	size_t size;
