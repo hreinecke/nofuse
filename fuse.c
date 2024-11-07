@@ -578,6 +578,9 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
+		ret = inode_stat_subsys_port(subsys, port, NULL);
+		if (ret < 0)
+			goto out_free;
 		sprintf(buf, "../../../subsystems/%s", subsys);
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
@@ -596,6 +599,9 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 			goto out_free;
 		p = strtok(NULL, "/");
 		if (p)
+			goto out_free;
+		ret = inode_stat_host_subsys(host, subsys, NULL);
+		if (ret < 0)
 			goto out_free;
 		sprintf(buf, "../../../hosts/%s", host);
 		ret = 0;
