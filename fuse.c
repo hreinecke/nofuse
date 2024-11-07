@@ -510,6 +510,19 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			goto out_free;
 		}
 	}
+	if (!strcmp(root, subsys_dir)) {
+		char *subsysnqn = p;
+
+		p = strtok(NULL, "/");
+		if (!p) {
+			struct nofuse_subsys *subsys;
+
+			subsys = add_subsys(subsysnqn, NVME_NQN_NVM);
+			if (!subsys)
+				goto out_free;
+			ret = 0;
+		}
+	}
 out_free:
 	free(pathbuf);
 	return ret;

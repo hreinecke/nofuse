@@ -32,7 +32,7 @@ struct nofuse_context *ctx;
 
 extern int run_fuse(struct fuse_args *args);
 
-static struct nofuse_subsys *add_subsys(const char *nqn, int type)
+struct nofuse_subsys *add_subsys(const char *nqn, int type)
 {
 	struct nofuse_subsys *subsys;
 	int ret;
