@@ -25,7 +25,6 @@ LINKED_LIST(device_linked_list);
 int stopped;
 int debug;
 
-static int nsdevs = 1;
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
 
@@ -73,10 +72,11 @@ static void del_subsys(struct nofuse_subsys *subsys)
 	free(subsys);
 }
 
-static int open_file_ns(const char *filename)
+static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
 {
 	struct nofuse_namespace *ns;
 	struct stat st;
+	int ret;
 
 	ns = malloc(sizeof(*ns));
 	if (!ns) {
@@ -101,15 +101,24 @@ static int open_file_ns(const char *filename)
 	ns->blksize = st.st_blksize;
 	ns->ops = uring_register_ops();
 
-	ns->nsid = nsdevs++;
-	uuid_generate(ns->uuid);
+	ns->nsid = ++subsys->max_namespaces;
+	ret = inode_add_namespace(subsys, ns);
+	if (ret < 0) {
+		subsys->max_namespaces--;
+		close(ns->fd);
+		free(ns);
+		return ret;
+	}
+	inode_set_namespace_attr(subsys->nqn, ns->nsid,
+				 "device_path", filename);
 	list_add_tail(&ns->node, &device_linked_list);
 	return 0;
 }
 
-static int open_ram_ns(size_t size)
+static int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
 {
 	struct nofuse_namespace *ns;
+	int ret;
 
 	ns = malloc(sizeof(*ns));
 	if (!ns) {
@@ -121,10 +130,15 @@ static int open_ram_ns(size_t size)
 	ns->blksize = 4096;
 	ns->fd = -1;
 	ns->ops = null_register_ops();
-	strcpy(ns->path, "/dev/null");
-
-	ns->nsid = nsdevs++;
-	uuid_generate(ns->uuid);
+	ns->nsid = ++subsys->max_namespaces;
+	ret = inode_add_namespace(subsys, ns);
+	if (ret < 0) {
+		subsys->max_namespaces--;
+		free(ns);
+		return ret;
+	}
+	inode_set_namespace_attr(subsys->nqn, ns->nsid,
+				 "device_path", "/dev/null");
 	list_add_tail(&ns->node, &device_linked_list);
 	return 0;
 }
@@ -133,7 +147,6 @@ static int init_subsys(void)
 {
 	struct nofuse_subsys *subsys, *tmp_subsys;
 	struct host_iface *iface;
-	struct nofuse_namespace *ns;
 
 	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (!subsys)
@@ -159,11 +172,10 @@ static int init_subsys(void)
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
 	}
 
-	list_for_each_entry(ns, &device_linked_list, node) {
-		printf("%s: add subsys %s ns %d\n", __func__,
-		       subsys->nqn, ns->nsid);
-		inode_add_namespace(subsys, ns);
-	}
+	if (ctx->filename)
+		open_file_ns(subsys, ctx->filename);
+	if (ctx->ramdisk_size)
+		open_ram_ns(subsys, ctx->ramdisk_size);
 
 	if (ctx->hostnqn)
 		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
@@ -339,14 +351,6 @@ static int init_args(struct fuse_args *args)
 	if (ctx->hostnqn)
 		inode_add_host(ctx->hostnqn);
 
-	if (ctx->filename) {
-		if (open_file_ns(ctx->filename) < 0)
-			return 1;
-	}
-	if (ctx->ramdisk_size) {
-		if (open_ram_ns(ctx->ramdisk_size) < 0)
-			return 1;
-	}
 	if (ctx->help) {
 		show_help();
 		return 1;
@@ -356,13 +360,6 @@ static int init_args(struct fuse_args *args)
 
 	if (init_subsys())
 		return 1;
-
-	if (list_empty(&device_linked_list)) {
-		if (open_ram_ns(128) < 0) {
-			print_err("Failed to create default namespace");
-			return 1;
-		}
-	}
 
 	if (list_empty(&iface_linked_list)) {
 		print_err("invalid host interface configuration");

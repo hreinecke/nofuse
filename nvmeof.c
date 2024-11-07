@@ -9,6 +9,7 @@
 #include "ops.h"
 #include "nvme.h"
 #include "tcp.h"
+#include "inode.h"
 
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
@@ -334,22 +335,22 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 
 static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_list, u64 len)
 {
-	struct nofuse_namespace *ns = NULL, *_ns;
-	int desc_len = len;
+	int desc_len = len, ret;
+	char uuid_str[37];
+	uuid_t uuid;
 
 	memset(desc_list, 0, len);
-	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (_ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
-	if (!ns)
-		return -ENODEV;
+	ret = inode_get_namespace_attr(ep->ctrl->subsys->nqn, nsid,
+				       "device_uuid", uuid_str);
+	if (ret < 0)
+		return ret;
+	ret = uuid_parse(uuid_str, uuid);
+	if (ret < 0)
+		return ret;
 
 	desc_list[0] = 3;
 	desc_list[1] = 0x10;
-	memcpy(&desc_list[2], ns->uuid, 0x10);
+	memcpy(&desc_list[2], uuid, 0x10);
 	desc_list += 0x12;
 	len -= 0x12;
 	desc_list[0] = 4;

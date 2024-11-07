@@ -148,9 +148,6 @@ struct nofuse_namespace {
 	int fd;
 	size_t size;
 	unsigned int blksize;
-	uuid_t uuid;
-	char nguid[256];
-	char path[256];
 };
 
 struct host_iface {
@@ -173,6 +170,7 @@ struct nofuse_subsys {
 	pthread_mutex_t ctrl_mutex;
 	char nqn[MAX_NQN_SIZE + 1];
 	int type;
+	int max_namespaces;
 	bool allow_any;
 };
 

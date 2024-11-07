@@ -20,10 +20,6 @@
  */
 #define _GNU_SOURCE
 
-#define FUSE_USE_VERSION 31
-
-#include <fuse.h>
-
 #include <stdio.h>
 #include <unistd.h>
 #include <sqlite3.h>
@@ -545,19 +541,21 @@ int inode_del_subsys(struct nofuse_subsys *subsys)
 }
 
 static char add_namespace_sql[] =
-	"INSERT INTO namespaces (device_uuid, device_path, nsid, subsys_id, ctime) "
-	"SELECT '%s', '%s', '%d', s.id, CURRENT_TIMESTAMP "
+	"INSERT INTO namespaces (device_uuid, nsid, subsys_id, ctime) "
+	"SELECT '%s', '%d', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s';";
 
 int inode_add_namespace(struct nofuse_subsys *subsys,
 			struct nofuse_namespace *ns)
 {
 	char *sql;
-	char uuid[65];
+	uuid_t uuid;
+	char uuid_str[65];
 	int ret;
 
-	uuid_unparse(ns->uuid, uuid);
-	ret = asprintf(&sql, add_namespace_sql, uuid, ns->path,
+	uuid_generate(uuid);
+	uuid_unparse(uuid, uuid_str);
+	ret = asprintf(&sql, add_namespace_sql, uuid_str,
 		       ns->nsid, subsys->nqn);
 	if (ret < 0)
 		return ret;
@@ -588,9 +586,9 @@ int inode_count_namespaces(const char *subsysnqn, int *num)
 static char stat_namespace_sql[] =
 	"SELECT unixepoch(n.ctime) AS tv FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
-	"WHERE s.nqn = '%s' AND n.nsid = '%s';";
+	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
 
-int inode_stat_namespace(const char *subsysnqn, const char *nsid,
+int inode_stat_namespace(const char *subsysnqn, int nsid,
 			 struct stat *stbuf)
 {
 	char *sql;
@@ -643,7 +641,7 @@ int inode_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t filler)
 static char fill_namespace_sql[] =
 	"SELECT n.* FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
-	"WHERE s.nqn = '%s' AND n.nsid = '%s';";
+	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
 
 static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 {
@@ -669,7 +667,7 @@ static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 	return 0;
 }
 
-int inode_fill_namespace(const char *nqn, const char *nsid,
+int inode_fill_namespace(const char *nqn, int nsid,
 			 void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
@@ -701,9 +699,9 @@ int inode_fill_namespace(const char *nqn, const char *nsid,
 static char get_namespace_attr_sql[] =
 	"SELECT ns.%s FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
-	"WHERE s.nqn = '%s' AND ns.nsid = '%s';";
+	"WHERE s.nqn = '%s' AND ns.nsid = '%d';";
 
-int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
+int inode_get_namespace_attr(const char *subsysnqn, int nsid,
 			     const char *attr, char *buf)
 {
 	int ret;
@@ -719,12 +717,36 @@ int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
 	return ret;
 }
 
+static char set_namespace_attr_sql[] =
+	"UPDATE namespaces SET %s = '%s' FROM "
+	"(SELECT ns.nsid AS nsid, s.nqn AS nqn "
+	"FROM namespaces AS ns "
+	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id) AS sel "
+	"WHERE sel.nqn = '%s' AND sel.nsid = '%d';";
+
+int inode_set_namespace_attr(const char *subsysnqn, int nsid,
+			     const char *attr, const char *buf)
+{
+	int ret;
+	char *sql;
+
+	if (!strcmp(attr, "enable"))
+		attr = "device_enable";
+	ret = asprintf(&sql, set_namespace_attr_sql, attr, buf,
+		       subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
 static char get_namespace_anagrp_sql[] =
 	"SELECT ns.ana_grpid AS grpid FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
-	"WHERE s.nqn = '%s' AND ns.nsid = '%s';";
+	"WHERE s.nqn = '%s' AND ns.nsid = '%d';";
 
-int inode_get_namespace_anagrp(const char *subsysnqn, const char *nsid,
+int inode_get_namespace_anagrp(const char *subsysnqn, int nsid,
 			       int *ana_grpid)
 {
 	int ret;
@@ -747,16 +769,16 @@ static char set_namespace_anagrp_sql[] =
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"INNER JOIN ana_groups AS ag ON ag.port_id = p.id) AS sel "
 	"WHERE sel.subsysnqn = '%s' "
-	"AND sel.portid = '%s' AND sel.grpid = '%d';";
+	"AND sel.grpid = '%d' AND nsid = '%d';";
 
-int inode_set_namespace_anagrp(const char *subsysnqn, const char *nsid,
+int inode_set_namespace_anagrp(const char *subsysnqn, int nsid,
 			       int ana_grpid)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, set_namespace_anagrp_sql,
-		       subsysnqn, nsid, ana_grpid);
+		       subsysnqn, ana_grpid, nsid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -765,15 +787,16 @@ int inode_set_namespace_anagrp(const char *subsysnqn, const char *nsid,
 }
 
 static char del_namespace_sql[] =
-	"DELETE FROM namespaces WHERE uuid = '%s';";
+	"DELETE FROM namespaces AS ns WHERE ns.subsys_id IN "
+	"(SELECT id FROM subsystesm WHERE nqn = '%s') AND "
+	"ns.nsid = '%d';";
 
-int inode_del_namespace(struct nofuse_namespace *ns)
+int inode_del_namespace(const char *subsysnqn, int nsid)
 {
 	int ret;
-	char *sql, uuid[65];
+	char *sql;
 
-	uuid_unparse(ns->uuid, uuid);
-	ret = asprintf(&sql, del_namespace_sql, uuid);
+	ret = asprintf(&sql, del_namespace_sql, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
 

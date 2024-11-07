@@ -195,6 +195,8 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 
 	if (!strcmp(attr, "namespaces")) {
 		const char *ns = p;
+		char *eptr;
+		int nsid;
 
 		if (!ns) {
 			int num_ns = 0;
@@ -207,10 +209,13 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 			stbuf->st_nlink += num_ns;
 			return 0;
 		}
-		ret = inode_stat_namespace(subsysnqn, ns, stbuf);
+		nsid = strtoul(ns, &eptr, 10);
+		if (ns == eptr)
+			return -EINVAL;
+		ret = inode_stat_namespace(subsysnqn, nsid, stbuf);
 		if (ret)
 			return -ENOENT;
-		printf("%s: subsys %s ns %s\n", __func__, subsysnqn, ns);
+		printf("%s: subsys %s ns %d\n", __func__, subsysnqn, nsid);
 		attr = strtok(NULL, "/");
 		if (!attr) {
 			stbuf->st_mode = S_IFDIR | 0755;
@@ -220,9 +225,9 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 		p = strtok(NULL, "/");
 		if (p)
 			return -ENOENT;
-		printf("%s: subsys %s ns %s attr %s\n", __func__,
-		       subsysnqn, ns, attr);
-		ret = inode_get_namespace_attr(subsysnqn, ns, attr, NULL);
+		printf("%s: subsys %s ns %d attr %s\n", __func__,
+		       subsysnqn, nsid, attr);
+		ret = inode_get_namespace_attr(subsysnqn, nsid, attr, NULL);
 		if (ret < 0)
 			return -ENOENT;
 		goto found;
@@ -385,20 +390,25 @@ static int fill_subsys(const char *subsys,
 	p = strtok(NULL, "/");
 	if (!strcmp(subdir, "namespaces")) {
 		const char *ns = p;
+		char *eptr = NULL;
+		int nsid;
 
 		if (!ns) {
 			filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 			filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 			return inode_fill_namespace_dir(subsys, buf, filler);
 		}
+		nsid = strtoul(ns, &eptr, 10);
+		if (ns == eptr)
+			return -EINVAL;
 		p = strtok(NULL, "/");
 		if (p)
 			return -ENOENT;
 
-		printf("%s: subsys %s ns %s\n", __func__, subsys, ns);
+		printf("%s: subsys %s ns %d\n", __func__, subsys, nsid);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_namespace(subsys, ns, buf, filler);
+		return inode_fill_namespace(subsys, nsid, buf, filler);
 	}
 	if (!strcmp(subdir, "allowed_hosts")) {
 		const char *host = p;
@@ -612,17 +622,25 @@ out_free:
 	return ret;
 }
 
-static int parse_namespace_attr(const char *p,
-				const char **nsid, const char **attr)
+static int parse_namespace_attr(const char *p, int *nsid,
+				const char **attr)
 {
-	*nsid = NULL;
+	const char *ns;
+	char *eptr = NULL;
+
+	*nsid = 0;
 	*attr = NULL;
 	if (!p)
 		return -EINVAL;
-	*nsid = p;
+	ns = p;
 	p = strtok(NULL, "/");
 	if (!p)
 		return -EINVAL;
+	*nsid = strtoul(ns, &eptr, 10);
+	if (ns == eptr) {
+		*nsid = 0;
+		return -EINVAL;
+	}
 	*attr = p;
 	p = strtok(NULL, "/");
 	if (p)
@@ -683,7 +701,8 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			goto out_free;
 		}
 	} else if (!strcmp(root, subsys_dir)) {
-		const char *subsysnqn = p, *nsid;
+		const char *subsysnqn = p;
+		int nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -706,11 +725,12 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			goto out_free;
 		}
 		if (!strcmp(attr, "ana_grpid")) {
-			ret = inode_get_namespace_anagrp(subsysnqn, nsid, NULL);
+			ret = inode_get_namespace_anagrp(subsysnqn,
+							 nsid, NULL);
 			goto out_free;
 		}
-		ret = inode_get_namespace_attr(subsysnqn,
-					       nsid, attr, NULL);
+		ret = inode_get_namespace_attr(subsysnqn, nsid,
+					       attr, NULL);
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
@@ -800,7 +820,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 		}
 	} else if (!strcmp(root, subsys_dir)) {
-		const char *subsysnqn = p, *nsid;
+		const char *subsysnqn = p;
+		int nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -833,8 +854,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 			sprintf(buf, "%d", anagrp);
 		} else {
-			ret = inode_get_namespace_attr(subsysnqn,
-					       nsid, attr, buf);
+			ret = inode_get_namespace_attr(subsysnqn, nsid,
+						       attr, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -931,7 +952,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			ret = len;
 		}
 	} else if (!strcmp(root, subsys_dir)) {
-		const char *subsysnqn = p, *nsid;
+		const char *subsysnqn = p;
+		int nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -957,7 +979,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			ret = -ENOENT;
 			goto out_free;
 		}
-		printf("%s: subsys %s nsid %s attr %s\n", __func__,
+		printf("%s: subsys %s nsid %d attr %s\n", __func__,
 		       subsysnqn, nsid, attr);
 		if (!strcmp(attr, "ana_grpid")) {
 			int ana_grp, new_ana_grp;

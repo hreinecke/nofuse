@@ -1,6 +1,10 @@
 #ifndef _INODE_H
 #define _INODE_H
 
+#define FUSE_USE_VERSION 31
+
+#include <fuse.h>
+
 int inode_open(const char *filename);
 void inode_close(const char *filename);
 
@@ -21,19 +25,21 @@ int inode_del_subsys(struct nofuse_subsys *subsys);
 int inode_add_namespace(struct nofuse_subsys *subsys,
 			struct nofuse_namespace *ns);
 int inode_count_namespaces(const char *subsysnqn, int *num);
-int inode_stat_namespace(const char *subsysnqn, const char *nsid,
+int inode_stat_namespace(const char *subsysnqn, int nsid,
 			 struct stat *stbuf);
 int inode_fill_namespace_dir(const char *nqn, void *buf,
 			     fuse_fill_dir_t filler);
-int inode_fill_namespace(const char *nqn, const char *nsid,
+int inode_fill_namespace(const char *nqn, int nsid,
 			 void *buf, fuse_fill_dir_t filler);
-int inode_get_namespace_attr(const char *subsysnqn, const char *nsid,
+int inode_get_namespace_attr(const char *subsysnqn, int nsid,
 			     const char *attr, char *buf);
-int inode_get_namespace_anagrp(const char *subsysnqn, const char *nsid,
+int inode_set_namespace_attr(const char *subsysnqn, int nsid,
+			     const char *attr, const char *buf);
+int inode_get_namespace_anagrp(const char *subsysnqn, int nsid,
 			       int *ana_grpid);
-int inode_set_namespace_anagrp(const char *subsysnqn, const char *nsid,
+int inode_set_namespace_anagrp(const char *subsysnqn, int nsid,
 			       int ana_grpid);
-int inode_del_namespace(struct nofuse_namespace *ns);
+int inode_del_namespace(const char *subsysnqn, int nsid);
 
 int inode_add_ana_group(int port, int grpid, int ana_state);
 int inode_count_ana_groups(const char *port, int *num);
