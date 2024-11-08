@@ -856,9 +856,9 @@ int inode_add_port(struct nofuse_port *port)
 }
 
 static char stat_port_sql[] =
-	"SELECT unixepoch(ctime) AS tv FROM ports WHERE id = '%s';";
+	"SELECT unixepoch(ctime) AS tv FROM ports WHERE id = '%d';";
 
-int inode_stat_port(const char *port, struct stat *stbuf)
+int inode_stat_port(unsigned int port, struct stat *stbuf)
 {
 	char *sql;
 	int ret, timeval;
@@ -906,9 +906,9 @@ int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 }
 
 static char fill_port_sql[] =
-	"SELECT * FROM ports WHERE id = '%s';";
+	"SELECT * FROM ports WHERE id = '%d';";
 
-int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler)
+int inode_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -939,14 +939,14 @@ int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler)
 }
 
 static char get_port_attr_sql[] =
-	"SELECT %s FROM ports WHERE id = '%s';";
+	"SELECT %s FROM ports WHERE id = '%d';";
 
-int inode_get_port_attr(const char *portid, const char *attr, char *buf)
+int inode_get_port_attr(unsigned int port, const char *attr, char *buf)
 {
 	int ret;
 	char *sql;
 
-	ret = asprintf(&sql, get_port_attr_sql, attr, portid);
+	ret = asprintf(&sql, get_port_attr_sql, attr, port);
 	if (ret < 0)
 		return ret;
 
@@ -961,15 +961,15 @@ static char update_genctr_port_sql[] =
 	"(SELECT hs.host_id AS host_id, sp.port_id AS port_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
-	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%s';";
+	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
 
-int inode_set_port_attr(const char *port, const char *attr, char *value)
+int inode_set_port_attr(unsigned int port, const char *attr, char *value)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, "UPDATE ports SET %s = '%s' "
-		       "WHERE id = '%s';", attr, value, port);
+		       "WHERE id = '%d';", attr, value, port);
 	if (ret < 0) {
 		return ret;
 	}
@@ -989,8 +989,13 @@ static char del_port_sql[] =
 int inode_del_port(struct nofuse_port *port)
 {
 	char *sql;
-	int ret;
+	int ret, portnum = 0;
 
+	ret = inode_count_subsys_port(port->port_id, &portnum);
+	if (ret < 0)
+		return ret;
+	if (portnum > 0)
+		return -EBUSY;
 	ret = asprintf(&sql, del_port_sql, port->port_id);
 	if (ret < 0)
 		return ret;
@@ -1353,10 +1358,10 @@ static char count_subsys_port_sql[] =
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
-	"WHERE p.id = '%s';";
+	"WHERE p.id = '%d';";
 
 
-int inode_count_subsys_port(const char *port, int *portnum)
+int inode_count_subsys_port(unsigned int port, int *portnum)
 {
 	char *sql;
 	int ret;
@@ -1373,9 +1378,9 @@ static char fill_subsys_port_sql[] =
 	"SELECT s.nqn AS subsysnqn FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
-	"WHERE p.id = '%s';";
+	"WHERE p.id = '%d';";
 
-int inode_fill_subsys_port(const char *port,
+int inode_fill_subsys_port(unsigned int port,
 			   void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
@@ -1406,9 +1411,9 @@ static char stat_subsys_port_sql[] =
 	"SELECT unixepoch(sp.ctime) AS tv FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
-	"WHERE s.nqn = '%s' AND p.id = '%s';";
+	"WHERE s.nqn = '%s' AND p.id = '%d';";
 
-int inode_stat_subsys_port(const char *subsysnqn, const char *port,
+int inode_stat_subsys_port(const char *subsysnqn, unsigned int port,
 			   struct stat *stbuf)
 {
 	char *sql;

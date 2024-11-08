@@ -341,22 +341,27 @@ int add_iface(const char *ifaddr, int id, int port)
 	if (!iface)
 		return -ENOMEM;
 	memset(iface, 0, sizeof(*iface));
-	strcpy(iface->port.traddr, ifaddr);
-	strcpy(iface->port.trtype, "tcp");
-	if (strchr(ifaddr, '.')) {
-		iface->adrfam = AF_INET;
-		strcpy(iface->port.adrfam, "ipv4");
-	} else if (strchr(ifaddr, ':')) {
-		iface->adrfam = AF_INET6;
-		strcpy(iface->port.adrfam, "ipv6");
+	if (ifaddr) {
+		strcpy(iface->port.trtype, "tcp");
+		strcpy(iface->port.traddr, ifaddr);
+		if (strchr(ifaddr, '.')) {
+			iface->adrfam = AF_INET;
+			strcpy(iface->port.adrfam, "ipv4");
+		} else if (strchr(ifaddr, ':')) {
+			iface->adrfam = AF_INET6;
+			strcpy(iface->port.adrfam, "ipv6");
+		} else {
+			print_err("invalid transport address '%s'", ifaddr);
+			free(iface);
+			return -EINVAL;
+		}
 	} else {
-		print_err("invalid transport address '%s'", ifaddr);
-		free(iface);
-		return -EINVAL;
+		strcpy(iface->port.trtype, "loop");
 	}
 	iface->port_num = port;
 	iface->port.port_id = id;
-	sprintf(iface->port.trsvcid, "%d", port);
+	if (ifaddr && port)
+		sprintf(iface->port.trsvcid, "%d", port);
 	ret = inode_add_port(&iface->port);
 	if (ret < 0) {
 		print_err("cannot add port, error %d\n", ret);
@@ -380,6 +385,28 @@ int add_iface(const char *ifaddr, int id, int port)
 	       iface->port.traddr, iface->port.trsvcid);
 	fflush(stdout);
 
+	return 0;
+}
+
+int del_iface(int id)
+{
+	struct interface *iface = NULL, *_iface;
+	int ret;
+
+	list_for_each_entry(_iface, &iface_linked_list, node) {
+		if (_iface->port.port_id == id) {
+			iface = _iface;
+			break;
+		}
+	}
+	if (!iface)
+		return -EINVAL;
+
+	ret = inode_del_port(&iface->port);
+	if (ret < 0)
+		return ret;
+	list_del(&iface->node);
+	free(iface);
 	return 0;
 }
 
