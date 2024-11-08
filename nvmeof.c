@@ -215,11 +215,11 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
-		if (strcmp(subsys->nqn, NVME_DISC_SUBSYS_NAME) &&
-		    inode_check_allowed_host(connect->hostnqn,
+		if (inode_check_allowed_host(connect->hostnqn,
 					     subsys->nqn,
 					     &ep->iface->port) <= 0) {
-			ctrl_err(ep, "Rejecting host NQN '%s'\n", connect->hostnqn);
+			ctrl_err(ep, "Rejecting host NQN '%s'\n",
+				 connect->hostnqn);
 			return NVME_SC_CONNECT_INVALID_HOST;
 		}
 		ctrl_info(ep, "Allocating new controller '%s'",
@@ -236,8 +236,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			ctrl->num_endpoints = 1;
 			ctrl->subsys = subsys;
 			ctrl->cntlid = nvmf_ctrl_id++;
-			if (!strncmp(subsys->nqn, NVME_DISC_SUBSYS_NAME,
-				     MAX_NQN_SIZE)) {
+			if (subsys->type == NVME_NQN_CUR) {
 				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
 				ep->qsize = NVMF_DQ_DEPTH;
 			} else {
@@ -279,11 +278,10 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.iorcsz = NVME_NVM_IOCQES;
 
 	id.cntrltype = ep->ctrl->ctrl_type;
+	strcpy(id.subnqn, ep->ctrl->subsys->nqn);
 	if (ep->ctrl->ctrl_type == NVME_CTRL_CNTRLTYPE_DISC) {
-		strcpy(id.subnqn, NVME_DISC_SUBSYS_NAME);
 		id.maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
-		strcpy(id.subnqn, ep->ctrl->subsys->nqn);
 		id.maxcmd = htole16(ep->qsize);
 	}
 
