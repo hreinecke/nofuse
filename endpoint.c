@@ -47,7 +47,6 @@ static int start_interface(struct host_iface *iface)
 			iface->port.traddr);
 		return ret;
 	}
-	iface->listenfd = ret;
 	return 0;
 }
 
