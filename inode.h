@@ -77,6 +77,9 @@ int inode_stat_subsys_port(const char *subsysnqn, const char *port,
 			   struct stat *stbuf);
 int inode_del_subsys_port(const char *subsysnqn, unsigned int port);
 
+int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
+			     struct nofuse_port *port);
+
 #endif
 
 

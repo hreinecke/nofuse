@@ -1471,6 +1471,57 @@ int inode_stat_subsys_port(const char *subsysnqn, const char *port,
 	return 0;
 }
 
+static char allowed_host_sql[] =
+	"SELECT count(s.nqn) AS subsys_num "
+	"FROM subsys_port AS sp "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
+	"INNER JOIN hosts AS h ON hs.host_id = h.id "
+	"INNER JOIN ports AS p ON sp.port_id = p.id "
+	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND "
+	"p.addr_trtype = '%s' AND p.addr_traddr = '%s' AND p.addr_trsvcid = '%s';";
+
+static char allow_any_sql[] =
+	"SELECT count(s.nqn) AS subsys_num "
+	"FROM subsys_port AS sp "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN ports AS p ON sp.port_id = p.id "
+	"WHERE s.allow_any = '1' AND s.nqn = '%s' AND "
+	"p.addr_trtype = '%s' AND p.addr_traddr = '%s' AND p.addr_trsvcid = '%s';";
+
+int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
+			     struct nofuse_port *port)
+{
+	int ret, num = 0;
+	char *sql;
+
+	ret = asprintf(&sql, allowed_host_sql, hostnqn, subsysnqn,
+		       port->trtype, port->traddr, port->trsvcid);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "subsys_num", &num);
+	free(sql);
+	if (!ret && num > 0) {
+		printf("host %s allowed from subsys %s\n",
+		       hostnqn, subsysnqn);
+		return num;
+	}
+	ret = asprintf(&sql, allow_any_sql, subsysnqn,
+		       port->trtype, port->traddr, port->trsvcid);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_int(sql, "subsys_num", &num);
+	free(sql);
+	if (ret < 0)
+		return ret;
+	if (num > 0)
+		printf("any host allowed from subsys %s\n",
+		       subsysnqn);
+	return num;
+}
+
 #if 0
 struct sql_disc_entry_parm {
 	u8 *buffer;

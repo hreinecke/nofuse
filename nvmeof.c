@@ -204,9 +204,10 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
-		if (ctx->hostnqn &&
-		    memcmp(connect->hostnqn, ctx->hostnqn,
-			   strlen(ctx->hostnqn))) {
+		if (strcmp(subsys->nqn, NVME_DISC_SUBSYS_NAME) &&
+		    inode_check_allowed_host(connect->hostnqn,
+					     subsys->nqn,
+					     &ep->iface->port) <= 0) {
 			print_err("Rejecting host NQN '%s'\n", connect->hostnqn);
 			return NVME_SC_CONNECT_INVALID_HOST;
 		}
