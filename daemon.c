@@ -78,6 +78,17 @@ static int del_subsys(struct nofuse_subsys *subsys)
 	return ret;
 }
 
+struct nofuse_subsys *find_subsys(const char *subsysnqn)
+{
+	struct nofuse_subsys *subsys = NULL;
+
+	list_for_each_entry(subsys, &subsys_linked_list, node) {
+		if (!strcmp(subsys->nqn, subsysnqn))
+			return subsys;
+	}
+	return NULL;
+}
+
 static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
 {
 	struct nofuse_namespace *ns;
@@ -122,7 +133,7 @@ static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
 	return 0;
 }
 
-static int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
+int open_ram_ns(struct nofuse_subsys *subsys, int nsid, size_t size)
 {
 	struct nofuse_namespace *ns;
 	int ret;
@@ -138,7 +149,7 @@ static int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
 	ns->fd = -1;
 	ns->ops = null_register_ops();
 	ns->subsys = subsys;
-	ns->nsid = ++subsys->max_namespaces;
+	ns->nsid = nsid;
 	ret = inode_add_namespace(subsys->nqn, ns);
 	if (ret < 0) {
 		subsys->max_namespaces--;
@@ -194,8 +205,12 @@ static int init_subsys(void)
 
 	if (ctx->filename)
 		open_file_ns(subsys, ctx->filename);
-	if (ctx->ramdisk_size)
-		open_ram_ns(subsys, ctx->ramdisk_size);
+	if (ctx->ramdisk_size) {
+		int nsid = subsys->max_namespaces + 1;
+		ret = open_ram_ns(subsys, nsid, ctx->ramdisk_size);
+		if (!ret)
+			subsys->max_namespaces++;
+	}
 
 	if (ctx->hostnqn)
 		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);

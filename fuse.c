@@ -511,17 +511,35 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 		}
 	}
 	if (!strcmp(root, subsys_dir)) {
-		char *subsysnqn = p;
+		char *subsysnqn = p, *ns, *eptr = NULL;
+		struct nofuse_subsys *subsys;
+		int nsid;
 
 		p = strtok(NULL, "/");
 		if (!p) {
-			struct nofuse_subsys *subsys;
-
 			subsys = add_subsys(subsysnqn, NVME_NQN_NVM);
 			if (subsys)
 				ret = 0;
 			goto out_free;
 		}
+		subsys = find_subsys(subsysnqn);
+		if (!subsys)
+			goto out_free;
+		if (strcmp(p, "namespaces"))
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		ns = p;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		nsid = strtoul(ns, &eptr, 10);
+		if (ns == eptr) {
+			ret = -EINVAL;
+			goto out_free;
+		}
+		ret = open_ram_ns(subsys, nsid, 512);
 	}
 out_free:
 	free(pathbuf);

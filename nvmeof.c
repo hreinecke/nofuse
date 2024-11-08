@@ -197,6 +197,11 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			subsys = _subsys;
 			break;
 		}
+		if (_subsys->type == NVME_NQN_CUR &&
+		    !strcmp(connect->subsysnqn, NVME_DISC_SUBSYS_NAME)) {
+			subsys = _subsys;
+			break;
+		}
 	}
 	if (!subsys) {
 		ctrl_err(ep, "subsystem '%s' not found",
