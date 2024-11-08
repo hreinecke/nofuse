@@ -402,6 +402,9 @@ int start_iface(int id)
 	if (!iface)
 		return -EINVAL;
 
+	if (iface->pthread)
+		return 0;
+
 	pthread_attr_init(&pthread_attr);
 	ret = pthread_create(&iface->pthread, &pthread_attr,
 			     run_host_interface, iface);

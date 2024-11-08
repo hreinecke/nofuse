@@ -732,7 +732,7 @@ static int nofuse_symlink(const char *from, const char *to)
 	if (!strcmp(root, ports_dir)) {
 		const char *port, *subsys;
 		char *eptr = NULL;
-		int portid;
+		int portid, subsysnum = 0;
 
 		port = strtok(NULL, "/");
 		if (!port)
@@ -756,9 +756,16 @@ static int nofuse_symlink(const char *from, const char *to)
 		ret = inode_add_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
-		ret = start_iface(portid);
-		if (ret)
+		ret = inode_count_subsys_port(portid, &subsysnum);
+		if (ret < 0) {
+			inode_del_subsys_port(subsys, portid);
 			goto out_free;
+		}
+		if (subsysnum == 1) {
+			ret = start_iface(portid);
+			if (ret)
+				goto out_free;
+		}
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
@@ -803,7 +810,7 @@ static int nofuse_unlink(const char *path)
 	if (!strcmp(root, ports_dir)) {
 		const char *port, *subsys;
 		char *eptr = NULL;
-		int portid;
+		int portid, subsysnum = 0;
 
 		port = strtok(NULL, "/");
 		if (!port)
@@ -824,12 +831,17 @@ static int nofuse_unlink(const char *path)
 			goto out_free;
 		printf("%s: subsys %s portid %d\n",
 		       __func__, subsys, portid);
+		ret = inode_count_subsys_port(portid, &subsysnum);
+		if (ret < 0)
+			goto out_free;
 		ret = inode_del_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
-		ret = stop_iface(portid);
-		if (ret)
-			goto out_free;
+		if (subsysnum == 1) {
+			ret = stop_iface(portid);
+			if (ret)
+				goto out_free;
+		}
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
