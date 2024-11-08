@@ -31,6 +31,7 @@
 
 extern int debug;
 extern int tcp_debug;
+extern int cmd_debug;
 extern char *hostnqn;
 
 extern struct linked_list device_linked_list;

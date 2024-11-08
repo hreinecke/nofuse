@@ -25,6 +25,7 @@ LINKED_LIST(device_linked_list);
 int stopped;
 int debug;
 int tcp_debug;
+int cmd_debug;
 
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
@@ -163,6 +164,8 @@ static int init_subsys(void)
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
 	}
+	if (!ctx->subsysnqn)
+		return 0;
 
 	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_NVM);
 	if (!subsys) {
@@ -243,10 +246,11 @@ static struct host_iface *add_iface(const char *ifaddr, int port)
 	}
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
-	print_info("iface %d: listening on %s address %s port %s",
-		   iface->port.port_id,
-		   iface->adrfam == AF_INET ? "ipv4" : "ipv6",
-		   iface->port.traddr, iface->port.trsvcid);
+	printf("iface %d: listening on %s address %s port %s\n",
+	       iface->port.port_id,
+	       iface->adrfam == AF_INET ? "ipv4" : "ipv6",
+	       iface->port.traddr, iface->port.trsvcid);
+	fflush(stdout);
 
 	return iface;
 }
@@ -287,28 +291,29 @@ static int init_args(struct fuse_args *args)
 	int tls_keyring;
 
 	debug = ctx->debug;
-	if (ctx->debug > 1)
+	if (debug) {
 		tcp_debug = 1;
+		cmd_debug = 1;
+	}
 
 	if (ctx->traddr) {
-		iface = add_iface(iface->port.traddr, 8009);
+		iface = add_iface(ctx->traddr, 8009);
 		if (!iface) {
 			print_err("Invalid transport address %s\n",
 				  ctx->traddr);
 			return 1;
 		}
 		list_add_tail(&iface->node, &iface_linked_list);
+	} else {
+		iface = add_iface("127.0.0.1", 8009);
+		if (!iface) {
+			print_err("cannot create default interface\n");
+			return 1;
+		}
+		list_add_tail(&iface->node, &iface_linked_list);
 	}
 
 	if (ctx->portnum) {
-		if (!iface) {
-			iface = add_iface("127.0.0.1", 8009);
-			if (!iface) {
-				print_err("cannot create default interface\n");
-				return 1;
-			}
-			list_add_tail(&iface->node, &iface_linked_list);
-		}
 		iface = add_iface(iface->port.traddr, ctx->portnum);
 		if (!iface) {
 			print_err("Invalid port %d\n", ctx->portnum);
@@ -429,7 +434,6 @@ int main(int argc, char *argv[])
 
 	run_fuse(&args);
 
-	printf("terminating\n");
 	stopped = 1;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {

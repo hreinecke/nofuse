@@ -11,9 +11,35 @@
 #include "tcp.h"
 #include "inode.h"
 
+#define ctrl_info(e, f, x...)					\
+	if (cmd_debug) {					\
+		if ((e)->ctrl) {				\
+			printf("ctrl %d qid %d: " f "\n",	\
+			       (e)->ctrl->cntlid,		\
+			       (e)->qid, ##x);			\
+		} else {					\
+			printf("ep %d: " f "\n",		\
+			       (e)->sockfd, ##x);		\
+		}						\
+		fflush(stdout);					\
+	}
+
+#define ctrl_err(e, f, x...)					\
+	do {							\
+		if ((e)->ctrl) {				\
+			fprintf(stderr,				\
+				"ctrl %d qid %d: " f "\n",	\
+				(e)->ctrl->cntlid,		\
+				(e)->qid, ##x);			\
+		} else {					\
+			fprintf(stderr, "ep %d: " f "\n",	\
+			       (e)->sockfd, ##x);		\
+		}						\
+		fflush(stderr);					\
+	} while (0)
+
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
-static int nvmf_discovery_genctr = 1;
 static int nvmf_ctrl_id = 1;
 
 static int send_response(struct endpoint *ep, struct ep_qe *qe,
@@ -32,10 +58,9 @@ static int handle_property_set(struct endpoint *ep, struct ep_qe *qe,
 {
 	int ret = 0;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_property_set %x = %llx",
-		   cmd->prop_set.offset, cmd->prop_set.value);
-#endif
+	ctrl_info(ep, "nvme_fabrics_type_property_set %x = %llx",
+		  cmd->prop_set.offset, cmd->prop_set.value);
+
 	if (cmd->prop_set.offset == NVME_REG_CC) {
 		ep->ctrl->cc = le64toh(cmd->prop_set.value);
 		if (ep->ctrl->cc & NVME_CC_SHN_MASK)
@@ -66,17 +91,13 @@ static int handle_property_get(struct endpoint *ep, struct ep_qe *qe,
 	else if (cmd->prop_get.offset == NVME_REG_VS)
 		value = NVME_VER;
 	else {
-#ifdef DEBUG_COMMANDS
-		print_debug("nvme_fabrics_type_property_get %x: N/I",
-			    cmd->prop_get.offset);
-#endif
+		ctrl_info(ep, "nvme_fabrics_type_property_get %x: N/I",
+			  cmd->prop_get.offset);
 		return NVME_SC_INVALID_FIELD;
 	}
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_property_get %x: %llx",
-		    cmd->prop_get.offset, value);
-#endif
+	ctrl_info(ep, "nvme_fabrics_type_property_get %x: %llx",
+		  cmd->prop_get.offset, value);
 	qe->resp.result.u64 = htole64(value);
 
 	return 0;
@@ -90,10 +111,8 @@ static int handle_set_features(struct endpoint *ep, struct ep_qe *qe,
 	int fid = (cdw10 & 0xff), ncqr, nsqr;
 	int ret = 0;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_set_features cdw10 %x fid %x",
-		    cdw10, fid);
-#endif
+	ctrl_info(ep,"nvme_fabrics_type_set_features cdw10 %x fid %x",
+		  cdw10, fid);
 
 	switch (fid) {
 	case NVME_FEAT_NUM_QUEUES:
@@ -136,38 +155,37 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	sqsize = le16toh(cmd->connect.sqsize);
 	kato = le32toh(cmd->connect.kato);
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_connect qid %u sqsize %u kato %u",
-		    qid, sqsize, kato);
-#endif
+	ctrl_info(ep, "nvme_fabrics_connect qid %u sqsize %u kato %u",
+		  qid, sqsize, kato);
 
 	ret = ep->ops->rma_read(ep, connect, qe->data_len);
 	if (ret) {
-		print_errno("rma_read failed", ret);
+		ctrl_err(ep, "rma_read failed with error %d",
+			 errno);
 		return ret;
 	}
 
 	cntlid = le16toh(connect->cntlid);
 
 	if (qid == 0 && cntlid != 0xFFFF) {
-		print_err("bad controller id %x, expecting %x",
-			  cntlid, 0xffff);
+		ctrl_err(ep, "bad controller id %x, expecting %x",
+			 cntlid, 0xffff);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!sqsize) {
-		print_err("ctrl %d qid %d invalid sqsize",
+		ctrl_err(ep, "ctrl %d qid %d invalid sqsize",
 			  cntlid, qid);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (ep->ctrl) {
-		print_err("ctrl %d qid %d already connected",
+		ctrl_err(ep, "ctrl %d qid %d already connected",
 			  ep->ctrl->cntlid, qid);
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
 	if (qid == 0) {
 		ep->qsize = NVMF_SQ_DEPTH;
 	} else if (endpoint_update_qdepth(ep, sqsize) < 0) {
-		print_err("ctrl %d qid %d failed to increase sqsize %d",
+		ctrl_err(ep, "ctrl %d qid %d failed to increase sqsize %d",
 			  cntlid, qid, sqsize);
 		return NVME_SC_INTERNAL;
 	}
@@ -181,13 +199,13 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!subsys) {
-		print_err("subsystem '%s' not found",
+		ctrl_err(ep, "subsystem '%s' not found",
 			  connect->subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
 	if (ep->iface->port_type != subsys->type) {
-		print_err("non-matching subsystem '%s' type %x on port %d",
+		ctrl_err(ep, "non-matching subsystem '%s' type %x on port %d",
 			  subsys->nqn, ep->iface->port_type,
 			  ep->iface->port.port_id);
 		return NVME_SC_CONNECT_INVALID_HOST;
@@ -208,14 +226,14 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		    inode_check_allowed_host(connect->hostnqn,
 					     subsys->nqn,
 					     &ep->iface->port) <= 0) {
-			print_err("Rejecting host NQN '%s'\n", connect->hostnqn);
+			ctrl_err(ep, "Rejecting host NQN '%s'\n", connect->hostnqn);
 			return NVME_SC_CONNECT_INVALID_HOST;
 		}
-		print_info("Allocating new controller '%s'",
+		ctrl_info(ep, "Allocating new controller '%s'",
 			   connect->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
-			print_err("Out of memory allocating controller");
+			ctrl_err(ep, "Out of memory allocating controller");
 		} else {
 			memset(ctrl, 0, sizeof(*ctrl));
 			strncpy(ctrl->nqn, connect->hostnqn, MAX_NQN_SIZE);
@@ -237,13 +255,12 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	}
 	pthread_mutex_unlock(&subsys->ctrl_mutex);
 	if (!ep->ctrl) {
-		print_err("bad controller id %x for queue %d, expecting %x",
-			  cntlid, qid, ctrl->cntlid);
+		ctrl_err(ep, "bad controller id %x for queue %d, expecting %x",
+			 cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!ret) {
-		print_info("ctrl %d qid %d connected",
-			   ep->ctrl->cntlid, ep->qid);
+		ctrl_info(ep, "connected");
 		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 	}
 	return ret;
@@ -374,10 +391,8 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	u16 cid = cmd->identify.command_id;
 	int ret, id_len;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("cid %#x nvme_fabrics_identify cns %d len %llu",
-		    cid, cns, qe->data_len);
-#endif
+	ctrl_info(ep, "cid %#x nvme_fabrics_identify cns %d len %llu",
+		  cid, cns, qe->data_len);
 
 	switch (cns) {
 	case NVME_ID_CNS_NS:
@@ -394,7 +409,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 						      qe->data, qe->data_len);
 		break;
 	default:
-		print_err("unexpected identify command cns %u", cns);
+		ctrl_err(ep, "unexpected identify command cns %u", cns);
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
@@ -404,98 +419,79 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	qe->data_pos = 0;
 	ret = ep->ops->rma_write(ep, qe, id_len);
 	if (ret)
-		print_errno("rma_write failed", ret);
+		ctrl_err(ep, "rma_write failed with %d", ret);
 	return ret;
 }
 
 static int format_disc_log(void *data, u64 data_offset,
 			   u64 data_len, struct endpoint *ep)
 {
-	struct nofuse_subsys *subsys;
-	struct host_iface *iface;
-	struct nvmf_disc_rsp_page_hdr hdr;
-	struct nvmf_disc_rsp_page_entry entry;
-	u8 *log_buf, *log_ptr;
-	u64 log_len = data_len;
+	int len, log_len, genctr, num_recs = 0, ret;
+	u8 *log_buf;
+	struct nvmf_disc_rsp_page_hdr *log_hdr;
+	struct nvmf_disc_rsp_page_entry *log_ptr;
 
-	hdr.genctr = nvmf_discovery_genctr;
-	hdr.recfmt = 0;
-	hdr.numrec = 0;
-	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		if (subsys->type != NVME_NQN_NVM)
-			continue;
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			if (iface->port_type == NVME_NQN_NVM)
-				hdr.numrec++;
-		}
+	len = inode_host_disc_entries(ep->ctrl->nqn, NULL, 0);
+	if (len < 0) {
+		ctrl_err(ep, "error formatting discovery log page");
+		return -1;
 	}
-	print_info("Found %llu entries", hdr.numrec);
-
-	log_len = sizeof(hdr) + hdr.numrec * sizeof(entry);
-	if (data_len > log_len)
-		log_len = data_len;
+	num_recs = len / sizeof(struct nvmf_disc_rsp_page_entry);
+	log_len = len + sizeof(struct nvmf_disc_rsp_page_hdr);
 	log_buf = malloc(log_len);
-	if (!log_buf)
-		return log_len;
-
+	if (!log_buf) {
+		ctrl_err(ep, "error allocating discovery log");
+		errno = ENOMEM;
+		return -1;
+	}
 	memset(log_buf, 0, log_len);
-	memcpy(log_buf, &hdr, sizeof(hdr));
-	log_ptr = log_buf;
-	log_len -= sizeof(hdr);
-	log_ptr += sizeof(hdr);
+	log_hdr = (struct nvmf_disc_rsp_page_hdr *)log_buf;
+	log_ptr = log_hdr->entries;
 
-	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		if (subsys->type != NVME_NQN_NVM)
-			continue;
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			if (iface->port_type != NVME_NQN_NVM)
-				continue;
-			memset(&entry, 0,
-			       sizeof(struct nvmf_disc_rsp_page_entry));
-			entry.trtype = NVMF_TRTYPE_TCP;
-			if (iface->adrfam == AF_INET)
-				entry.adrfam = NVMF_ADDR_FAMILY_IP4;
-			else
-				entry.adrfam = NVMF_ADDR_FAMILY_IP6;
-			if (iface->tls) {
-				entry.tsas.tcp.sectype = NVMF_TCP_SECTYPE_TLS13;
-				entry.treq = NVMF_TREQ_NOT_REQUIRED;
-			} else
-				entry.treq = NVMF_TREQ_NOT_SPECIFIED;
-			entry.portid = iface->port.port_id;
-			entry.cntlid = htole16(NVME_CNTLID_DYNAMIC);
-			entry.asqsz = 32;
-			entry.subtype = subsys->type;
-			memcpy(entry.trsvcid, iface->port.trsvcid,
-			       NVMF_TRSVCID_SIZE);
-			memcpy(entry.traddr, iface->port.traddr,
-			       NVMF_TRADDR_SIZE);
-			strncpy(entry.subnqn, subsys->nqn, NVMF_NQN_FIELD_LEN);
-			memcpy(log_ptr, &entry, sizeof(entry));
-			log_ptr += sizeof(entry);
-			log_len -= sizeof(entry);
+	if (num_recs) {
+		len = inode_host_disc_entries(ep->ctrl->nqn,
+					      (u8 *)log_ptr, len);
+		if (len < 0) {
+			ctrl_err(ep, "error fetching discovery log entries");
+			num_recs = 0;
 		}
 	}
-	memcpy(data, (u8 *)log_buf + data_offset, data_len);
-	print_info("Returning %llu entries offset %llu len %llu",
-		   hdr.numrec, data_offset, data_len);
+
+	ret = inode_host_genctr(ep->ctrl->nqn, &genctr);
+	if (ret < 0) {
+		ctrl_err(ep, "error retrieving genctr");
+		genctr = 0;
+	}
+	log_hdr->recfmt = 1;
+	log_hdr->numrec = htole64(num_recs);
+	log_hdr->genctr = htole64(genctr);
+	if (log_len < data_offset) {
+		ctrl_err(ep, "offset %llu beyond log page size %d",
+			 data_offset, log_len);
+		log_len = 0;
+	} else {
+		log_len -= data_offset;
+		if (log_len > data_len)
+			log_len = data_len;
+		memcpy(data, log_buf + data_offset, log_len);
+	}
+	ctrl_info(ep, "discovery log page entries %d offset %llu len %d",
+		  num_recs, data_offset, log_len);
 	free(log_buf);
-	return data_len;
+	return log_len;
 }
 
 static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
-	int ret = 0;
-	u64 offset = le64toh(cmd->get_log_page.lpo), log_len;
+	int ret = 0, log_len;
+	u64 offset = le64toh(cmd->get_log_page.lpo);
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
-		    cmd->get_log_page.opcode, cmd->get_log_page.lid,
-		    (unsigned long)offset, (unsigned long)qe->data_len);
-#endif
+	ctrl_info(ep, "nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
+		  cmd->get_log_page.opcode, cmd->get_log_page.lid,
+		  (unsigned long)offset, (unsigned long)qe->data_len);
+
 	qe->data_pos = offset;
-
 	switch (cmd->get_log_page.lid) {
 	case 0x02:
 		/* SMART Log */
@@ -506,15 +502,19 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		/* Discovery log */
 		log_len = format_disc_log(qe->data, qe->data_pos,
 					  qe->data_len, ep);
+		if (!log_len) {
+			ctrl_err(ep, "get_log_page: discovery log failed");
+			return NVME_SC_INTERNAL;
+		}
 		break;
 	default:
-		print_err("get_log_page: lid %02x not supported",
+		ctrl_err(ep, "get_log_page: lid %02x not supported",
 			  cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
 	ret = ep->ops->rma_write(ep, qe, log_len);
 	if (ret)
-		print_errno("rma_write failed", ret);
+		ctrl_err(ep, "rma_write failed with error %d", ret);
 
 	return ret;
 }
@@ -534,12 +534,12 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!qe->ns) {
-		print_err("Invalid namespace %d", nsid);
+		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
 	if ((cmd->rw.dptr.sgl.type >> 4) != NVME_TRANSPORT_SGL_DATA_DESC) {
-		print_err("unhandled sgl type %d\n",
+		ctrl_err(ep, "unhandled sgl type %d\n",
 			  cmd->rw.dptr.sgl.type >> 4);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
@@ -548,9 +548,8 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
-	print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x read pos %llu len %llu",
-		   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
-		   qe->data_pos, qe->data_len);
+	ctrl_info(ep, "nsid %d tag %#x ccid %#x read pos %llu len %llu",
+		  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	return ns->ops->ns_read(ep, qe);
 }
@@ -572,7 +571,7 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!qe->ns) {
-		print_err("Invalid namespace %d", nsid);
+		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
@@ -582,29 +581,28 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
-			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
+		ctrl_info(ep, "nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
+			   nsid, qe->tag, qe->ccid,
 			   qe->data_pos, qe->data_len);
 		ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 		if (ret < 0) {
-			print_err("ctrl %d qid %d tag %#x rma_read error %d",
-				  ep->ctrl->cntlid, ep->qid, qe->tag, ret);
+			ctrl_err(ep, "tag %#x rma_read error %d",
+				 qe->tag, ret);
 			return ret;
 		}
 		return ns->ops->ns_write(ep, qe);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
-		print_err("Invalid sgl type %x", sgl_type);
+		ctrl_err(ep, "Invalid sgl type %x", sgl_type);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
 	ret = ns->ops->ns_prep_read(ep, qe);
 	if (ret) {
-		print_errno("prep_rma_read failed", ret);
+		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else
-		print_info("ctrl %d qid %d nsid %d tag %#x ccid %#x write pos %llu len %llu",
-			   ep->ctrl->cntlid, ep->qid, nsid, qe->tag, qe->ccid,
-			   qe->data_pos, qe->data_len);
+		ctrl_info(ep, "nsid %d tag %#x ccid %#x write pos %llu len %llu",
+			  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	return ret;
 }
@@ -626,8 +624,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			.command_id = ccid,
 		};
 
-		print_err("endpoint %d ccid %#x queue busy",
-			  ep->qid, ccid);
+		ctrl_err(ep, "ccid %#x queue busy", ccid);
 		return ep->ops->send_rsp(ep, &resp);
 	}
 	memset(&qe->resp, 0, sizeof(qe->resp));
@@ -643,7 +640,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			ret = handle_connect(ep, qe, cmd);
 			break;
 		default:
-			print_err("unknown fctype %d", cmd->fabrics.fctype);
+			ctrl_err(ep, "unknown fctype %d", cmd->fabrics.fctype);
 			ret = NVME_SC_INVALID_OPCODE;
 		}
 	} else if (ep->qid != 0) {
@@ -656,7 +653,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			if (!ret)
 				return 0;
 		} else {
-			print_err("unknown nvme I/O opcode %d",
+			ctrl_err(ep, "unknown nvme I/O opcode %d",
 				  cmd->common.opcode);
 			ret = NVME_SC_INVALID_OPCODE;
 		}
@@ -665,10 +662,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		if (!ret)
 			return 0;
 	} else if (cmd->common.opcode == nvme_admin_keep_alive) {
-#ifdef DEBUG_COMMANDS
-		print_debug("nvme_keep_alive ctrl %d qid %d",
-			    ep->ctrl->cntlid, ep->qid);
-#endif
+		ctrl_info(ep, "nvme_keep_alive");
 		ret = 0;
 	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
 		ret = handle_get_log_page(ep, qe, cmd);
@@ -679,12 +673,13 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else {
-		print_err("unknown nvme admin opcode %d", cmd->common.opcode);
+		ctrl_err(ep, "unknown nvme admin opcode %d",
+			 cmd->common.opcode);
 		ret = NVME_SC_INVALID_OPCODE;
 	}
 
 	if (ret < 0) {
-		print_err("handle_request error %d\n", ret);
+		ctrl_err(ep, "handle_request error %d\n", ret);
 		return ret;
 	}
 
