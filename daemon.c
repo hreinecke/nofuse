@@ -283,7 +283,7 @@ del_ns:
 static int init_subsys(void)
 {
 	struct nofuse_subsys *subsys, *tmp_subsys;
-	struct host_iface *iface;
+	struct interface *iface;
 	int ret;
 
 	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
@@ -332,9 +332,9 @@ static int init_subsys(void)
 	return 0;
 }
 
-static struct host_iface *add_iface(const char *ifaddr, int port)
+static struct interface *add_iface(const char *ifaddr, int port)
 {
-	struct host_iface *iface;
+	struct interface *iface;
 	int ret;
 
 	iface = malloc(sizeof(*iface));
@@ -412,7 +412,7 @@ static void show_help(void)
 
 static int init_args(struct fuse_args *args)
 {
-	struct host_iface *iface = NULL;
+	struct interface *iface = NULL;
 	int tls_keyring;
 
 	debug = ctx->debug;
@@ -464,7 +464,7 @@ static int init_args(struct fuse_args *args)
 		print_err("invalid host interface configuration");
 		return 1;
 	} else if (tls_keyring) {
-		struct host_iface *iface;
+		struct interface *iface;
 
 		list_for_each_entry(iface, &iface_linked_list, node) {
 			iface->tls = true;
@@ -492,7 +492,7 @@ void free_devices(void)
 
 void free_interfaces(void)
 {
-	struct host_iface *iface, *_iface;
+	struct interface *iface, *_iface;
 
 	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node) {
 		if (iface->pthread)
@@ -521,7 +521,7 @@ int free_subsys(const char *subsysnqn)
 int main(int argc, char *argv[])
 {
 	int ret = 1;
-	struct host_iface *iface;
+	struct interface *iface;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	ctx = malloc(sizeof(struct nofuse_context));

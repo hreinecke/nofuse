@@ -2,7 +2,7 @@
 #define _TLS_H
 
 int tls_global_init(void);
-int tls_import_key(struct host_iface *iface, const char *hostnqn,
+int tls_import_key(struct interface *iface, const char *hostnqn,
 		   const char *subsysnqn, const char *keystr);
 int tls_handshake(struct endpoint *ep);
 void tls_free_endpoint(struct endpoint *ep);

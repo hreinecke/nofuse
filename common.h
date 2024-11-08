@@ -104,7 +104,7 @@ struct endpoint {
 	struct io_uring uring;
 	struct io_ops *io_ops;
 	struct xp_ops *ops;
-	struct host_iface *iface;
+	struct interface *iface;
 	struct ctrl_conn *ctrl;
 	struct ep_qe *qes;
 	union nvme_tcp_pdu *recv_pdu;
@@ -153,7 +153,7 @@ struct nofuse_namespace {
 	unsigned int blksize;
 };
 
-struct host_iface {
+struct interface {
 	struct linked_list node;
 	pthread_t pthread;
 	struct xp_ops *ops;

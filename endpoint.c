@@ -33,7 +33,7 @@ void disconnect_endpoint(struct endpoint *ep, int shutdown)
 	}
 }
 
-static int start_interface(struct host_iface *iface)
+static int start_interface(struct interface *iface)
 {
 	int ret;
 
@@ -232,7 +232,7 @@ out_disconnect:
 	return NULL;
 }
 
-static struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
+static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -273,7 +273,7 @@ out:
 
 void *run_host_interface(void *arg)
 {
-	struct host_iface *iface = arg;
+	struct interface *iface = arg;
 	struct endpoint *ep, *_ep;
 	sigset_t set;
 	int id;
