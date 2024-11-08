@@ -24,6 +24,7 @@ LINKED_LIST(device_linked_list);
 
 int stopped;
 int debug;
+int tcp_debug;
 
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
@@ -286,6 +287,8 @@ static int init_args(struct fuse_args *args)
 	int tls_keyring;
 
 	debug = ctx->debug;
+	if (ctx->debug > 1)
+		tcp_debug = 1;
 
 	if (ctx->traddr) {
 		iface = add_iface(iface->port.traddr, 8009);

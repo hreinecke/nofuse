@@ -20,6 +20,22 @@
 #define TCP_SYNCNT		7
 #define TCP_NODELAY		1
 
+#define tcp_info(e, f, x...)					\
+	if (tcp_debug) {					\
+		printf("ctrl %d qid %d: " f "\n",		\
+		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
+		       (e)->qid, ##x);				\
+		fflush(stdout);					\
+	}
+
+#define tcp_err(e, f, x...)					\
+	do {							\
+		fprintf(stderr, "ctrl %d qid %d: " f "\n",	\
+		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
+		       (e)->qid, ##x);				\
+		fflush(stderr);					\
+	} while (0)
+
 static int tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
 {
 	return read(ep->sockfd, buf, buf_len);
@@ -72,17 +88,19 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 
 	ep->send_pdu = malloc(sizeof(union nvme_tcp_pdu));
 	if (!ep->send_pdu) {
-		print_err("no memory");
+		tcp_err(ep, "no memory");
 		return -ENOMEM;
 	}
+	memset(ep->send_pdu, 0, sizeof(union nvme_tcp_pdu));
 
 	ep->recv_pdu = malloc(sizeof(union nvme_tcp_pdu));
 	if (!ep->recv_pdu) {
 		free(ep->send_pdu);
 		ep->send_pdu = NULL;
-		print_err("no memory");
+		tcp_err(ep, "no memory");
 		return -ENOMEM;
 	}
+	memset(ep->recv_pdu, 0, sizeof(union nvme_tcp_pdu));
 
 	ep->qes = calloc(NVMF_SQ_DEPTH, sizeof(struct ep_qe));
 	if (!ep->qes) {
@@ -114,9 +132,11 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 			if (len) {
 				qe->data = malloc(len);
 				if (!qe->data) {
-					print_err("Error allocating iovec base");
+					tcp_err(ep,
+						"Error allocating iovec base");
 					return NULL;
 				}
+				memset(qe->data, 0, len);
 				qe->data_pos = pos;
 				qe->data_len = len;
 				qe->iovec.iov_base = NULL;
@@ -128,8 +148,7 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 			       sizeof(union nvme_tcp_pdu));
 			memset(&qe->resp, 0, sizeof(qe->resp));
 			qe->resp.command_id = 0xffff;
-			print_info("endpoint %d acquire tag %#x",
-				   ep->qid, qe->tag);
+			tcp_info(ep, "acquire tag %#x", qe->tag);
 			return qe;
 		}
 	}
@@ -158,7 +177,7 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 	}
 	qe->iovec.iov_base = NULL;
 	qe->iovec.iov_len = 0;
-	print_info("endpoint %d release tag %#x", ep->qid, qe->tag);
+	tcp_info(ep, "release tag %#x", qe->tag);
 }
 
 static int tcp_init_listener(struct host_iface *iface)
@@ -213,8 +232,8 @@ static int tcp_init_listener(struct host_iface *iface)
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		print_err("iface %d: socket listen error %d",
-			  iface->port.port_id, errno);
+		fprintf(stderr,"iface %d: socket listen error %d",
+			iface->port.port_id, errno);
 		ret = -errno;
 		goto err;
 	}
@@ -243,7 +262,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	hdr_len = sizeof(struct nvme_tcp_hdr);
 	ret = recv(ep->sockfd, icreq, hdr_len, MSG_PEEK);
 	if (ret < 0) {
-		print_errno("icreq header peek", errno);
+		tcp_err(ep, "icreq header peek error %d", errno);
 		return -errno;
 	}
 
@@ -256,32 +275,32 @@ static int tcp_accept_connection(struct endpoint *ep)
 	ret = ep->io_ops->io_read(ep, icreq, hdr_len);
 	if (ret < 0) {
 		if (errno != EAGAIN)
-			print_errno("icreq header read", errno);
+			tcp_err(ep, "icreq header read error %d", errno);
 		return -errno;
 	}
 	if (ret != hdr_len) {
-		print_err("icreq short header read, %d bytes missing",
-			  hdr_len - ret);
+		tcp_err(ep, "icreq short header read, %d bytes missing",
+			hdr_len - ret);
 		ret = (ret < 0) ? -EAGAIN : -ENODATA;
 		goto out_free;
 	}
 
 	if (icreq->hdr.type != nvme_tcp_icreq) {
-		print_err("icreq header type mismatch (%02x)",
-			  icreq->hdr.type);
+		tcp_err(ep, "icreq header type mismatch (%02x)",
+			icreq->hdr.type);
 		ret = -ENOMSG;
 		goto out_free;
 	}
 	len = icreq->hdr.hlen - hdr_len;
 	ret = ep->io_ops->io_read(ep, (u8 *)icreq + hdr_len, len);
 	if (ret < 0) {
-		print_err("icreq read error %d", errno);
+		tcp_err(ep, "icreq read error %d", errno);
 		ret = -errno;
 		goto out_free;
 	}
 	if (ret != len) {
-		print_err("icreq short read, %d bytes missing",
-			  len - ret);
+		tcp_err(ep, "icreq short read, %d bytes missing",
+			len - ret);
 		ret = -ENODATA;
 		goto out_free;
 	}
@@ -291,8 +310,8 @@ static int tcp_accept_connection(struct endpoint *ep)
 	}
 	ep->maxr2t = le32toh(icreq->maxr2t) + 1;
 
-	print_info("read %d icreq bytes (type %d, maxr2t %u)",
-		   icreq->hdr.hlen, icreq->hdr.type, icreq->maxr2t);
+	tcp_info(ep, "read %d icreq bytes (type %d, maxr2t %u)",
+		 icreq->hdr.hlen, icreq->hdr.type, icreq->maxr2t);
 
 	icrep = malloc(sizeof(*icrep));
 	if (!icrep) {
@@ -312,15 +331,15 @@ static int tcp_accept_connection(struct endpoint *ep)
 
 	len = ep->io_ops->io_write(ep, icrep, sizeof(*icrep));
 	if (len < 0) {
-		print_errno("icresp write", errno);
+		tcp_err(ep, "icresp write error %d", errno);
 		return -errno;
 	}
 	if (len != sizeof(*icrep)) {
-		print_err("icrep short write, %ld bytes missing",
-			  sizeof(*icrep) - len);
+		tcp_err(ep, "icrep short write, %ld bytes missing",
+			sizeof(*icrep) - len);
 		ret = -ENODATA;
 	} else {
-		print_info("wrote %d icresp bytes", len);
+		tcp_info(ep, "wrote %d icresp bytes", len);
 		ret = 0;
 	}
 
@@ -378,20 +397,20 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 		ret = poll(&fds, 1, ep->kato_interval);
 		if (ret <= 0) {
 			if (ret < 0) {
-				print_err("poll returned %d", errno);
+				tcp_err(ep, "poll returned %d", errno);
 				return -errno;
 			}
 			if (--ep->kato_countdown > 0)
 				continue;
-			print_err("poll timeout");
+			tcp_err(ep, "poll timeout");
 			return -ETIMEDOUT;
 		}
 #endif
-		print_info("ep %d read %llu bytes",
-			   ep->qid, _len - offset);
+		tcp_info(ep, "read %llu bytes",
+			_len - offset);
 		len = ep->io_ops->io_read(ep, (u8 *)buf + offset, _len - offset);
 		if (len < 0) {
-			print_err("read returned %d", errno);
+			tcp_err(ep, "read returned %d", errno);
 			return -errno;
 		}
 		offset += len;
@@ -405,14 +424,13 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
-	print_info("ctrl %d qid %d c2h data cid %x offset %llu len %lu/%llu",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   qe->ccid, qe->data_pos, qe->iovec.iov_len,
-		   qe->data_remaining);
+	tcp_info(ep, "c2h data cid %x offset %llu len %lu/%llu",
+		  qe->ccid, qe->data_pos, qe->iovec.iov_len,
+		  qe->data_remaining);
 
 	if (!qe->data_remaining) {
-		print_err("Nothing to send, %lu bytes left",
-			  qe->iovec.iov_len);
+		tcp_err(ep, "Nothing to send, %lu bytes left",
+			 qe->iovec.iov_len);
 		return 0;
 	}
 	memset(pdu, 0, sizeof(*pdu));
@@ -425,8 +443,8 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	pdu->data_offset = htole32(qe->data_pos);
 	pdu->data_length = htole32(qe->iovec.iov_len);
 	pdu->command_id = qe->ccid;
-	print_info("c2h hdr init %u/%u bytes",
-		   pdu->hdr.hlen, pdu->hdr.plen);
+	tcp_info(ep, "c2h hdr init %u/%u bytes",
+		 pdu->hdr.hlen, pdu->hdr.plen);
 
 	while (send_pdu_len < pdu->hdr.hlen) {
 		u8 *data = (u8 *)pdu + send_pdu_len;
@@ -434,26 +452,26 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 
 		len = ep->io_ops->io_write(ep, data, data_len);
 		if (len < 0) {
-			print_err("c2h hdr write returned %d", errno);
+			tcp_err(ep, "c2h hdr write returned %d", errno);
 			return -errno;
 		}
 		if (len == 0) {
-			print_err("c2h hdr write connection closed");
+			tcp_err(ep, "c2h hdr write connection closed");
 			return -ENODATA;
 		}
 		send_pdu_len += len;
-		print_info("c2h hdr wrote %d bytes", len);
+		tcp_info(ep, "c2h hdr wrote %d bytes", len);
 	}
 	while (qe->iovec.iov_len) {
 		u8 *data = qe->iovec.iov_base;
 
 		len = ep->io_ops->io_write(ep, data, qe->iovec.iov_len);
 		if (len < 0) {
-			print_err("c2h data write returned %d", errno);
+			tcp_err(ep, "c2h data write returned %d", errno);
 			return -errno;
 		}
 		if (len == 0) {
-			print_err("c2h data write connection closed");
+			tcp_err(ep, "c2h data write connection closed");
 			return -ENODATA;
 		}
 		qe->data_remaining -= len;
@@ -461,7 +479,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 		qe->iovec.iov_base = data;
 		qe->iovec.iov_len -= len;
 		qe->iovec_offset += len;
-		print_info("c2h data wrote %d bytes", len);
+		tcp_info(ep, "c2h data wrote %d bytes", len);
 	}
 
 	return 0;
@@ -475,16 +493,13 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 
 	qe = ep->ops->get_tag(ep, tag);
 	if (!qe) {
-		print_err("ctrl %d qod %d invalid ttag %#x",
-			  ep->ctrl ? ep->ctrl->cntlid : -1,
-			  ep->qid, tag);
+		tcp_err(ep, "invalid ttag %#x", tag);
 		return -EINVAL;
 	}
 
-	print_info("ctrl %d qid %d r2t cid %#x ttag %#x offset %llu len %lu",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   qe->ccid, qe->tag, qe->iovec_offset,
-		   qe->iovec.iov_len);
+	tcp_info(ep, "r2t cid %#x ttag %#x offset %llu len %lu",
+		 qe->ccid, qe->tag, qe->iovec_offset,
+		 qe->iovec.iov_len);
 
 	memset(pdu, 0, sizeof(*pdu));
 	pdu->hdr.type = nvme_tcp_r2t;
@@ -501,12 +516,12 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 
 	len = ep->io_ops->io_write(ep, pdu, sizeof(*pdu));
 	if (len < 0) {
-		print_err("r2t write returned %d", errno);
+		tcp_err(ep, "r2t write returned %d", errno);
 		return -errno;
 	}
 	if (len < sizeof(*pdu)) {
-		print_err("short r2t write, %d bytes missing",
-			  (int)sizeof(*pdu) - len);
+		tcp_err(ep, "short r2t write, %d bytes missing",
+			(int)sizeof(*pdu) - len);
 		return -EAGAIN;
 	}
 	return 0;
@@ -519,8 +534,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	struct nvme_tcp_term_pdu *term_pdu = &ep->send_pdu->term;
 	int len, plen;
 
-	print_info("ctrl %d qid %d c2h term fes %u offset pdu %u parm %u",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+	tcp_info(ep, "c2h term fes %u offset pdu %u parm %u",
 		   fes, pdu_offset, parm_offset);
 
 	if (!pdu)
@@ -538,23 +552,23 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 
 	len = ep->io_ops->io_write(ep, term_pdu, sizeof(*term_pdu));
 	if (len < 0) {
-		print_err("c2h_term write returned %d", errno);
+		tcp_err(ep, "c2h_term write returned %d", errno);
 		return -errno;
 	}
 	if (len != sizeof(*term_pdu)) {
-		print_err("c2h_term short write; %d bytes missing",
-			  plen - len);
+		tcp_err(ep, "c2h_term short write; %d bytes missing",
+			 plen - len);
 		return -EAGAIN;
 	}
 	if (pdu) {
 		len = ep->io_ops->io_write(ep, pdu, pdu_len);
 		if (len < 0) {
-			print_err("c2h term pdu write returned %d", errno);
+			tcp_err(ep, "c2h term pdu write returned %d", errno);
 			return -errno;
 		}
 		if (len != pdu_len) {
-			print_err("c2h term short write; %d bytes missing",
-				  pdu_len - len);
+			tcp_err(ep, "c2h term short write; %d bytes missing",
+				 pdu_len - len);
 			return -EAGAIN;
 		}
 	}
@@ -571,9 +585,8 @@ static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
 
-	print_info("ctrl %d qid %d rsp tag %#x status %04x",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   comp->command_id, comp->status);
+	tcp_info(ep, "rsp tag %#x status %04x",
+		  comp->command_id, comp->status);
 
 	pdu->hdr.type = nvme_tcp_rsp;
 	pdu->hdr.flags = 0;
@@ -583,10 +596,10 @@ static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 
 	memcpy(&(pdu->cqe), comp, sizeof(struct nvme_completion));
 
-	print_info("ep %d write %u pdu bytes", ep->qid, pdu->hdr.plen);
+	tcp_info(ep, "write %u pdu bytes", pdu->hdr.plen);
 	len = ep->io_ops->io_write(ep, pdu, pdu->hdr.plen);
 	if (len != sizeof(*pdu)) {
-		print_err("write completion returned %d", errno);
+		tcp_err(ep, "tcp_ep_write returned %d", errno);
 		return -errno;
 	}
 
@@ -602,37 +615,33 @@ static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 	struct ep_qe *qe;
 	int ret;
 
-	print_info("ctrl %d qid %d h2c data tag %#x pos %u len %u",
-		   ep->ctrl->cntlid, ep->qid, ttag, data_offset, data_len);
+	tcp_info(ep, "h2c data tag %#x pos %u len %u",
+		  ttag, data_offset, data_len);
 	qe = ep->ops->get_tag(ep, ttag);
 	if (!qe) {
-		print_err("ctrl %d qid %d h2c invalid ttag %#x",
-			  ep->ctrl->cntlid, ep->qid, ttag);
+		tcp_err(ep, "h2c invalid ttag %#x", ttag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
-				offset_of(struct nvme_tcp_data_pdu, ttag),
+				offsetof(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 	if (data_offset != qe->iovec_offset) {
-		print_err("ctrl %d qid %d h2c offset mismatch, is %u exp %llu",
-			  ep->ctrl->cntlid, ep->qid,
-			  data_offset, qe->iovec_offset);
+		tcp_err(ep, "h2c offset mismatch, is %u exp %llu",
+			 data_offset, qe->iovec_offset);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
-				offset_of(struct nvme_tcp_data_pdu, data_offset),
+				offsetof(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 	if (data_len > qe->iovec.iov_len) {
-		print_err("ctrl %d qid %d h2c len overflow, is %u exp %llu",
-			  ep->ctrl->cntlid, ep->qid,
-			  data_len, qe->data_remaining);
+		tcp_err(ep, "h2c len overflow, is %u exp %llu",
+			 data_len, qe->data_remaining);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
-				offset_of(struct nvme_tcp_data_pdu, data_offset),
+				offsetof(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 
 	ret = tcp_rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 	if (ret < 0) {
-		print_err("ctrl %d qid %d h2c data read failed, error %d",
-			  ep->ctrl->cntlid, ep->qid, errno);
+		tcp_err(ep, "h2c data read failed, error %d", errno);
 		ret = NVME_SC_SGL_INVALID_DATA;
 		goto out_rsp;
 	}
@@ -661,49 +670,53 @@ static int tcp_read_msg(struct endpoint *ep)
 
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
 		msg_len = sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len;
-		print_info("ep %d read %u msg bytes", ep->qid, msg_len);
+		tcp_info(ep, "read %u msg bytes", msg_len);
 		len = ep->io_ops->io_read(ep, msg, msg_len);
 		if (len < 0) {
-			print_errno("failed to read msg hdr", errno);
+			tcp_err(ep, "failed to read msg hdr, error %d",
+				errno);
 			return -errno;
 		}
 		/* No data received, disconnected */
-		if (!len)
+		if (!len) {
+			tcp_info(ep, "disconnect");
 			return -ENODATA;
+		}
 
 		ep->recv_pdu_len += len;
 		msg_len -= len;
 		if (msg_len) {
-			print_err("short msg hdr read, %lu bytes missing",
-				  sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len);
+			tcp_err(ep, "short msg hdr read, %lu bytes missing",
+				sizeof(struct nvme_tcp_hdr) - ep->recv_pdu_len);
 			return -EAGAIN;
 		}
 	}
 	if (!ep->recv_pdu->common.hlen) {
-		print_err("corrupt hdr, hlen %d size %ld",
-			  ep->recv_pdu->common.hlen,
-			  sizeof(struct nvme_tcp_hdr));
+		tcp_err(ep, "corrupt hdr, hlen %d size %ld",
+			ep->recv_pdu->common.hlen,
+			sizeof(struct nvme_tcp_hdr));
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
-					offset_of(struct nvme_tcp_hdr, hlen),
+					offsetof(struct nvme_tcp_hdr, hlen),
 					0, false, NULL, 0);
 	}
 	msg_len = ep->recv_pdu->common.hlen - ep->recv_pdu_len;
 	if (msg_len) {
 		msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 
-		print_info("qid %d read %u pdu bytes",
-			   ep->qid, msg_len);
+		tcp_info(ep, "read %u pdu bytes", msg_len);
 		len = ep->io_ops->io_read(ep, msg, msg_len);
 		if (len == 0)
 			return -EAGAIN;
 		if (len < 0) {
-			print_errno("failed to read msg payload", errno);
+			tcp_err(ep, "failed to read msg payload error %d",
+				errno);
 			return -errno;
 		}
 		ep->recv_pdu_len += len;
 		msg_len -= len;
 		if (msg_len > 0) {
-			print_err("short msg payload read, %u bytes missing", msg_len);
+			tcp_err(ep, "short msg payload read, %u bytes missing",
+			       msg_len);
 			return -EAGAIN;
 		}
 		ep->recv_state = HANDLE_PDU;
@@ -722,15 +735,14 @@ int tcp_handle_msg(struct endpoint *ep)
 	if (hdr->type == nvme_tcp_h2c_term) {
 		ep->recv_state = RECV_PDU;
 		ep->recv_pdu_len = 0;
-		print_info("ctrl %d qid %d h2c term, disconnecting",
-			   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid);
+		tcp_info(ep, "h2c term, disconnecting");
 		return -ENOTCONN;
 	}
 
 	if (hdr->type != nvme_tcp_cmd) {
-		print_err("unknown PDU type %x", hdr->type);
+		tcp_err(ep, "unknown PDU type %x", hdr->type);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
-					 offset_of(struct nvme_tcp_hdr, type),
+					 offsetof(struct nvme_tcp_hdr, type),
 					 0, false, pdu, hdr->hlen);
 	}
 
@@ -739,9 +751,8 @@ int tcp_handle_msg(struct endpoint *ep)
 
 static int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len)
 {
-	print_info("ctrl %d qid %d write cid %x offset %llu len %llu",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   qe->ccid, qe->data_pos, data_len);
+	tcp_info(ep, "write cid %x offset %llu len %llu",
+		  qe->ccid, qe->data_pos, data_len);
 
 	qe->data_remaining = data_len;
 	qe->iovec.iov_base = qe->data;
