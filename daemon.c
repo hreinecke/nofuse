@@ -89,80 +89,6 @@ struct nofuse_subsys *find_subsys(const char *subsysnqn)
 	return NULL;
 }
 
-static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
-{
-	struct nofuse_namespace *ns;
-	struct stat st;
-	int ret;
-
-	ns = malloc(sizeof(*ns));
-	if (!ns) {
-		errno = ENOMEM;
-		return -1;
-	}
-	memset(ns, 0, sizeof(*ns));
-
-	ns->fd = open(filename, O_RDWR | O_EXCL);
-	if (ns->fd < 0) {
-		perror("open");
-		free(ns);
-		return -1;
-	}
-	if (fstat(ns->fd, &st) < 0) {
-		perror("fstat");
-		close(ns->fd);
-		free(ns);
-		return -1;
-	}
-	ns->size = st.st_size;
-	ns->blksize = st.st_blksize;
-	ns->ops = uring_register_ops();
-
-	ns->subsys = subsys;
-	ns->nsid = ++subsys->max_namespaces;
-	ret = inode_add_namespace(subsys->nqn, ns->nsid);
-	if (ret < 0) {
-		subsys->max_namespaces--;
-		close(ns->fd);
-		free(ns);
-		return ret;
-	}
-	inode_set_namespace_attr(subsys->nqn, ns->nsid,
-				 "device_path", filename);
-	list_add_tail(&ns->node, &device_linked_list);
-	return 0;
-}
-
-int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
-{
-	struct nofuse_namespace *ns;
-	int ret;
-
-	ns = malloc(sizeof(*ns));
-	if (!ns) {
-		errno = ENOMEM;
-		return -1;
-	}
-	memset(ns, 0, sizeof(*ns));
-	ns->size = size * 1024 * 1024; /* size in MB */
-	ns->blksize = 4096;
-	ns->fd = -1;
-	ns->ops = null_register_ops();
-	ns->subsys = subsys;
-	ns->nsid = ++subsys->max_namespaces;
-	ret = inode_add_namespace(subsys->nqn, ns->nsid);
-	if (ret < 0) {
-		free(ns);
-		return ret;
-	}
-	inode_set_namespace_attr(subsys->nqn, ns->nsid,
-				 "device_path", "/dev/null");
-	inode_set_namespace_attr(subsys->nqn, ns->nsid,
-				 "device_enable", "1");
-	list_add_tail(&ns->node, &device_linked_list);
-	return 0;
-}
-
 int add_namespace(struct nofuse_subsys *subsys, int nsid)
 {
 	struct nofuse_namespace *ns;
@@ -183,7 +109,7 @@ int add_namespace(struct nofuse_subsys *subsys, int nsid)
 	if (nsid > subsys->max_namespaces)
 		subsys->max_namespaces = nsid;
 	list_add_tail(&ns->node, &device_linked_list);
-	return 0;
+	return nsid;
 }
 
 int enable_namespace(const char *subsysnqn, int nsid)
@@ -236,9 +162,17 @@ int enable_namespace(const char *subsysnqn, int nsid)
 	}
 	ret = inode_set_namespace_attr(subsysnqn, nsid,
 				       "device_enable", "1");
-	if (ret < 0)
+	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d enable error %d\n",
 			subsysnqn, nsid, ret);
+		if (ns->fd > 0) {
+			close(ns->fd);
+			ns->fd = -1;
+		}
+		ns->size = 0;
+		ns->blksize = 0;
+		ns->ops = NULL;
+	}
 	return ret;
 }
 
@@ -295,6 +229,55 @@ int del_namespace(const char *subsysnqn, int nsid)
 		close(ns->fd);
 	free(ns);
 	return 0;
+}
+
+static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
+{
+	int ret, nsid;
+
+        nsid = add_namespace(subsys, ++subsys->max_namespaces);
+	if (nsid < 0) {
+		subsys->max_namespaces--;
+		return nsid;
+	}
+
+	ret = inode_set_namespace_attr(subsys->nqn, nsid,
+				       "device_path", filename);
+	if (ret < 0)
+		goto del_ns;
+	ret = enable_namespace(subsys->nqn, nsid);
+	if (ret < 0)
+		goto del_ns;
+	return 0;
+del_ns:
+	del_namespace(subsys->nqn, nsid);
+	subsys->max_namespaces--;
+	return ret;
+}
+
+int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
+{
+	char size_str[16];
+	int ret, nsid;
+
+	sprintf(size_str, "%lu", size);
+	nsid = add_namespace(subsys, ++subsys->max_namespaces);
+	if (nsid < 0) {
+		subsys->max_namespaces--;
+		return nsid;
+	}
+	ret = inode_set_namespace_attr(subsys->nqn, nsid,
+				       "device_path", size_str);
+	if (ret < 0)
+		goto del_ns;
+	ret = enable_namespace(subsys->nqn, nsid);
+	if (ret < 0)
+		goto del_ns;
+	return 0;
+del_ns:
+	del_namespace(subsys->nqn, nsid);
+	subsys->max_namespaces--;
+	return ret;
 }
 
 static int init_subsys(void)
