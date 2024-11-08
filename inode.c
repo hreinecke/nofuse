@@ -214,7 +214,7 @@ static const char *init_sql[NUM_TABLES] = {
 "nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
-"CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
 "addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
 "addr_treq char(32), "
 "addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
@@ -805,24 +805,23 @@ int inode_del_namespace(const char *subsysnqn, int nsid)
 }
 
 static char add_port_sql[] =
-	"INSERT INTO ports (addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, ctime)"
-	" VALUES ('%s','%s','%s','%s','%s','%s', CURRENT_TIMESTAMP);";
-
-static char select_portid_sql[] =
-	"SELECT id FROM ports "
-	"WHERE addr_trtype = '%s' AND addr_adrfam = '%s' AND "
-	"addr_traddr = '%s' AND addr_trsvcid = '%s';";
-
-static char update_traddr_sql[] =
-	"UPDATE ports SET traddr = '%s' "
-	"WHERE id = '%d';";
+	"INSERT INTO ports (id, addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, ctime)"
+	" VALUES ('%d', '%s','%s','%s','%s','%s','%s', CURRENT_TIMESTAMP);";
 
 int inode_add_port(struct nofuse_port *port)
 {
 	char *sql;
-	int ret, portid;
+	int ret;
 
-	if (!strlen(port->traddr) && strcmp(port->trtype, "loop")) {
+	if (!port->port_id) {
+		fprintf(stderr, "no port id specified\n");
+		return -EINVAL;
+	}
+	if (!strcmp(port->trtype, "loop") &&
+	    !strlen(port->traddr))
+		sprintf(port->traddr, "%d", port->port_id);
+
+	if (!strlen(port->traddr)) {
 		fprintf(stderr, "no traddr specified\n");
 		return -EINVAL;
 	}
@@ -845,52 +844,14 @@ int inode_add_port(struct nofuse_port *port)
 			memset(port->trsvcid, 0, sizeof(port->trsvcid));
 		}
 	}
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret < 0)
-		return ret;
-
-	ret = asprintf(&sql, add_port_sql, port->trtype, port->adrfam,
-		       port->treq, port->traddr, port->trsvcid,
+	ret = asprintf(&sql, add_port_sql, port->port_id, port->trtype,
+		       port->adrfam, port->treq, port->traddr, port->trsvcid,
 		       port->tsas);
 	if (ret < 0)
-		goto rollback;
+		return ret;
 
 	ret = sql_exec_simple(sql);
 	free(sql);
-	ret = asprintf(&sql, select_portid_sql, port->trtype,
-		       port->adrfam, port->traddr, port->trsvcid);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_int(sql, "id", &portid);
-	if (ret < 0)
-		goto rollback;
-
-	fprintf(stderr, "Generated port id %d\n", portid);
-	port->port_id = portid;
-
-	if (!strlen(port->traddr)) {
-		fprintf(stderr, "port %d: update traddr\n", port->port_id);
-		sprintf(port->traddr, "%d", port->port_id);
-		ret = asprintf(&sql, update_traddr_sql, port->traddr,
-			       port->port_id);
-		if (ret < 0)
-			goto rollback;
-		ret = sql_exec_simple(sql);
-		free(sql);
-		if (ret < 0)
-			goto rollback;
-	}
-	ret = sql_exec_simple("COMMIT TRANSACTION;");
-	if (ret)
-		return ret;
-	if (port->port_id > 0xfffc) {
-		fprintf(stderr, "resetting port_id counter\n");
-		ret = sql_exec_simple("UPDATE sqlite_sequence SET seq = 1 "
-				      "WHERE name = 'port';");
-	}
-	return ret;
-rollback:
-	ret = sql_exec_simple("ROLLBACK TRANSACTION;");
 	return ret;
 }
 

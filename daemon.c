@@ -332,14 +332,14 @@ static int init_subsys(void)
 	return 0;
 }
 
-static struct interface *add_iface(const char *ifaddr, int port)
+int add_iface(const char *ifaddr, int id, int port)
 {
 	struct interface *iface;
 	int ret;
 
 	iface = malloc(sizeof(*iface));
 	if (!iface)
-		return NULL;
+		return -ENOMEM;
 	memset(iface, 0, sizeof(*iface));
 	strcpy(iface->port.traddr, ifaddr);
 	strcpy(iface->port.trtype, "tcp");
@@ -352,32 +352,35 @@ static struct interface *add_iface(const char *ifaddr, int port)
 	} else {
 		print_err("invalid transport address '%s'", ifaddr);
 		free(iface);
-		return NULL;
+		return -EINVAL;
 	}
 	iface->port_num = port;
+	iface->port.port_id = id;
 	sprintf(iface->port.trsvcid, "%d", port);
 	ret = inode_add_port(&iface->port);
 	if (ret < 0) {
 		print_err("cannot add port, error %d\n", ret);
 		free(iface);
-		return NULL;
+		return ret;
 	}
 	ret = inode_add_ana_group(iface->port.port_id, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
 		print_err("cannot add ana group to port, error %d\n", ret);
 		inode_del_port(&iface->port);
 		free(iface);
-		return NULL;
+		return ret;
 	}
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
+	list_add_tail(&iface->node, &iface_linked_list);
+
 	printf("iface %d: listening on %s address %s port %s\n",
 	       iface->port.port_id,
 	       iface->adrfam == AF_INET ? "ipv4" : "ipv6",
 	       iface->port.traddr, iface->port.trsvcid);
 	fflush(stdout);
 
-	return iface;
+	return 0;
 }
 
 #define OPTION(t, p)				\
@@ -412,8 +415,9 @@ static void show_help(void)
 
 static int init_args(struct fuse_args *args)
 {
-	struct interface *iface = NULL;
+	const char *traddr = "127.0.0.1";
 	int tls_keyring;
+	int num_ifaces = 0, ret;
 
 	debug = ctx->debug;
 	if (debug) {
@@ -421,30 +425,25 @@ static int init_args(struct fuse_args *args)
 		cmd_debug = 1;
 	}
 
-	if (ctx->traddr) {
-		iface = add_iface(ctx->traddr, 8009);
-		if (!iface) {
-			print_err("Invalid transport address %s\n",
-				  ctx->traddr);
-			return 1;
-		}
-		list_add_tail(&iface->node, &iface_linked_list);
-	} else {
-		iface = add_iface("127.0.0.1", 8009);
-		if (!iface) {
-			print_err("cannot create default interface\n");
-			return 1;
-		}
-		list_add_tail(&iface->node, &iface_linked_list);
+	if (!ctx->traddr)
+		ctx->traddr = strdup(traddr);
+
+	ret = add_iface(ctx->traddr, num_ifaces + 1, 8009);
+	if (ret < 0) {
+		fprintf(stderr, "failed to add interface for %s\n",
+			ctx->traddr);
+		return 1;
 	}
+	num_ifaces++;
 
 	if (ctx->portnum) {
-		iface = add_iface(iface->port.traddr, ctx->portnum);
-		if (!iface) {
+		ret = add_iface(ctx->traddr, num_ifaces + 1,
+				ctx->portnum);
+		if (ret < 0) {
 			print_err("Invalid port %d\n", ctx->portnum);
 			return 1;
 		}
-		list_add_tail(&iface->node, &iface_linked_list);
+		num_ifaces++;
 	}
 
 	if (ctx->hostnqn)
