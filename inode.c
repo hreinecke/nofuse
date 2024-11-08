@@ -1052,7 +1052,6 @@ int inode_add_ana_group(int port, int grpid, int ana_state)
 	ret = asprintf(&sql, add_ana_group_sql, grpid, port, ana_state);
 	if (ret < 0)
 		return ret;
-	printf("%s: %s\n", __func__, sql);
 	ret = sql_exec_simple(sql);
 	free(sql);
 
@@ -1522,7 +1521,6 @@ int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 	return num;
 }
 
-#if 0
 struct sql_disc_entry_parm {
 	u8 *buffer;
 	int cur;
@@ -1548,7 +1546,7 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 	memset(entry, 0, sizeof(*entry));
 	entry->cntlid = (u16)NVME_CNTLID_DYNAMIC;
 	entry->asqsz = htole16(32);
-	entry->subtype = NVME_NQN_NVME;
+	entry->subtype = NVME_NQN_NVM;
 	entry->treq = NVMF_TREQ_NOT_SPECIFIED;
 	entry->tsas.tcp.sectype = NVMF_TCP_SECTYPE_NONE;
 
@@ -1662,7 +1660,7 @@ next:
 
 static char host_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, p.subtype, p.trtype, p.traddr, p.trsvcid, p.treq, p.tsas "
+	"p.id, p.addr_subtype, p.addr_trtype, p.addr_traddr, p.addr_trsvcid, p.addr_treq, p.addr_tsas "
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
@@ -1670,7 +1668,7 @@ static char host_disc_entry_sql[] =
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE h.nqn LIKE '%s';";
 
-int discdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
+int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 {
 	struct sql_disc_entry_parm parm = {
 		.buffer = log,
@@ -1684,7 +1682,7 @@ int discdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 	if (ret < 0)
 		return ret;
 	printf("Display disc entries for %s\n", hostnqn);
-	ret = sqlite3_exec(nvme_db, sql, sql_disc_entry_cb, &parm, &errmsg);
+	ret = sqlite3_exec(inode_db, sql, sql_disc_entry_cb, &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
 		fprintf(stderr, "SQL error: %s\n", errmsg);
@@ -1696,7 +1694,7 @@ int discdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 	if (ret < 0)
 		return parm.cur;
 	printf("Display disc entries for %s\n", NVME_DISC_SUBSYS_NAME);
-	ret = sqlite3_exec(nvme_db, sql, sql_disc_entry_cb, &parm, &errmsg);
+	ret = sqlite3_exec(inode_db, sql, sql_disc_entry_cb, &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
 		fprintf(stderr, "SQL error: %s\n", errmsg);
@@ -1710,40 +1708,18 @@ int discdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 static char host_genctr_sql[] =
 	"SELECT genctr FROM hosts WHERE nqn LIKE '%s';";
 
-int discdb_host_genctr(const char *hostnqn)
+int inode_host_genctr(const char *hostnqn, int *genctr)
 {
-	char *sql, *errmsg;
-	struct sql_int_value_parm parm = {
-		.col = "genctr",
-		.val = 0,
-		.done = 0,
-	};
+	char *sql;
 	int ret;
 
 	ret = asprintf(&sql, host_genctr_sql, hostnqn);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(nvme_db, sql, sql_int_value_cb,
-			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		parm.done = -EINVAL;
-	}
+	ret = sql_exec_int(sql, "genctr", genctr);
 	free(sql);
-	if (parm.done < 0) {
-		errno = -parm.done;
-		ret = -1;
-	} else if (!parm.done) {
-		return 0;
-	} else {
-		ret = parm.val;
-	}
 	return ret;
 }
-
-#endif
 
 int inode_open(const char *filename)
 {
