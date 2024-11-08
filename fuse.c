@@ -4,6 +4,7 @@
 #include <fuse.h>
 #include <stdio.h>
 #include <string.h>
+#include <libgen.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
@@ -715,6 +716,74 @@ out_free:
 	return ret;
 }
 
+static int nofuse_symlink(const char *from, const char *to)
+{
+	char *p, *pathbuf, *root, *attr;
+	int ret = -ENOENT;
+
+	pathbuf = strdup(to);
+	if (!pathbuf)
+		return -ENOMEM;
+	printf("%s: path %s from %s\n",
+	       __func__, pathbuf, from);
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		const char *port, *subsys;
+		char *eptr = NULL;
+		int portid;
+
+		port = strtok(NULL, "/");
+		if (!port)
+			goto out_free;
+		portid = strtoul(port, &eptr, 10);
+		if (port == eptr)
+			goto out_free;
+		attr = strtok(NULL, "/");
+		if (!attr)
+			goto out_free;
+		if (strcmp(attr, "subsystems"))
+			goto out_free;
+		subsys = strtok(NULL, "/");
+		if (!subsys)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		printf("%s: subsys %s portid %d\n",
+		       __func__, subsys, portid);
+		ret = inode_add_subsys_port(subsys, portid);
+		if (ret < 0)
+			goto out_free;
+		ret = 0;
+	} else if (!strcmp(root, subsys_dir)) {
+		const char *subsys, *host;
+
+		subsys = strtok(NULL, "/");
+		if (!subsys)
+			goto out_free;
+		attr = strtok(NULL, "/");
+		if (!attr)
+			goto out_free;
+		if (strcmp(attr, "allowed_hosts"))
+			goto out_free;
+		host = strtok(NULL, "/");
+		if (!host)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		ret = inode_add_host_subsys(host, subsys);
+		if (ret < 0)
+			goto out_free;
+		ret = 0;
+	}
+out_free:
+	free(pathbuf);
+	return ret;
+}
+
 static int parse_namespace_attr(const char *p, int *nsid,
 				const char **attr)
 {
@@ -1163,6 +1232,7 @@ static const struct fuse_operations nofuse_oper = {
 	.mkdir		= nofuse_mkdir,
 	.rmdir		= nofuse_rmdir,
 	.readlink	= nofuse_readlink,
+	.symlink	= nofuse_symlink,
 	.open		= nofuse_open,
 	.read		= nofuse_read,
 	.write		= nofuse_write,
