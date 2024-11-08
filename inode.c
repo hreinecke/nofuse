@@ -1485,7 +1485,7 @@ static char allow_any_sql[] =
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
-	"WHERE s.allow_any = '1' AND s.nqn = '%s' AND "
+	"WHERE s.attr_allow_any_host = '1' AND s.nqn = '%s' AND "
 	"p.addr_trtype = '%s' AND p.addr_traddr = '%s' AND p.addr_trsvcid = '%s';";
 
 int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
@@ -1660,13 +1660,25 @@ next:
 
 static char host_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, p.addr_subtype, p.addr_trtype, p.addr_traddr, p.addr_trsvcid, p.addr_treq, p.addr_tsas "
+	"p.id, p.addr_subtype AS subtype, p.addr_trtype AS trtype, "
+	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
+	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
 	"INNER JOIN hosts AS h ON hs.host_id = h.id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE h.nqn LIKE '%s';";
+
+static char any_disc_entry_sql[] =
+	"SELECT s.nqn AS subsys_nqn, "
+	"p.id, p.addr_subtype AS subtype, p.addr_trtype AS trtype, "
+	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
+	"p.addr_treq AS treq, p.addr_tsas AS tsas "
+	"FROM subsys_port AS sp "
+	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN ports AS p ON sp.port_id = p.id "
+	"WHERE s.attr_allow_any_host = '1';";
 
 int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 {
@@ -1690,17 +1702,15 @@ int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 	}
 	free(sql);
 	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
-	ret = asprintf(&sql, host_disc_entry_sql, NVME_DISC_SUBSYS_NAME);
-	if (ret < 0)
-		return parm.cur;
-	printf("Display disc entries for %s\n", NVME_DISC_SUBSYS_NAME);
-	ret = sqlite3_exec(inode_db, sql, sql_disc_entry_cb, &parm, &errmsg);
+
+	printf("Display disc entries for any host\n");
+	ret = sqlite3_exec(inode_db, any_disc_entry_sql,
+			   sql_disc_entry_cb, &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
 		fprintf(stderr, "SQL error: %s\n", errmsg);
 		sqlite3_free(errmsg);
 	}
-	free(sql);
 	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
 	return parm.cur;
 }
