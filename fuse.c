@@ -539,7 +539,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			ret = -EINVAL;
 			goto out_free;
 		}
-		ret = open_ram_ns(subsys, nsid, 512);
+		ret = add_namespace(subsys, nsid);
 	}
 out_free:
 	free(pathbuf);
@@ -934,13 +934,19 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 {
 	const char *p, *root, *attr;
 	char *pathbuf, *value, *ptr;
-	int ret = -ENOENT, _len = len;
+	int ret = -ENOENT;
+	size_t _len = len;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 
-	value = strdup(buf);
+	value = malloc(strlen(buf) + 1);
+	if (!value)
+		return -ENOMEM;
+	memset(value, 0, strlen(buf));
+	strncpy(value, buf, len);
+
 	while (strlen(value)) {
 		ptr = value + strlen(value);
 		ptr--;
@@ -950,7 +956,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		_len--;
 	}
 
-	printf("%s: path %s buf %s len %d off %ld\n", __func__,
+	printf("%s: path %s buf %s len %ld off %ld\n", __func__,
 	       pathbuf, value, _len, offset);
 	root = strtok(pathbuf, "/");
 	if (!root)
@@ -1038,13 +1044,15 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			ret = -ENOENT;
 			goto out_free;
 		}
-		printf("%s: subsys %s nsid %d attr %s\n", __func__,
-		       subsysnqn, nsid, attr);
+
+		printf("%s: subsys %s nsid %d attr %s value %s\n", __func__,
+		       subsysnqn, nsid, attr, value);
+
 		if (!strcmp(attr, "ana_grpid")) {
 			int ana_grp, new_ana_grp;
 			char *eptr;
 
-			ana_grp = strtoul(buf, &eptr, 10);
+			ana_grp = strtoul(value, &eptr, 10);
 			if (buf == eptr) {
 				ret = -EINVAL;
 				goto out_free;
@@ -1062,9 +1070,30 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				goto out_free;
 			}
 			ret = len;
+		} else if (!strcmp(attr, "enable")) {
+			int enable;
+			char *eptr = NULL;
+
+			enable = strtoul(buf, &eptr, 10);
+			if (buf == eptr) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			printf("%s: enable %d\n", __func__, enable);
+			if (enable == 1) {
+				ret = enable_namespace(subsysnqn, nsid);
+			} else if (enable == 0) {
+				ret = disable_namespace(subsysnqn, nsid);
+			} else {
+				ret = -EINVAL;
+			}
+			if (ret < 0)
+				goto out_free;
+			ret = len;
 		} else {
+			printf("%s: attr %s\n", __func__, attr);
 			ret = inode_set_namespace_attr(subsysnqn, nsid,
-						       attr, buf);
+						       attr, value);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1073,6 +1102,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		}
 	}
 out_free:
+	free(value);
 	free(pathbuf);
 	return ret;
 }

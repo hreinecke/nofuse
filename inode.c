@@ -545,8 +545,7 @@ static char add_namespace_sql[] =
 	"SELECT '%s', '%d', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s';";
 
-int inode_add_namespace(const char *subsysnqn,
-			struct nofuse_namespace *ns)
+int inode_add_namespace(const char *subsysnqn, int nsid)
 {
 	char *sql;
 	uuid_t uuid;
@@ -556,7 +555,7 @@ int inode_add_namespace(const char *subsysnqn,
 	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
 	ret = asprintf(&sql, add_namespace_sql, uuid_str,
-		       ns->nsid, subsysnqn);
+		       nsid, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -788,7 +787,7 @@ int inode_set_namespace_anagrp(const char *subsysnqn, int nsid,
 
 static char del_namespace_sql[] =
 	"DELETE FROM namespaces AS ns WHERE ns.subsys_id IN "
-	"(SELECT id FROM subsystesm WHERE nqn = '%s') AND "
+	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
 	"ns.nsid = '%d';";
 
 int inode_del_namespace(const char *subsysnqn, int nsid)
