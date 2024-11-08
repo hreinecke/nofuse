@@ -208,5 +208,6 @@ struct nofuse_subsys *add_subsys(const char *nqn, int type);
 int free_subsys(const char *subsysnqn);
 struct nofuse_subsys *find_subsys(const char *subsysnqn);
 int open_ram_ns(struct nofuse_subsys *subsys, int nsid, size_t size);
+int del_namespace(const char *subsysnqn, int nsid);
 
 #endif

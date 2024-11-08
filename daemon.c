@@ -360,6 +360,30 @@ static int init_args(struct fuse_args *args)
 	return 0;
 }
 
+int del_namespace(const char *subsysnqn, int nsid)
+{
+	int ret = -ENOENT;
+	struct nofuse_namespace *ns, *_ns;
+
+	list_for_each_entry(_ns, &device_linked_list, node) {
+		if (!strcmp(_ns->subsys->nqn, subsysnqn) &&
+		    _ns->nsid == nsid) {
+			ns = _ns;
+			break;
+		}
+	}
+	if (!ns)
+		return ret;
+	ret = inode_del_namespace(subsysnqn, ns->nsid);
+	if (ret < 0)
+		return ret;
+	list_del(&ns->node);
+	if (ns->fd > 0)
+		close(ns->fd);
+	free(ns);
+	return 0;
+}
+
 void free_devices(void)
 {
 	struct linked_list *p;
@@ -369,6 +393,7 @@ void free_devices(void)
 	list_for_each_safe(p, n, &device_linked_list) {
 		list_del(p);
 		dev = container_of(p, struct nofuse_namespace, node);
+		inode_del_namespace(dev->subsys->nqn, dev->nsid);
 		if (dev->fd >= 0)
 			close(dev->fd);
 		free(dev);

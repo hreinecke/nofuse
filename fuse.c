@@ -587,13 +587,33 @@ static int nofuse_rmdir(const char *path)
 		}
 	}
 	if (!strcmp(root, subsys_dir)) {
-		char *subsysnqn = p;
+		char *subsysnqn = p, *ns, *eptr = NULL;
+		struct nofuse_subsys *subsys = NULL;
+		int nsid;
 
 		p = strtok(NULL, "/");
 		if (!p) {
 			ret = free_subsys(subsysnqn);
 			goto out_free;
 		}
+		subsys = find_subsys(subsysnqn);
+		if (!subsys)
+			goto out_free;
+		if (strcmp(p, "namespaces"))
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		ns = p;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		nsid = strtoul(ns, &eptr, 10);
+		if (ns == eptr) {
+			ret = -EINVAL;
+			goto out_free;
+		}
+		ret = del_namespace(subsysnqn, nsid);
 	}
 out_free:
 	free(pathbuf);
