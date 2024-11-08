@@ -199,8 +199,7 @@ static int init_subsys(void)
 	return 0;
 }
 
-static struct host_iface *add_iface(const char *ifaddr,
-				    int adrfam, int port)
+static struct host_iface *add_iface(const char *ifaddr, int port)
 {
 	struct host_iface *iface;
 	int ret;
@@ -210,14 +209,15 @@ static struct host_iface *add_iface(const char *ifaddr,
 		return NULL;
 	memset(iface, 0, sizeof(*iface));
 	strcpy(iface->port.traddr, ifaddr);
-	iface->adrfam = adrfam;
 	strcpy(iface->port.trtype, "tcp");
-	if (iface->adrfam == AF_INET)
+	if (strchr(ifaddr, '.')) {
+		iface->adrfam = AF_INET;
 		strcpy(iface->port.adrfam, "ipv4");
-	else if (iface->adrfam == AF_INET6)
+	} else if (strchr(ifaddr, ':')) {
+		iface->adrfam = AF_INET6;
 		strcpy(iface->port.adrfam, "ipv6");
-	else {
-		print_err("invalid address family %d", adrfam);
+	} else {
+		print_err("invalid transport address '%s'", ifaddr);
 		free(iface);
 		return NULL;
 	}
@@ -250,75 +250,6 @@ static struct host_iface *add_iface(const char *ifaddr,
 	return iface;
 }
 
-static int get_iface(const char *ifname)
-{
-	struct ifaddrs *ifaddrs, *ifa;
-
-	if (getifaddrs(&ifaddrs) == -1) {
-		perror("getifaddrs");
-		return -1;
-	}
-
-
-	for (ifa = ifaddrs; ifa != NULL; ifa = ifa->ifa_next) {
-		char host[NI_MAXHOST];
-		struct host_iface *iface;
-		int ret, addrlen;
-
-		if (ifa->ifa_addr == NULL)
-			continue;
-
-		if (ifname) {
-			if (strcmp(ifa->ifa_name, ifname))
-				continue;
-		} else {
-			if (strcmp(ifa->ifa_name, "lo"))
-				continue;
-		}
-
-		if (ifa->ifa_addr->sa_family == AF_INET)
-			addrlen = sizeof(struct sockaddr_in);
-		else if (ifa->ifa_addr->sa_family == AF_INET6)
-			addrlen = sizeof(struct sockaddr_in6);
-		else
-			continue;
-
-		ret = getnameinfo(ifa->ifa_addr, addrlen,
-				  host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-		if (ret) {
-			print_err("getnameinfo failed, error %d", ret);
-			continue;
-		}
-		iface = add_iface(host, ifa->ifa_addr->sa_family, 8009);
-		if (iface)
-			list_add_tail(&iface->node, &iface_linked_list);
-        }
-	freeifaddrs(ifaddrs);
-	return 0;
-}
-
-static int add_host_port(int port)
-{
-	int iface_num = 0;
-	LINKED_LIST(tmp_iface_list);
-	struct host_iface *iface, *new;
-
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		if (iface->port_num == port)
-			continue;
-		if (iface->port_num != 8009)
-			continue;
-		new = add_iface(iface->port.traddr, iface->adrfam, port);
-		if (new) {
-			list_add_tail(&new->node, &tmp_iface_list);
-			iface_num++;
-		}
-	}
-
-	list_splice_tail(&tmp_iface_list, &iface_linked_list);
-	return iface_num;
-}
-
 #define OPTION(t, p)				\
     { t, offsetof(struct nofuse_context, p), 1 }
 
@@ -327,7 +258,7 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--hostnqn=%s", hostnqn),
 	OPTION("--help", help),
 	OPTION("--debug", debug),
-	OPTION("--interface=%s", interface),
+	OPTION("--traddr=%s", traddr),
 	OPTION("--port=%d", portnum),
 	OPTION("--file=%s", filename),
 	OPTION("--ramdisk=%d", ramdisk_size),
@@ -340,7 +271,7 @@ static void show_help(void)
 	print_info("Usage: nofuse <args>");
 	print_info("Possible values for <args>");
 	print_info("  --debug - enable debug prints in log files");
-	print_info("  --interface=<iface> - interface to use (default: 'lo')");
+	print_info("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
 	print_info("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
 	print_info("  --file=<filename> - use file as namespace");
 	print_info("  --ramdisk=<size> - create internal ramdisk with given size (in MB)");
@@ -351,19 +282,38 @@ static void show_help(void)
 
 static int init_args(struct fuse_args *args)
 {
+	struct host_iface *iface = NULL;
 	int tls_keyring;
 
 	debug = ctx->debug;
 
-	if (get_iface(ctx->interface) < 0) {
-		print_err("Invalid interface %s\n",
-			  ctx->interface ? ctx->interface : "lo");
-		return 1;
+	if (ctx->traddr) {
+		iface = add_iface(iface->port.traddr, 8009);
+		if (!iface) {
+			print_err("Invalid transport address %s\n",
+				  ctx->traddr);
+			return 1;
+		}
+		list_add_tail(&iface->node, &iface_linked_list);
 	}
 
 	if (ctx->portnum) {
-		add_host_port(ctx->portnum);
+		if (!iface) {
+			iface = add_iface("127.0.0.1", 8009);
+			if (!iface) {
+				print_err("cannot create default interface\n");
+				return 1;
+			}
+			list_add_tail(&iface->node, &iface_linked_list);
+		}
+		iface = add_iface(iface->port.traddr, ctx->portnum);
+		if (!iface) {
+			print_err("Invalid port %d\n", ctx->portnum);
+			return 1;
+		}
+		list_add_tail(&iface->node, &iface_linked_list);
 	}
+
 	if (ctx->hostnqn)
 		inode_add_host(ctx->hostnqn);
 

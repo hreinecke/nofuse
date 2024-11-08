@@ -178,7 +178,7 @@ struct nofuse_subsys {
 struct nofuse_context {
 	const char *hostnqn;
 	const char *subsysnqn;
-	const char *interface;
+	const char *traddr;
 	const char *filename;
 	const char *dbname;
 	int portnum;
