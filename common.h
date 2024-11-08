@@ -180,10 +180,8 @@ struct nofuse_context {
 	const char *hostnqn;
 	const char *subsysnqn;
 	const char *traddr;
-	const char *filename;
 	const char *dbname;
 	int portnum;
-	int ramdisk_size;
 	int debug;
 	int help;
 };

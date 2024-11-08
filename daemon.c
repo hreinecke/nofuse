@@ -48,8 +48,7 @@ struct nofuse_subsys *add_subsys(const char *nqn, int type)
 	else
 		strcpy(subsys->nqn, nqn);
 	subsys->type = type;
-	if (subsys->type == NVME_NQN_CUR ||
-	    !ctx->hostnqn)
+	if (subsys->type == NVME_NQN_CUR)
 		subsys->allow_any = 1;
 	else
 		subsys->allow_any = 0;
@@ -70,11 +69,12 @@ static int del_subsys(struct nofuse_subsys *subsys)
 {
 	int ret;
 
+	ret = inode_del_subsys(subsys);
+	if (ret < 0)
+		return ret;
 	list_del(&subsys->node);
 	pthread_mutex_destroy(&subsys->ctrl_mutex);
-	ret = inode_del_subsys(subsys);
-	if (ret == 0)
-		free(subsys);
+	free(subsys);
 	return ret;
 }
 
@@ -231,100 +231,18 @@ int del_namespace(const char *subsysnqn, int nsid)
 	return 0;
 }
 
-static int open_file_ns(struct nofuse_subsys *subsys, const char *filename)
-{
-	int ret, nsid;
-
-        nsid = add_namespace(subsys, ++subsys->max_namespaces);
-	if (nsid < 0) {
-		subsys->max_namespaces--;
-		return nsid;
-	}
-
-	ret = inode_set_namespace_attr(subsys->nqn, nsid,
-				       "device_path", filename);
-	if (ret < 0)
-		goto del_ns;
-	ret = enable_namespace(subsys->nqn, nsid);
-	if (ret < 0)
-		goto del_ns;
-	return 0;
-del_ns:
-	del_namespace(subsys->nqn, nsid);
-	subsys->max_namespaces--;
-	return ret;
-}
-
-int open_ram_ns(struct nofuse_subsys *subsys, size_t size)
-{
-	char size_str[16];
-	int ret, nsid;
-
-	sprintf(size_str, "%lu", size);
-	nsid = add_namespace(subsys, ++subsys->max_namespaces);
-	if (nsid < 0) {
-		subsys->max_namespaces--;
-		return nsid;
-	}
-	ret = inode_set_namespace_attr(subsys->nqn, nsid,
-				       "device_path", size_str);
-	if (ret < 0)
-		goto del_ns;
-	ret = enable_namespace(subsys->nqn, nsid);
-	if (ret < 0)
-		goto del_ns;
-	return 0;
-del_ns:
-	del_namespace(subsys->nqn, nsid);
-	subsys->max_namespaces--;
-	return ret;
-}
-
 static int init_subsys(void)
 {
-	struct nofuse_subsys *subsys, *tmp_subsys;
+	struct nofuse_subsys *subsys;
 	struct interface *iface;
-	int ret;
 
-	subsys = add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
+	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
 	if (!subsys)
 		return -ENOMEM;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
 	}
-	if (!ctx->subsysnqn)
-		return 0;
-
-	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_NVM);
-	if (!subsys) {
-		ret = -ENOMEM;
-
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			ret = inode_del_subsys_port(subsys->nqn,
-						    iface->port.port_id);
-			if (ret < 0)
-				break;
-		}
-		if (ret)
-			return ret;
-		list_for_each_entry_safe(subsys, tmp_subsys,
-					 &subsys_linked_list, node) {
-			ret = del_subsys(subsys);
-			if (ret < 0)
-				break;
-		}
-		return ret;
-	}
-
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
-	}
-
-	if (ctx->filename)
-		open_file_ns(subsys, ctx->filename);
-	if (ctx->ramdisk_size)
-		open_ram_ns(subsys, ctx->ramdisk_size);
 
 	if (ctx->hostnqn)
 		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
@@ -469,8 +387,6 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
 	OPTION("--port=%d", portnum),
-	OPTION("--file=%s", filename),
-	OPTION("--ramdisk=%d", ramdisk_size),
 	OPTION("--dbname=%s", dbname),
 	FUSE_OPT_END,
 };
@@ -482,8 +398,6 @@ static void show_help(void)
 	print_info("  --debug - enable debug prints in log files");
 	print_info("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
 	print_info("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
-	print_info("  --file=<filename> - use file as namespace");
-	print_info("  --ramdisk=<size> - create internal ramdisk with given size (in MB)");
 	print_info("  --hostnqn=<NQN> - Host NQN of the configured host");
 	print_info("  --subsysnqn=<NQN> - Subsystem NQN to use");
 	print_info("  --dbname=<filename> - Database filename");
@@ -500,6 +414,9 @@ static int init_args(struct fuse_args *args)
 		tcp_debug = 1;
 		cmd_debug = 1;
 	}
+
+	if (!ctx->subsysnqn)
+		ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
 
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
@@ -586,6 +503,8 @@ int free_subsys(const char *subsysnqn)
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
 		if (!subsysnqn || strcmp(subsys->nqn, subsysnqn))
 			continue;
+		if (subsys->type == NVME_NQN_CUR)
+			return -EPERM;
 		ret = del_subsys(subsys);
 		if (ret < 0)
 			break;
