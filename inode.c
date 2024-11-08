@@ -872,7 +872,6 @@ int inode_stat_port(unsigned int port, struct stat *stbuf)
 	if (ret < 0)
 		return ret;
 	if (stbuf) {
-		stbuf->st_mode = S_IFREG | 0444;
 		stbuf->st_nlink = 1;
 		stbuf->st_size = 256;
 		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;

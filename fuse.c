@@ -151,7 +151,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	ret = inode_get_port_attr(portid, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
-	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_mode = S_IFREG | 0644;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;
 	return 0;
@@ -756,6 +756,9 @@ static int nofuse_symlink(const char *from, const char *to)
 		ret = inode_add_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
+		ret = start_iface(portid);
+		if (ret)
+			goto out_free;
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
@@ -775,6 +778,77 @@ static int nofuse_symlink(const char *from, const char *to)
 		if (p)
 			goto out_free;
 		ret = inode_add_host_subsys(host, subsys);
+		if (ret < 0)
+			goto out_free;
+		ret = 0;
+	}
+out_free:
+	free(pathbuf);
+	return ret;
+}
+
+static int nofuse_unlink(const char *path)
+{
+	char *p, *pathbuf, *root, *attr;
+	int ret = -ENOENT;
+
+	pathbuf = strdup(path);
+	if (!pathbuf)
+		return -ENOMEM;
+	printf("%s: path %s\n",
+	       __func__, pathbuf);
+	root = strtok(pathbuf, "/");
+	if (!root)
+		goto out_free;
+	if (!strcmp(root, ports_dir)) {
+		const char *port, *subsys;
+		char *eptr = NULL;
+		int portid;
+
+		port = strtok(NULL, "/");
+		if (!port)
+			goto out_free;
+		portid = strtoul(port, &eptr, 10);
+		if (port == eptr)
+			goto out_free;
+		attr = strtok(NULL, "/");
+		if (!attr)
+			goto out_free;
+		if (strcmp(attr, "subsystems"))
+			goto out_free;
+		subsys = strtok(NULL, "/");
+		if (!subsys)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		printf("%s: subsys %s portid %d\n",
+		       __func__, subsys, portid);
+		ret = inode_del_subsys_port(subsys, portid);
+		if (ret < 0)
+			goto out_free;
+		ret = stop_iface(portid);
+		if (ret)
+			goto out_free;
+		ret = 0;
+	} else if (!strcmp(root, subsys_dir)) {
+		const char *subsys, *host;
+
+		subsys = strtok(NULL, "/");
+		if (!subsys)
+			goto out_free;
+		attr = strtok(NULL, "/");
+		if (!attr)
+			goto out_free;
+		if (strcmp(attr, "allowed_hosts"))
+			goto out_free;
+		host = strtok(NULL, "/");
+		if (!host)
+			goto out_free;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		ret = inode_del_host_subsys(host, subsys);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -1233,6 +1307,7 @@ static const struct fuse_operations nofuse_oper = {
 	.rmdir		= nofuse_rmdir,
 	.readlink	= nofuse_readlink,
 	.symlink	= nofuse_symlink,
+	.unlink		= nofuse_unlink,
 	.open		= nofuse_open,
 	.read		= nofuse_read,
 	.write		= nofuse_write,

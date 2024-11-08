@@ -384,7 +384,53 @@ int add_iface(const char *ifaddr, int id, int port)
 	       iface->adrfam == AF_INET ? "ipv4" : "ipv6",
 	       iface->port.traddr, iface->port.trsvcid);
 	fflush(stdout);
+	return 0;
+}
 
+int start_iface(int id)
+{
+	struct interface *iface = NULL, *_iface;
+	pthread_attr_t pthread_attr;
+	int ret;
+
+	list_for_each_entry(_iface, &iface_linked_list, node) {
+		if (_iface->port.port_id == id) {
+			iface = _iface;
+			break;
+		}
+	}
+	if (!iface)
+		return -EINVAL;
+
+	pthread_attr_init(&pthread_attr);
+	ret = pthread_create(&iface->pthread, &pthread_attr,
+			     run_host_interface, iface);
+	if (ret) {
+		iface->pthread = 0;
+		fprintf(stderr, "iface %d: failed to start thread\n",
+			iface->port.port_id);
+		ret = -ret;
+	}
+	pthread_attr_destroy(&pthread_attr);
+
+	return ret;
+}
+
+int stop_iface(int id)
+{
+	struct interface *iface = NULL, *_iface;
+
+	list_for_each_entry(_iface, &iface_linked_list, node) {
+		if (_iface->port.port_id == id) {
+			iface = _iface;
+			break;
+		}
+	}
+	if (!iface)
+		return -EINVAL;
+
+	if (iface->pthread)
+		pthread_kill(iface->pthread, SIGTERM);
 	return 0;
 }
 
