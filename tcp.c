@@ -2,7 +2,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <poll.h>
+#include <netdb.h>
 
 #include "common.h"
 #include "tcp.h"
@@ -56,27 +56,6 @@ struct io_ops *tcp_register_io_ops(void)
 	return &tcp_io_ops;
 }
 
-static void tcp_destroy_endpoint(struct endpoint *ep)
-{
-	if (ep->qes) {
-		free(ep->qes);
-		ep->qes = NULL;
-	}
-	if (ep->recv_pdu) {
-		free(ep->recv_pdu);
-		ep->recv_pdu = NULL;
-	}
-	if (ep->send_pdu) {
-		free(ep->send_pdu);
-		ep->send_pdu = NULL;
-	}
-	tls_free_endpoint(ep);
-	if (ep->sockfd >= 0) {
-		close(ep->sockfd);
-		ep->sockfd = -1;
-	}
-}
-
 static int tcp_create_endpoint(struct endpoint *ep, int id)
 {
 	int flags, i;
@@ -116,6 +95,27 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 		ep->qes[i].ep = ep;
 	}
 	return 0;
+}
+
+static void tcp_destroy_endpoint(struct endpoint *ep)
+{
+	if (ep->qes) {
+		free(ep->qes);
+		ep->qes = NULL;
+	}
+	if (ep->recv_pdu) {
+		free(ep->recv_pdu);
+		ep->recv_pdu = NULL;
+	}
+	if (ep->send_pdu) {
+		free(ep->send_pdu);
+		ep->send_pdu = NULL;
+	}
+	tls_free_endpoint(ep);
+	if (ep->sockfd >= 0) {
+		close(ep->sockfd);
+		ep->sockfd = -1;
+	}
 }
 
 struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
@@ -182,66 +182,73 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 
 static int tcp_init_listener(struct host_iface *iface)
 {
-	struct sockaddr_in addr;
-	struct sockaddr_in6 addr6;
-	char *eptr = NULL;
-	int listenfd, port;
+	int listenfd;
 	int ret;
+	struct addrinfo *ai, hints;
 
-	listenfd = socket(iface->adrfam, SOCK_STREAM|SOCK_NONBLOCK, 0);
-	if (listenfd < 0) {
-		print_err("iface %d: socket error %d",
-			  iface->port.port_id, errno);
-		return -errno;
-	}
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = iface->adrfam;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
 
-	port = strtoul(iface->port.trsvcid, &eptr, 10);
-	if (iface->port.trsvcid == eptr) {
-		print_err("iface %d: invalid trsvcid '%s'\n",
-			  iface->port.port_id, iface->port.trsvcid);
+	ret = getaddrinfo(iface->port.traddr, iface->port.trsvcid,
+			  &hints, &ai);
+	if (ret != 0) {
+		fprintf(stderr, "iface %d: getaddrinfo() failed: %s\n",
+			iface->port.port_id, gai_strerror(ret));
 		return -EINVAL;
 	}
-
-	if (iface->adrfam == AF_INET) {
-		memset(&addr, 0, sizeof(addr));
-		addr.sin_family = iface->adrfam;
-		addr.sin_port = htons(port);
-		inet_pton(AF_INET, iface->port.traddr, &addr.sin_addr);
-
-		ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
-		if (ret < 0) {
-			print_err("iface %d: socket bind error %d",
-				  iface->port.port_id, errno);
-			ret = -errno;
-			goto err;
-		}
-	} else {
-		memset(&addr6, 0, sizeof(addr6));
-		addr6.sin6_family = iface->adrfam;
-		addr6.sin6_port = htons(port);
-		inet_pton(AF_INET6, iface->port.traddr, &addr6.sin6_addr);
-
-		ret = bind(listenfd, (struct sockaddr *) &addr6, sizeof(addr6));
-		if (ret < 0) {
-			print_err("iface %d: socket bind error %d",
-				  iface->port.port_id, errno);
-			ret = -errno;
-			goto err;
-		}
+	if (!ai) {
+		fprintf(stderr, "iface %d: no results from getaddrinfo()\n",
+			iface->port.port_id);
+		return -EHOSTUNREACH;
 	}
+
+	listenfd = socket(ai->ai_family, ai->ai_socktype,
+			  ai->ai_protocol);
+	if (listenfd < 0) {
+		fprintf(stderr, "iface %d: socket error %d\n",
+			iface->port.port_id, errno);
+		ret = -errno;
+		goto err_free;
+	}
+
+	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
+	if (ret < 0) {
+		fprintf(stderr, "iface %d: socket %s:%s bind error %d\n",
+			iface->port.port_id, iface->port.traddr,
+			iface->port.trsvcid, errno);
+		ret = -errno;
+		goto err_close;
+	}
+	if (ai->ai_next)
+		fprintf(stderr, "iface %d: duplicate addresses\n",
+			iface->port.port_id);
+	freeaddrinfo(ai);
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		fprintf(stderr,"iface %d: socket listen error %d",
+		fprintf(stderr, "iface %d: socket listen error %d\n",
 			iface->port.port_id, errno);
 		ret = -errno;
-		goto err;
+		goto err_close;
 	}
-
-	return listenfd;
-err:
+	iface->listenfd = listenfd;
+	return 0;
+err_close:
 	close(listenfd);
+err_free:
+	freeaddrinfo(ai);
 	return ret;
+}
+
+static void tcp_destroy_listener(struct host_iface *iface)
+{
+	if (iface->listenfd < 0)
+		return;
+	close(iface->listenfd);
+	iface->listenfd = -1;
 }
 
 static int tcp_accept_connection(struct endpoint *ep)
@@ -354,30 +361,40 @@ static int tcp_wait_for_connection(struct host_iface *iface)
 	int sockfd;
 	int ret = -ESHUTDOWN;
 
-	while (true) {
-		usleep(100); //TBD
-		if (stopped)
+	while (!stopped) {
+		fd_set rfd;
+		struct timeval tmo;
+
+		FD_ZERO(&rfd);
+		FD_SET(iface->listenfd, &rfd);
+		tmo.tv_sec = 1;
+		tmo.tv_usec = 0;
+		ret = select(iface->listenfd + 1, &rfd, NULL, NULL, &tmo);
+		if (ret < 0) {
+			fprintf(stderr, "iface %d: select error %d\n",
+				iface->port.port_id, errno);
+			ret = -errno;
 			break;
-
-		sockfd = accept(iface->listenfd, (struct sockaddr *) NULL,
-				NULL);
-		if (sockfd < 0) {
-			if (errno != EAGAIN)
-				print_errno("failed to accept",
-					    errno);
-			return -EAGAIN;
 		}
-
-		return sockfd;
+		if (ret > 0)
+			break;
 	}
 
-	return ret;
-}
+	if (ret <= 0)
+		return ret ? ret : -ETIMEDOUT;
 
-static void tcp_destroy_listener(struct host_iface *iface)
-{
-	close(iface->listenfd);
-	iface->listenfd = -1;
+	sockfd = accept(iface->listenfd, (struct sockaddr *) NULL,
+			NULL);
+	if (sockfd < 0) {
+		if (errno != EAGAIN)
+			fprintf(stderr,
+				"iface %d: failed to accept error %d\n",
+				iface->port.port_id, errno);
+		ret = -EAGAIN;
+	} else
+		ret = sockfd;
+
+	return ret;
 }
 
 static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
