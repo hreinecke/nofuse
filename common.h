@@ -160,7 +160,6 @@ struct host_iface {
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
 	struct nofuse_port port;
-	int port_type;
 	sa_family_t adrfam;
 	int port_num;
 	int listenfd;

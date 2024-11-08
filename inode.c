@@ -216,7 +216,7 @@ static const char *init_sql[NUM_TABLES] = {
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE TABLE ports ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
-"addr_subtype INT DEFAULT 2, addr_treq char(32), "
+"addr_treq char(32), "
 "addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
 "addr_tsas CHAR(255) DEFAULT '', "
 "ctime TIME, atime TIME, mtime TIME, "
@@ -806,8 +806,8 @@ int inode_del_namespace(const char *subsysnqn, int nsid)
 }
 
 static char add_port_sql[] =
-	"INSERT INTO ports (addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, addr_subtype, ctime)"
-	" VALUES ('%s','%s','%s','%s','%s','%s','%d', CURRENT_TIMESTAMP);";
+	"INSERT INTO ports (addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, ctime)"
+	" VALUES ('%s','%s','%s','%s','%s','%s', CURRENT_TIMESTAMP);";
 
 static char select_portid_sql[] =
 	"SELECT id FROM ports "
@@ -818,7 +818,7 @@ static char update_traddr_sql[] =
 	"UPDATE ports SET traddr = '%s' "
 	"WHERE id = '%d';";
 
-int inode_add_port(struct nofuse_port *port, u8 subtype)
+int inode_add_port(struct nofuse_port *port)
 {
 	char *sql;
 	int ret, portid;
@@ -852,7 +852,7 @@ int inode_add_port(struct nofuse_port *port, u8 subtype)
 
 	ret = asprintf(&sql, add_port_sql, port->trtype, port->adrfam,
 		       port->treq, port->traddr, port->trsvcid,
-		       port->tsas, subtype);
+		       port->tsas);
 	if (ret < 0)
 		goto rollback;
 
@@ -1660,7 +1660,7 @@ next:
 
 static char host_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, p.addr_subtype AS subtype, p.addr_trtype AS trtype, "
+	"p.id, s.type AS subtype, p.addr_trtype AS trtype, "
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
@@ -1672,7 +1672,7 @@ static char host_disc_entry_sql[] =
 
 static char any_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, p.addr_subtype AS subtype, p.addr_trtype AS trtype, "
+	"p.id, s.type AS subtype, p.addr_trtype AS trtype, "
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "

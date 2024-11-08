@@ -227,11 +227,7 @@ static struct host_iface *add_iface(const char *ifaddr, int port)
 	}
 	iface->port_num = port;
 	sprintf(iface->port.trsvcid, "%d", port);
-	if (port == 8009)
-		iface->port_type = NVME_NQN_CUR;
-	else
-		iface->port_type = NVME_NQN_NVM;
-	ret = inode_add_port(&iface->port, iface->port_type);
+	ret = inode_add_port(&iface->port);
 	if (ret < 0) {
 		print_err("cannot add port, error %d\n", ret);
 		free(iface);

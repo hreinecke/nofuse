@@ -204,13 +204,6 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
-	if (ep->iface->port_type != subsys->type) {
-		ctrl_err(ep, "non-matching subsystem '%s' type %x on port %d",
-			  subsys->nqn, ep->iface->port_type,
-			  ep->iface->port.port_id);
-		return NVME_SC_CONNECT_INVALID_HOST;
-	}
-
 	pthread_mutex_lock(&subsys->ctrl_mutex);
 	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 		if (!strncmp(connect->hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {

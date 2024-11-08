@@ -61,7 +61,7 @@ int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 			   struct stat *stbuf);
 int inode_del_host_subsys(const char *hostnqn, const char *subsysnqn);
 
-int inode_add_port(struct nofuse_port *port, u8 subtype);
+int inode_add_port(struct nofuse_port *port);
 int inode_stat_port(const char *port, struct stat *stbuf);
 int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler);
 int inode_fill_port(const char *port, void *buf, fuse_fill_dir_t filler);
