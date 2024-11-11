@@ -1217,7 +1217,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 		ret = inode_set_namespace_attr(subsysnqn, nsid,
 					       attr, buf);
 		if (ret < 0)
-			return -ENOENT;
+			return ret;
 
 		ret = len;
 	}
@@ -1314,14 +1314,14 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			       port, ana_grp, ana_state);
 			ret = inode_set_ana_group(port, ana_grp, ana_state);
 			if (ret < 0) {
-				ret = -ENOENT;
+				ret = -EINVAL;
 				goto out_free;
 			}
 			ret = len;
 		} else {
 			ret = inode_set_port_attr(portid, attr, value);
 			if (ret < 0) {
-				ret = -ENOENT;
+				ret = -EINVAL;
 				goto out_free;
 			}
 			ret = len;
@@ -1348,7 +1348,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			}
 			ret = inode_set_subsys_attr(subsysnqn, attr, value);
 			if (ret < 0) {
-				ret = -ENOENT;
+				ret = -EINVAL;
 				goto out_free;
 			}
 			ret = len;
