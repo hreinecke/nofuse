@@ -144,7 +144,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			  struct nvme_command *cmd)
 {
 	struct nofuse_subsys *subsys = NULL, *_subsys;
-	struct ctrl_conn *ctrl;
+	struct nofuse_ctrl *ctrl;
 	struct nvmf_connect_data *connect = qe->data;
 	u16 sqsize;
 	u16 cntlid, qid;

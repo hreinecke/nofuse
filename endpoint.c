@@ -11,7 +11,7 @@
 
 static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
-	struct ctrl_conn *ctrl = ep->ctrl;
+	struct nofuse_ctrl *ctrl = ep->ctrl;
 
 	ep->ops->destroy_endpoint(ep);
 

@@ -105,7 +105,7 @@ struct endpoint {
 	struct io_ops *io_ops;
 	struct xp_ops *ops;
 	struct interface *iface;
-	struct ctrl_conn *ctrl;
+	struct nofuse_ctrl *ctrl;
 	struct ep_qe *qes;
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
@@ -129,7 +129,7 @@ struct endpoint {
 #endif
 };
 
-struct ctrl_conn {
+struct nofuse_ctrl {
 	struct linked_list node;
 	struct nofuse_subsys *subsys;
 	char nqn[MAX_NQN_SIZE + 1];
