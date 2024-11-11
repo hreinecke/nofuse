@@ -1124,7 +1124,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			if (!strcmp(attr, "ana_grpid")) {
 				int anagrp;
 
-				ret = inode_get_namespace_anagrp(subsysnqn, nsid,
+				ret = inode_get_namespace_anagrp(subsysnqn,
+								 nsid,
 								 &anagrp);
 				if (ret < 0) {
 					ret = -ENOENT;
@@ -1146,6 +1147,69 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	ret = strlen(buf);
 out_free:
 	free(pathbuf);
+	return ret;
+}
+
+static int write_namespace(const char *subsysnqn, const char *p,
+			   const char *buf, size_t len)
+{
+	int ret, nsid;
+	const char *attr;
+
+	ret = parse_namespace_attr(p, &nsid, &attr);
+	if (ret < 0)
+		return -ENOENT;
+
+	printf("%s: subsys %s nsid %d attr %s value %s\n", __func__,
+	       subsysnqn, nsid, attr, buf);
+
+	if (!strcmp(attr, "ana_grpid")) {
+		int ana_grp, new_ana_grp;
+		char *eptr;
+
+		ana_grp = strtoul(buf, &eptr, 10);
+		if (buf == eptr)
+			return -EINVAL;
+
+		ret = inode_set_namespace_anagrp(subsysnqn, nsid, ana_grp);
+		if (ret < 0)
+			return ret;
+		ret = inode_get_namespace_anagrp(subsysnqn, nsid,
+						 &new_ana_grp);
+		if (ret < 0)
+			return ret;
+		if (new_ana_grp != ana_grp)
+			return -EINVAL;
+
+		ret = len;
+	} else if (!strcmp(attr, "enable")) {
+		int enable;
+		char *eptr = NULL;
+
+		enable = strtoul(buf, &eptr, 10);
+		if (buf == eptr)
+			return -EINVAL;
+
+		printf("%s: enable %d\n", __func__, enable);
+		if (enable == 1) {
+			ret = enable_namespace(subsysnqn, nsid);
+		} else if (enable == 0) {
+			ret = disable_namespace(subsysnqn, nsid);
+		} else {
+			ret = -EINVAL;
+		}
+		if (ret < 0)
+			return ret;
+		ret = len;
+	} else {
+		printf("%s: attr %s\n", __func__, attr);
+		ret = inode_set_namespace_attr(subsysnqn, nsid,
+					       attr, buf);
+		if (ret < 0)
+			return -ENOENT;
+
+		ret = len;
+	}
 	return ret;
 }
 
@@ -1253,7 +1317,6 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
-		int nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -1272,67 +1335,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			ret = -ENOENT;
 			goto out_free;
 		} else {
-			ret = parse_namespace_attr(p, &nsid, &attr);
-			if (ret < 0) {
-				ret = -ENOENT;
-				goto out_free;
-			}
-
-			printf("%s: subsys %s nsid %d attr %s value %s\n", __func__,
-			       subsysnqn, nsid, attr, value);
-
-			if (!strcmp(attr, "ana_grpid")) {
-				int ana_grp, new_ana_grp;
-				char *eptr;
-
-				ana_grp = strtoul(value, &eptr, 10);
-				if (buf == eptr) {
-					ret = -EINVAL;
-					goto out_free;
-				}
-				ret = inode_set_namespace_anagrp(subsysnqn, nsid,
-								 ana_grp);
-				if (ret < 0)
-					goto out_free;
-				ret = inode_get_namespace_anagrp(subsysnqn, nsid,
-								 &new_ana_grp);
-				if (ret < 0)
-					goto out_free;
-				if (new_ana_grp != ana_grp) {
-					ret = -EINVAL;
-					goto out_free;
-				}
-				ret = len;
-			} else if (!strcmp(attr, "enable")) {
-				int enable;
-				char *eptr = NULL;
-
-				enable = strtoul(buf, &eptr, 10);
-				if (buf == eptr) {
-					ret = -EINVAL;
-					goto out_free;
-				}
-				printf("%s: enable %d\n", __func__, enable);
-				if (enable == 1) {
-					ret = enable_namespace(subsysnqn, nsid);
-				} else if (enable == 0) {
-					ret = disable_namespace(subsysnqn, nsid);
-				} else {
-					ret = -EINVAL;
-				}
-				if (ret < 0)
-					goto out_free;
-				ret = len;
-			} else {
-				printf("%s: attr %s\n", __func__, attr);
-				ret = inode_set_namespace_attr(subsysnqn, nsid,
-							       attr, value);
-				if (ret < 0) {
-					ret = -ENOENT;
-					goto out_free;
-				}
-				ret = len;
-			}
+			ret = write_namespace(subsysnqn, p, buf, len);
 		}
 	}
 out_free:
