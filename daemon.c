@@ -34,6 +34,20 @@ struct nofuse_context *ctx;
 
 extern int run_fuse(struct fuse_args *args);
 
+static struct nofuse_subsys *find_subsys(const char *subsysnqn)
+{
+	struct nofuse_subsys *subsys = NULL;
+
+	list_for_each_entry(subsys, &subsys_linked_list, node) {
+		if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME) &&
+		    subsys->type == NVME_NQN_CUR)
+			return subsys;
+		if (!strcmp(subsys->nqn, subsysnqn))
+			return subsys;
+	}
+	return NULL;
+}
+
 int add_subsys(const char *nqn, int type)
 {
 	struct nofuse_subsys *subsys;
@@ -84,21 +98,7 @@ static int del_subsys(struct nofuse_subsys *subsys)
 	return ret;
 }
 
-struct nofuse_subsys *find_subsys(const char *subsysnqn)
-{
-	struct nofuse_subsys *subsys = NULL;
-
-	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME) &&
-		    subsys->type == NVME_NQN_CUR)
-			return subsys;
-		if (!strcmp(subsys->nqn, subsysnqn))
-			return subsys;
-	}
-	return NULL;
-}
-
-int add_namespace(struct nofuse_subsys *subsys, int nsid)
+int add_namespace(const char *subsysnqn, int nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret;
@@ -108,15 +108,13 @@ int add_namespace(struct nofuse_subsys *subsys, int nsid)
 		return -ENOMEM;
 	memset(ns, 0, sizeof(*ns));
 	ns->fd = -1;
-	strcpy(ns->subsysnqn, subsys->nqn);
+	strcpy(ns->subsysnqn, subsysnqn);
 	ns->nsid = nsid;
-	ret = inode_add_namespace(subsys->nqn, ns->nsid);
+	ret = inode_add_namespace(subsysnqn, ns->nsid);
 	if (ret < 0) {
 		free(ns);
 		return ret;
 	}
-	if (nsid > subsys->max_namespaces)
-		subsys->max_namespaces = nsid;
 	list_add_tail(&ns->node, &device_linked_list);
 	return nsid;
 }

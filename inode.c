@@ -429,6 +429,31 @@ int inode_add_subsys(struct nofuse_subsys *subsys)
 	return ret;
 }
 
+static char get_discover_nqn_sql[] =
+	"SELECT nqn FROM subsystems WHERE attr_type = '3';";
+
+int inode_get_discovery_nqn(char *nqn)
+{
+	return sql_exec_str(get_discover_nqn_sql, "nqn", nqn);
+}
+
+static char set_discover_nqn_sql[] =
+	"UPDATE subsystems SET nqn = '%s' WHERE attr_type = '3';";
+
+int inode_set_discovery_nqn(char *nqn)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, set_discover_nqn_sql, nqn);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
 static char stat_subsys_sql[] =
 	"SELECT unixepoch(ctime) AS tv FROM subsystems WHERE nqn = '%s';";
 

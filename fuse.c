@@ -537,7 +537,6 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 	}
 	if (!strcmp(root, subsys_dir)) {
 		char *subsysnqn = p, *ns, *eptr = NULL;
-		struct nofuse_subsys *subsys;
 		int nsid;
 
 		p = strtok(NULL, "/");
@@ -545,9 +544,6 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			ret = add_subsys(subsysnqn, NVME_NQN_NVM);
 			goto out_free;
 		}
-		subsys = find_subsys(subsysnqn);
-		if (!subsys)
-			goto out_free;
 		if (strcmp(p, "namespaces"))
 			goto out_free;
 		p = strtok(NULL, "/");
@@ -562,7 +558,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			ret = -EINVAL;
 			goto out_free;
 		}
-		ret = add_namespace(subsys, nsid);
+		ret = add_namespace(subsysnqn, nsid);
 	}
 out_free:
 	free(pathbuf);
@@ -623,7 +619,6 @@ static int nofuse_rmdir(const char *path)
 	}
 	if (!strcmp(root, subsys_dir)) {
 		char *subsysnqn = p, *ns, *eptr = NULL;
-		struct nofuse_subsys *subsys = NULL;
 		int nsid;
 
 		p = strtok(NULL, "/");
@@ -631,9 +626,6 @@ static int nofuse_rmdir(const char *path)
 			ret = free_subsys(subsysnqn);
 			goto out_free;
 		}
-		subsys = find_subsys(subsysnqn);
-		if (!subsys)
-			goto out_free;
 		if (strcmp(p, "namespaces"))
 			goto out_free;
 		p = strtok(NULL, "/");
@@ -1041,13 +1033,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		struct nofuse_subsys *subsys;
-
 		if (strcmp(root, "discovery_nqn"))
 			goto out_free;
-		subsys = find_subsys(NVME_DISC_SUBSYS_NAME);
-		if (subsys)
-			strcpy(buf, subsys->nqn);
+		ret = inode_get_discovery_nqn(buf);
+		if (ret < 0)
+			goto out_free;
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 		char *eptr = NULL;
@@ -1262,18 +1252,12 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		struct nofuse_subsys *subsys;
-
 		if (strcmp(root, "discovery_nqn"))
 			goto out_free;
-		subsys = find_subsys(NVME_DISC_SUBSYS_NAME);
-		if (!subsys)
+		ret = inode_set_discovery_nqn(value);
+		if (ret < 0)
 			goto out_free;
-		ret = inode_set_subsys_attr(subsys->nqn, "nqn", value);
-		if (!ret) {
-			strcpy(subsys->nqn, value);
-			ret = len;
-		}
+		ret = len;
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 		char *eptr = NULL;

@@ -204,12 +204,11 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
 int add_subsys(const char *nqn, int type);
 int free_subsys(const char *subsysnqn);
-struct nofuse_subsys *find_subsys(const char *subsysnqn);
 int add_iface(const char *ifaddr, int id, int port);
 int del_iface(int id);
 int start_iface(int id);
 int stop_iface(int id);
-int add_namespace(struct nofuse_subsys *subsys, int nsid);
+int add_namespace(const char *subsys, int nsid);
 int del_namespace(const char *subsysnqn, int nsid);
 int enable_namespace(const char *subsysnqn, int nsid);
 int disable_namespace(const char *subsysnqn, int nsid);

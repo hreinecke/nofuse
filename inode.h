@@ -16,6 +16,8 @@ int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler);
 int inode_del_host(const char *nqn);
 
 int inode_add_subsys(struct nofuse_subsys *subsys);
+int inode_get_discovery_nqn(char *nqn);
+int inode_set_discovery_nqn(char *nqn);
 int inode_stat_subsys(const char *nqn, struct stat *stbuf);
 int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler);
 int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
