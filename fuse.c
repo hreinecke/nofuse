@@ -1272,6 +1272,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		ret = inode_set_subsys_attr(subsys->nqn, "nqn", value);
 		if (!ret) {
 			strcpy(subsys->nqn, value);
+			ret = len;
 		}
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
