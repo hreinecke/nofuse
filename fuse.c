@@ -972,6 +972,8 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 
 		attr = p;
 		p = strtok(NULL, "/");
+		printf("%s: subsys %s attr %s p %s\n", __func__,
+		       subsysnqn, attr, p);
 		if (!p) {
 			ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
 			if (ret < 0)
@@ -1102,6 +1104,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 
 		attr = p;
 		p = strtok(NULL, "/");
+		printf("%s: subsys %s attr %s p %s\n", __func__,
+		       subsysnqn, attr, p);
 		if (!p) {
 			ret = inode_get_subsys_attr(subsysnqn, attr, buf);
 			if (ret < 0)
