@@ -101,7 +101,7 @@ static int sql_int_value_cb(void *argp, int argc, char **argv, char **colname)
 	return 0;
 }
 
-static int sql_exec_int(const char *sql, char *col, int *value)
+static int sql_exec_int(const char *sql, const char *col, int *value)
 {
 	char *errmsg;
 	struct sql_int_value_parm parm = {
