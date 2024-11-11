@@ -524,6 +524,24 @@ int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 	return ret;
 }
 
+static char set_subsys_attr_sql[] =
+	"UPDATE subsystems SET %s = '%s' "
+	"WHERE nqn = '%s';";
+
+int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, set_subsys_attr_sql, attr, buf, nqn);
+	if (ret < 0)
+		return ret;
+
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
 static char del_subsys_sql[] =
 	"DELETE FROM subsystems WHERE nqn = '%s';";
 

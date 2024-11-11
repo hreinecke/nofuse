@@ -273,6 +273,13 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	if (!p) {
 		int nlinks = 0;
 
+		if (!strcmp(root, "discovery_nqn")) {
+			stbuf->st_mode = S_IFREG | 0644;
+			stbuf->st_nlink = 1;
+			stbuf->st_size = 256;
+			res = 0;
+			goto out_free;
+		}
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
 		res = inode_count_table(root, &nlinks);
@@ -459,6 +466,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		filler(buf, hosts_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, ports_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, subsys_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "discovery_nqn", NULL, 0, FUSE_FILL_DIR_PLUS);
 		ret = 0;
 		goto out_free;
 	}
@@ -912,8 +920,11 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		goto out_free;
 
 	p = strtok(NULL, "/");
-	if (!p)
+	if (!p) {
+		if (!strcmp(root, "discovery_nqn"))
+			ret = 0;
 		goto out_free;
+	}
 	if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 		char *eptr = NULL;
@@ -1027,9 +1038,15 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		goto out_free;
 
 	p = strtok(NULL, "/");
-	if (!p)
-		goto out_free;
-	if (!strcmp(root, ports_dir)) {
+	if (!p) {
+		struct nofuse_subsys *subsys;
+
+		if (strcmp(root, "discovery_nqn"))
+			goto out_free;
+		subsys = find_subsys(NVME_DISC_SUBSYS_NAME);
+		if (subsys)
+			strcpy(buf, subsys->nqn);
+	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 		char *eptr = NULL;
 		unsigned int portid;
@@ -1163,9 +1180,19 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		goto out_free;
 
 	p = strtok(NULL, "/");
-	if (!p)
-		goto out_free;
-	if (!strcmp(root, ports_dir)) {
+	if (!p) {
+		struct nofuse_subsys *subsys;
+
+		if (strcmp(root, "discovery_nqn"))
+			goto out_free;
+		subsys = find_subsys(NVME_DISC_SUBSYS_NAME);
+		if (!subsys)
+			goto out_free;
+		ret = inode_set_subsys_attr(subsys->nqn, "nqn", value);
+		if (!ret) {
+			strcpy(subsys->nqn, value);
+		}
+	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 		char *eptr = NULL;
 		unsigned int portid;

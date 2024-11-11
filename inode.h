@@ -20,6 +20,7 @@ int inode_stat_subsys(const char *nqn, struct stat *stbuf);
 int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler);
 int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf);
+int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf);
 int inode_del_subsys(struct nofuse_subsys *subsys);
 
 int inode_add_namespace(const char *subsysnqn, int nsid);
