@@ -1256,13 +1256,9 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		attr = p;
 		p = strtok(NULL, "/");
 		if (!p) {
-#if 0
 			ret = inode_set_subsys_attr(subsysnqn, attr, buf);
 			if (ret < 0)
 				ret = -ENOENT;
-#else
-			ret = -EACCES;
-#endif
 			goto out_free;
 		} else if (strcmp(attr, "namespaces")) {
 			ret = -ENOENT;
