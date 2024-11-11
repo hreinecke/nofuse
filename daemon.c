@@ -83,6 +83,9 @@ struct nofuse_subsys *find_subsys(const char *subsysnqn)
 	struct nofuse_subsys *subsys = NULL;
 
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
+		if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME) &&
+		    subsys->type == NVME_NQN_CUR)
+			return subsys;
 		if (!strcmp(subsys->nqn, subsysnqn))
 			return subsys;
 	}
