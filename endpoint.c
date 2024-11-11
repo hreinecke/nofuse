@@ -9,7 +9,7 @@
 #include "common.h"
 #include "ops.h"
 
-void disconnect_endpoint(struct endpoint *ep, int shutdown)
+static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
 	struct ctrl_conn *ctrl = ep->ctrl;
 

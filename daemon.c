@@ -108,7 +108,7 @@ int add_namespace(struct nofuse_subsys *subsys, int nsid)
 		return -ENOMEM;
 	memset(ns, 0, sizeof(*ns));
 	ns->fd = -1;
-	ns->subsys = subsys;
+	strcpy(ns->subsysnqn, subsys->nqn);
 	ns->nsid = nsid;
 	ret = inode_add_namespace(subsys->nqn, ns->nsid);
 	if (ret < 0) {
@@ -130,7 +130,7 @@ int enable_namespace(const char *subsysnqn, int nsid)
 	fprintf(stderr, "%s: subsys %s nsid %d\n",
 		__func__, subsysnqn, nsid);
 	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (!strcmp(_ns->subsys->nqn, subsysnqn) &&
+		if (!strcmp(_ns->subsysnqn, subsysnqn) &&
 		    _ns->nsid == nsid) {
 			ns = _ns;
 			break;
@@ -193,7 +193,7 @@ int disable_namespace(const char *subsysnqn, int nsid)
 	fprintf(stderr, "%s: subsys %s nsid %d\n",
 		__func__, subsysnqn, nsid);
 	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (!strcmp(_ns->subsys->nqn, subsysnqn) &&
+		if (!strcmp(_ns->subsysnqn, subsysnqn) &&
 		    _ns->nsid == nsid) {
 			ns = _ns;
 			break;
@@ -222,7 +222,7 @@ int del_namespace(const char *subsysnqn, int nsid)
 	int ret = -ENOENT;
 
 	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (!strcmp(_ns->subsys->nqn, subsysnqn) &&
+		if (!strcmp(_ns->subsysnqn, subsysnqn) &&
 		    _ns->nsid == nsid) {
 			ns = _ns;
 			break;
@@ -488,7 +488,7 @@ void free_devices(void)
 	list_for_each_safe(p, n, &device_linked_list) {
 		list_del(p);
 		dev = container_of(p, struct nofuse_namespace, node);
-		inode_del_namespace(dev->subsys->nqn, dev->nsid);
+		inode_del_namespace(dev->subsysnqn, dev->nsid);
 		if (dev->fd >= 0)
 			close(dev->fd);
 		free(dev);
