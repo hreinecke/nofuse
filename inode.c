@@ -213,6 +213,7 @@ static const char *init_sql[NUM_TABLES] = {
 "device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
 "device_path VARCHAR(256), device_enable INT DEFAULT 0, ana_grpid INT, "
 "nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
+"CHECK (device_enable = 0 OR device_enable = 1), "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
