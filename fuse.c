@@ -534,9 +534,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 
 		p = strtok(NULL, "/");
 		if (!p) {
-			subsys = add_subsys(subsysnqn, NVME_NQN_NVM);
-			if (subsys)
-				ret = 0;
+			ret = add_subsys(subsysnqn, NVME_NQN_NVM);
 			goto out_free;
 		}
 		subsys = find_subsys(subsysnqn);

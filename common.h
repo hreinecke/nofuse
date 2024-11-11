@@ -202,7 +202,7 @@ int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
-struct nofuse_subsys *add_subsys(const char *nqn, int type);
+int add_subsys(const char *nqn, int type);
 int free_subsys(const char *subsysnqn);
 struct nofuse_subsys *find_subsys(const char *subsysnqn);
 int add_iface(const char *ifaddr, int id, int port);

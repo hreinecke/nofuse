@@ -34,14 +34,20 @@ struct nofuse_context *ctx;
 
 extern int run_fuse(struct fuse_args *args);
 
-struct nofuse_subsys *add_subsys(const char *nqn, int type)
+int add_subsys(const char *nqn, int type)
 {
 	struct nofuse_subsys *subsys;
 	int ret;
 
+	if (type == NVME_NQN_CUR)
+		subsys = find_subsys(NVME_DISC_SUBSYS_NAME);
+	else
+		subsys = find_subsys(nqn);
+	if (subsys)
+		return -EEXIST;
 	subsys = malloc(sizeof(*subsys));
 	if (!subsys)
-		return NULL;
+		return -ENOMEM;
 	memset(subsys, 0, sizeof(*subsys));
 	if (!subsys->nqn)
 		strcpy(subsys->nqn, default_nqn);
@@ -55,14 +61,14 @@ struct nofuse_subsys *add_subsys(const char *nqn, int type)
 	ret = inode_add_subsys(subsys);
 	if (ret < 0) {
 		free(subsys);
-		return NULL;
+		return ret;
 	}
 
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	list_add(&subsys->node, &subsys_linked_list);
 
-	return subsys;
+	return ret;
 }
 
 static int del_subsys(struct nofuse_subsys *subsys)
@@ -238,11 +244,15 @@ static int init_subsys(void)
 {
 	struct nofuse_subsys *subsys;
 	struct interface *iface;
+	int ret;
 
-	subsys = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
+	ret = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
+	if (ret)
+		return ret;
+
+	subsys = find_subsys(ctx->subsysnqn);
 	if (!subsys)
-		return -ENOMEM;
-
+		return -ENOENT;
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
 	}
