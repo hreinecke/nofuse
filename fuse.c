@@ -1112,6 +1112,17 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				ret = -ENOENT;
 				goto out_free;
 			}
+			if (!strcmp(attr, "attr_type")) {
+				if (!strcmp(buf, "1")) {
+					strcpy(buf, "ref");
+				} else if (!strcmp(buf, "2")) {
+					strcpy(buf, "nvm");
+				} else if (!strcmp(buf, "3")) {
+					strcpy(buf, "cur");
+				} else {
+					strcpy(buf, "<unknown>");
+				}
+			}
 		} else if (strcmp(attr, "namespaces")) {
 			ret = -ENOENT;
 			goto out_free;
@@ -1325,7 +1336,17 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		attr = p;
 		p = strtok(NULL, "/");
 		if (!p) {
-			ret = inode_set_subsys_attr(subsysnqn, attr, buf);
+			if (!strcmp(attr, "attr_type")) {
+				if (!strcmp(value, "cur"))
+					sprintf(value, "%d", NVME_NQN_CUR);
+				else if (!strcmp(value, "ref"))
+					sprintf(value, "%d", NVME_NQN_REF);
+				else if (!strcmp(value, "nvm"))
+					sprintf(value, "%d", NVME_NQN_NVM);
+				else
+					return -EINVAL;
+			}
+			ret = inode_set_subsys_attr(subsysnqn, attr, value);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;

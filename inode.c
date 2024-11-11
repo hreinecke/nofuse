@@ -207,7 +207,7 @@ static const char *init_sql[NUM_TABLES] = {
 "nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
 "attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 "attr_model VARCHAR(256), attr_serial VARCHAR(256), attr_version VARCHAR(256), "
-"type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
+"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME );",
 "CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
 "device_path VARCHAR(256), device_enable INT DEFAULT 0, ana_grpid INT, "
@@ -410,7 +410,7 @@ int inode_del_host(const char *nqn)
 }
 
 static char add_subsys_sql[] =
-	"INSERT INTO subsystems (nqn, attr_allow_any_host, type, ctime) "
+	"INSERT INTO subsystems (nqn, attr_allow_any_host, attr_type, ctime) "
 	"VALUES ('%s', '%d', '%d', CURRENT_TIMESTAMP);";
 
 int inode_add_subsys(struct nofuse_subsys *subsys)
