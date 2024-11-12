@@ -8,6 +8,66 @@
 
 #include "common.h"
 #include "ops.h"
+#include "inode.h"
+
+static int nvmf_ctrl_id = 1;
+
+int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
+		     u16 cntlid, const char *hostnqn, const char *subsysnqn)
+{
+	struct nofuse_ctrl *ctrl;
+	int ret = 0;
+
+	pthread_mutex_lock(&subsys->ctrl_mutex);
+	if (cntlid < NVME_CNTLID_MAX) {
+		list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
+			if (!strcmp(hostnqn, ctrl->nqn)) {
+				if (ctrl->cntlid != cntlid)
+					continue;
+				ep->ctrl = ctrl;
+				ctrl->num_endpoints++;
+				break;
+			}
+		}
+		if (!ep->ctrl)
+			ret = -ENOENT;
+		goto out_unlock;
+	}
+
+	if (inode_check_allowed_host(hostnqn, subsys->nqn,
+				     &ep->iface->port) <= 0) {
+		fprintf(stderr, "ep %d: Rejecting host NQN '%s'\n",
+			ep->sockfd, hostnqn);
+		ret = -EPERM;
+		goto out_unlock;
+	}
+	printf("ep %d: Allocating new controller '%s' for '%s'\n",
+	       ep->sockfd, hostnqn, subsysnqn);
+	ctrl = malloc(sizeof(*ctrl));
+	if (!ctrl) {
+		fprintf(stderr, "ep %d: Out of memory allocating controller",
+			ep->sockfd);
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
+	memset(ctrl, 0, sizeof(*ctrl));
+	strcpy(ctrl->nqn, hostnqn);
+	ctrl->max_endpoints = NVMF_NUM_QUEUES;
+	ep->ctrl = ctrl;
+	ctrl->num_endpoints = 1;
+	ctrl->subsys = subsys;
+	ctrl->cntlid = nvmf_ctrl_id++;
+	if (subsys->type == NVME_NQN_CUR) {
+		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
+		ep->qsize = NVMF_DQ_DEPTH;
+	} else {
+		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
+	}
+	list_add(&ctrl->node, &subsys->ctrl_list);
+out_unlock:
+	pthread_mutex_unlock(&subsys->ctrl_mutex);
+	return ret;
+}
 
 static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {

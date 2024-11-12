@@ -40,8 +40,6 @@
 
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
-static int nvmf_ctrl_id = 1;
-
 static int send_response(struct endpoint *ep, struct ep_qe *qe,
 			 u16 status)
 {
@@ -144,7 +142,6 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			  struct nvme_command *cmd)
 {
 	struct nofuse_subsys *subsys = NULL, *_subsys;
-	struct nofuse_ctrl *ctrl;
 	struct nvmf_connect_data *connect = qe->data;
 	u16 sqsize;
 	u16 cntlid, qid;
@@ -209,56 +206,21 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
-	pthread_mutex_lock(&subsys->ctrl_mutex);
-	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
-		if (!strncmp(connect->hostnqn, ctrl->nqn, MAX_NQN_SIZE)) {
-			if (qid == 0 || ctrl->cntlid != cntlid)
-				continue;
-			ep->ctrl = ctrl;
-			ctrl->num_endpoints++;
-			break;
-		}
-	}
-	if (!ep->ctrl) {
-		if (inode_check_allowed_host(connect->hostnqn,
-					     subsys->nqn,
-					     &ep->iface->port) <= 0) {
-			ctrl_err(ep, "Rejecting host NQN '%s'\n",
-				 connect->hostnqn);
-			return NVME_SC_CONNECT_INVALID_HOST;
-		}
-		ctrl_info(ep, "Allocating new controller '%s'",
-			   connect->hostnqn);
-		ctrl = malloc(sizeof(*ctrl));
-		if (!ctrl) {
-			ctrl_err(ep, "Out of memory allocating controller");
-		} else {
-			memset(ctrl, 0, sizeof(*ctrl));
-			strncpy(ctrl->nqn, connect->hostnqn, MAX_NQN_SIZE);
-			ctrl->max_endpoints = NVMF_NUM_QUEUES;
-			ctrl->kato = kato / ep->kato_interval;
-			ep->ctrl = ctrl;
-			ctrl->num_endpoints = 1;
-			ctrl->subsys = subsys;
-			ctrl->cntlid = nvmf_ctrl_id++;
-			if (subsys->type == NVME_NQN_CUR) {
-				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
-				ep->qsize = NVMF_DQ_DEPTH;
-			} else {
-				ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
-			}
-			list_add(&ctrl->node, &subsys->ctrl_list);
-		}
-	}
-	pthread_mutex_unlock(&subsys->ctrl_mutex);
-	if (!ep->ctrl) {
-		ctrl_err(ep, "bad controller id %x for queue %d, expecting %x",
-			 cntlid, qid, ctrl->cntlid);
-		ret = NVME_SC_CONNECT_INVALID_PARAM;
-	}
+	ret = connect_endpoint(ep, subsys, cntlid,
+			       connect->hostnqn, connect->subsysnqn);
 	if (!ret) {
 		ctrl_info(ep, "connected");
+		ep->ctrl->kato = kato / ep->kato_interval;
 		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
+	} else {
+		if (ret == -ENOENT) {
+			ctrl_err(ep, "bad controller id %x for queue %d",
+				 cntlid, qid);
+			ret = NVME_SC_CONNECT_INVALID_PARAM;
+		} else if (ret == -EPERM)
+			ret = NVME_SC_CONNECT_INVALID_HOST;
+		else
+			ret = NVME_SC_INTERNAL;
 	}
 	return ret;
 }
