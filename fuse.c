@@ -762,8 +762,10 @@ static int nofuse_symlink(const char *from, const char *to)
 		}
 		if (subsysnum == 1) {
 			ret = start_iface(portid);
-			if (ret)
+			if (ret) {
+				inode_del_subsys_port(subsys, portid);
 				goto out_free;
+			}
 		}
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {

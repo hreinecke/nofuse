@@ -862,9 +862,6 @@ int inode_add_port(struct nofuse_port *port)
 		fprintf(stderr, "no port id specified\n");
 		return -EINVAL;
 	}
-	if (!strcmp(port->trtype, "loop") &&
-	    !strlen(port->traddr))
-		sprintf(port->traddr, "%d", port->port_id);
 
 	if (!strlen(port->traddr)) {
 		fprintf(stderr, "no traddr specified\n");

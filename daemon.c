@@ -26,6 +26,7 @@ int stopped;
 int debug;
 int tcp_debug;
 int cmd_debug;
+int ep_debug;
 
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
@@ -432,6 +433,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (debug) {
 		tcp_debug = 1;
 		cmd_debug = 1;
+		ep_debug = 1;
 	}
 
 	if (!ctx->subsysnqn)

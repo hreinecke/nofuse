@@ -12,6 +12,21 @@
 
 static int nvmf_ctrl_id = 1;
 
+#define ep_info(e, f, x...)				\
+	if (ep_debug) {					\
+		printf("ep %d: " f "\n",		\
+		       (e)->sockfd, ##x);		\
+		fflush(stdout);				\
+}
+
+#define ep_err(e, f, x...)				\
+	do {						\
+		fprintf(stderr, "ep %d: " f "\n",	\
+			(e)->sockfd, ##x);		\
+		fflush(stderr);				\
+	} while (0)
+
+
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn)
 {
@@ -36,17 +51,15 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 
 	if (inode_check_allowed_host(hostnqn, subsys->nqn,
 				     &ep->iface->port) <= 0) {
-		fprintf(stderr, "ep %d: Rejecting host NQN '%s'\n",
-			ep->sockfd, hostnqn);
+		ep_err(ep, "Rejecting host NQN '%s'\n", hostnqn);
 		ret = -EPERM;
 		goto out_unlock;
 	}
-	printf("ep %d: Allocating new controller '%s' for '%s'\n",
-	       ep->sockfd, hostnqn, subsysnqn);
+	ep_info(ep, "Allocating new controller '%s' for '%s'\n",
+		hostnqn, subsysnqn);
 	ctrl = malloc(sizeof(*ctrl));
 	if (!ctrl) {
-		fprintf(stderr, "ep %d: Out of memory allocating controller",
-			ep->sockfd);
+		ep_err(ep, "Out of memory allocating controller");
 		ret = -ENOMEM;
 		goto out_unlock;
 	}
@@ -84,8 +97,8 @@ static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 		ctrl->num_endpoints--;
 		ep->ctrl = NULL;
 		if (!ctrl->num_endpoints) {
-			print_info("ctrl %d: deleting controller",
-				   ctrl->cntlid);
+			ep_info(ep, "deleting controller %u",
+				ctrl->cntlid);
 			list_del(&ctrl->node);
 			free(ctrl);
 		}
@@ -103,7 +116,7 @@ static int start_interface(struct interface *iface)
 
 	ret = iface->ops->init_listener(iface);
 	if (ret < 0) {
-		print_err("iface %s init_listener failed",
+		fprintf(stderr, "iface %s: init_listener failed\n",
 			iface->port.traddr);
 		return ret;
 	}
@@ -116,7 +129,7 @@ int start_endpoint(struct endpoint *ep, int id)
 
 	ret = ep->ops->create_endpoint(ep, id);
 	if (ret) {
-		print_errno("Failed to create endpoint", ret);
+		fprintf(stderr, "ep %d: Failed to create endpoint\n", ret);
 		return ret;
 	}
 
@@ -126,7 +139,7 @@ retry:
 		if (ret == -EAGAIN)
 			goto retry;
 
-		print_errno("accept() failed for endpoint", ret);
+		ep_err(ep, "accept() failed with error %d", ret);
 		return ret;
 	}
 
@@ -163,7 +176,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		print_err("endpoint %d: failed to get poll sqe", ep->qid);
+		ep_err(ep, "qid %d failed to get poll sqe", ep->qid);
 		return NULL;
 	}
 
@@ -172,8 +185,8 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
-		print_err("endpoint %d: submit poll sqe failed, error %d",
-			  ep->qid, ret);
+		ep_err(ep, "qid %d submit poll sqe failed, error %d",
+		       ep->qid, ret);
 		return NULL;
 	}
 	return sqe;
@@ -192,8 +205,8 @@ static void *endpoint_thread(void *arg)
 
 	ret = io_uring_queue_init(32, &ep->uring, 0);
 	if (ret) {
-		print_err("endpoint %d: error %d creating uring",
-			  ep->qid, ret);
+		ep_err(ep, "qid %d error %d creating uring",
+		       ep->qid, ret);
 		goto out_disconnect;
 	}
 
@@ -209,9 +222,8 @@ static void *endpoint_thread(void *arg)
 
 		ret = io_uring_wait_cqe(&ep->uring, &cqe);
 		if (ret < 0) {
-			print_err("ctrl %d qid %d wait cqe error %d",
-				  ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret);
+			ep_err(ep, "qid %d wait cqe error %d",
+			       ep->qid, ret);
 			break;
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
@@ -219,16 +231,16 @@ static void *endpoint_thread(void *arg)
 		if (cqe_data == pollin_sqe) {
 			ret = cqe->res;
 			if (ret < 0) {
-				print_err("ctrl %d qid %d poll error %d",
-					  ep->ctrl ? ep->ctrl->cntlid : -1,
-					  ep->qid, ret);
+				fprintf(stderr, "ctrl %d qid %d poll error %d",
+					ep->ctrl ? ep->ctrl->cntlid : -1,
+					ep->qid, ret);
 				break;
 			}
 			if (ret & POLLERR) {
 				ret = -ENODATA;
-				print_info("ctrl %d qid %d poll conn closed",
-					   ep->ctrl ? ep->ctrl->cntlid : -1,
-					   ep->qid);
+				printf("ctrl %d qid %d poll conn closed",
+				       ep->ctrl ? ep->ctrl->cntlid : -1,
+				       ep->qid);
 				break;
 			}
 			pollin_sqe = NULL;
@@ -252,9 +264,9 @@ static void *endpoint_thread(void *arg)
 		} else {
 			struct ep_qe *qe = cqe_data;
 			if (!qe) {
-				print_err("ctrl %d qid %d empty cqe",
-					  ep->ctrl ? ep->ctrl->cntlid : -1,
-					  ep->qid);
+				fprintf(stderr, "ctrl %d qid %d empty cqe",
+					ep->ctrl ? ep->ctrl->cntlid : -1,
+					ep->qid);
 				ret = -EAGAIN;
 			}
 			ret = handle_data(ep, qe, cqe->res);
@@ -267,15 +279,15 @@ static void *endpoint_thread(void *arg)
 		 * is closed; that shouldn't count as an error.
 		 */
 		if (ret == -ENODATA) {
-			print_info("ctrl %d qid %d connection closed",
-				   ep->ctrl ? ep->ctrl->cntlid : -1,
-				   ep->qid);
+			printf("ctrl %d qid %d connection closed",
+			       ep->ctrl ? ep->ctrl->cntlid : -1,
+			       ep->qid);
 			break;
 		}
 		if (ret < 0) {
-			print_err("ctrl %d qid %d error %d retry %d",
-				  ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret, ep->kato_countdown);
+			fprintf(stderr, "ctrl %d qid %d error %d retry %d",
+				ep->ctrl ? ep->ctrl->cntlid : -1,
+				ep->qid, ret, ep->kato_countdown);
 			break;
 		}
 	}
@@ -284,9 +296,9 @@ static void *endpoint_thread(void *arg)
 out_disconnect:
 	disconnect_endpoint(ep, !stopped);
 
-	print_info("ctrl %d qid %d %s",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   stopped ? "stopped" : "disconnected");
+	printf("ctrl %d qid %d %s",
+	       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+	       stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
 	return NULL;
@@ -299,7 +311,6 @@ static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 
 	ep = malloc(sizeof(struct endpoint));
 	if (!ep) {
-		print_err("no memory");
 		close(id);
 		return NULL;
 	}
@@ -317,7 +328,7 @@ static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 
 	ret = start_endpoint(ep, id);
 	if (ret) {
-		print_err("failed to start endpoint");
+		fprintf(stderr, "ep %d: failed to start endpoint\n", id);
 		goto out;
 	}
 
@@ -347,7 +358,8 @@ void *run_host_interface(void *arg)
 
 	ret = start_interface(iface);
 	if (ret) {
-		print_err("failed to start pseudo target, error %d", ret);
+		fprintf(stderr, "iface %d: failed to start, error %d\n",
+			iface->port.port_id, ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
@@ -360,7 +372,8 @@ void *run_host_interface(void *arg)
 
 		if (id < 0) {
 			if (id != -EAGAIN)
-				print_errno("Host connection failed", id);
+				fprintf(stderr,
+					"Host connection failed, error %d\n", id);
 			continue;
 		}
 		ep = enqueue_endpoint(id, iface);
@@ -373,12 +386,14 @@ void *run_host_interface(void *arg)
 				     endpoint_thread, ep);
 		if (ret) {
 			ep->pthread = 0;
-			print_errno("pthread_create failed", ret);
+			fprintf(stderr,
+				"iface %d: pthread_create failed with %d\n",
+				iface->port.port_id, ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	print_info("iface %d: destroy listener", iface->port.port_id);
+	printf("iface %d: destroy listener\n", iface->port.port_id);
 
 	iface->ops->destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);
