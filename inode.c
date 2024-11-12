@@ -553,7 +553,7 @@ int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 
 static char set_subsys_attr_sql[] =
 	"UPDATE subsystems SET %s = '%s' "
-	"WHERE nqn = '%s';";
+	"WHERE nqn = '%s' AND attr_type = '2';";
 
 int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 {
@@ -568,6 +568,8 @@ int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (sqlite3_changes(inode_db) == 0)
+		ret = -EPERM;
 	return ret;
 }
 
