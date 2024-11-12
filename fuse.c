@@ -245,7 +245,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 	if (ret < 0)
 		return -ENOENT;
 found:
-	stbuf->st_mode = S_IFREG | 0444;
+	stbuf->st_mode = S_IFREG | 0644;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;
 	return 0;
