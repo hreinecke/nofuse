@@ -199,12 +199,12 @@ static int tcp_init_listener(struct interface *iface)
 			  &hints, &ai);
 	if (ret != 0) {
 		fprintf(stderr, "iface %d: getaddrinfo() failed: %s\n",
-			iface->port.port_id, gai_strerror(ret));
+			iface->portid, gai_strerror(ret));
 		return -EINVAL;
 	}
 	if (!ai) {
 		fprintf(stderr, "iface %d: no results from getaddrinfo()\n",
-			iface->port.port_id);
+			iface->portid);
 		return -EHOSTUNREACH;
 	}
 
@@ -212,7 +212,7 @@ static int tcp_init_listener(struct interface *iface)
 			  ai->ai_protocol);
 	if (listenfd < 0) {
 		fprintf(stderr, "iface %d: socket error %d\n",
-			iface->port.port_id, errno);
+			iface->portid, errno);
 		ret = -errno;
 		goto err_free;
 	}
@@ -220,20 +220,20 @@ static int tcp_init_listener(struct interface *iface)
 	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
 	if (ret < 0) {
 		fprintf(stderr, "iface %d: socket %s:%s bind error %d\n",
-			iface->port.port_id, iface->port.traddr,
+			iface->portid, iface->port.traddr,
 			iface->port.trsvcid, errno);
 		ret = -errno;
 		goto err_close;
 	}
 	if (ai->ai_next)
 		fprintf(stderr, "iface %d: duplicate addresses\n",
-			iface->port.port_id);
+			iface->portid);
 	freeaddrinfo(ai);
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
 		fprintf(stderr, "iface %d: socket listen error %d\n",
-			iface->port.port_id, errno);
+			iface->portid, errno);
 		ret = -errno;
 		goto err_close;
 	}
@@ -375,7 +375,7 @@ static int tcp_wait_for_connection(struct interface *iface)
 		ret = select(iface->listenfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
 			fprintf(stderr, "iface %d: select error %d\n",
-				iface->port.port_id, errno);
+				iface->portid, errno);
 			ret = -errno;
 			break;
 		}
@@ -392,7 +392,7 @@ static int tcp_wait_for_connection(struct interface *iface)
 		if (errno != EAGAIN)
 			fprintf(stderr,
 				"iface %d: failed to accept error %d\n",
-				iface->port.port_id, errno);
+				iface->portid, errno);
 		ret = -EAGAIN;
 	} else
 		ret = sockfd;

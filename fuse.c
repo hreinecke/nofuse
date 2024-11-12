@@ -509,7 +509,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			goto out_free;
 		p = strtok(NULL, "/");
 		if (!p) {
-			ret = add_iface(NULL, portid, 0);
+			ret = add_iface(portid, NULL, 0);
 			if (ret < 0)
 				printf("%s: cannot add port %d, error %d\n",
 				       __func__, portid, ret);
@@ -1223,7 +1223,6 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	const char *p, *root, *attr;
 	char *pathbuf, *value, *ptr;
 	int ret = -ENOENT;
-	size_t _len = len;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
@@ -1234,18 +1233,17 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		return -ENOMEM;
 	memset(value, 0, strlen(buf));
 	strncpy(value, buf, len);
+	ptr = value;
 
-	while (strlen(value)) {
-		ptr = value + strlen(value);
-		ptr--;
-		if (!isspace(*ptr))
+	while (ptr && *ptr) {
+		if (*ptr == '\n') {
+			*ptr = '\0';
 			break;
-		*ptr = '\0';
-		_len--;
+		}
+		ptr++;
 	}
-	memset(value + _len, 0, len - _len);
 	printf("%s: path %s buf %s len %ld off %ld\n", __func__,
-	       pathbuf, value, _len, offset);
+	       pathbuf, value, len, offset);
 	root = strtok(pathbuf, "/");
 	if (!root)
 		goto out_free;

@@ -850,45 +850,20 @@ int inode_del_namespace(const char *subsysnqn, int nsid)
 }
 
 static char add_port_sql[] =
-	"INSERT INTO ports (id, addr_trtype, addr_adrfam, addr_treq, addr_traddr, addr_trsvcid, addr_tsas, ctime)"
-	" VALUES ('%d', '%s','%s','%s','%s','%s','%s', CURRENT_TIMESTAMP);";
+	"INSERT INTO ports (id, addr_trtype, ctime)"
+	" VALUES ('%d', 'tcp', CURRENT_TIMESTAMP);";
 
-int inode_add_port(struct nofuse_port *port)
+int inode_add_port(unsigned int portid)
 {
 	char *sql;
 	int ret;
 
-	if (!port->port_id) {
+	if (!portid) {
 		fprintf(stderr, "no port id specified\n");
 		return -EINVAL;
 	}
 
-	if (!strlen(port->traddr)) {
-		fprintf(stderr, "no traddr specified\n");
-		return -EINVAL;
-	}
-	if (!strcmp(port->trtype, "tcp") || !strcmp(port->trtype, "rdma")) {
-		if (!strlen(port->trsvcid)) {
-			fprintf(stderr, "no trsvcid specified\n");
-			return -EINVAL;
-		}
-		if (strcmp(port->adrfam, "ipv4") &&
-		    strcmp(port->adrfam, "ipv6")) {
-			fprintf(stderr, "invalid adrfam %s\n",
-				port->adrfam);
-		}
-	}
-	if (!strcmp(port->trtype, "fc") || !strcmp(port->trtype, "loop")) {
-		if (!strcmp(port->adrfam, port->trtype)) {
-			strcpy(port->adrfam, port->trtype);
-		}
-		if (strlen(port->trsvcid)) {
-			memset(port->trsvcid, 0, sizeof(port->trsvcid));
-		}
-	}
-	ret = asprintf(&sql, add_port_sql, port->port_id, port->trtype,
-		       port->adrfam, port->treq, port->traddr, port->trsvcid,
-		       port->tsas);
+	ret = asprintf(&sql, add_port_sql, portid);
 	if (ret < 0)
 		return ret;
 
@@ -1004,7 +979,7 @@ static char update_genctr_port_sql[] =
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
 	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
 
-int inode_set_port_attr(unsigned int port, const char *attr, char *value)
+int inode_set_port_attr(unsigned int port, const char *attr, const char *value)
 {
 	char *sql;
 	int ret;

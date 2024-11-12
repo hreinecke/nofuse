@@ -63,12 +63,12 @@ int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 			   struct stat *stbuf);
 int inode_del_host_subsys(const char *hostnqn, const char *subsysnqn);
 
-int inode_add_port(struct nofuse_port *port);
+int inode_add_port(unsigned int port);
 int inode_stat_port(unsigned int port, struct stat *stbuf);
 int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler);
 int inode_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler);
 int inode_get_port_attr(unsigned int port, const char *attr, char *buf);
-int inode_set_port_attr(unsigned int port, const char *attr, char *buf);
+int inode_set_port_attr(unsigned int port, const char *attr, const char *buf);
 int inode_del_port(struct nofuse_port *port);
 
 int inode_add_subsys_port(const char *subsysnqn, unsigned int port);

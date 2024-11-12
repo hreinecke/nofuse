@@ -160,6 +160,7 @@ struct interface {
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
 	struct nofuse_port port;
+	int portid;
 	int listenfd;
 	bool tls;
 };
@@ -192,7 +193,7 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
 int add_subsys(const char *nqn, int type);
 int free_subsys(const char *subsysnqn);
-int add_iface(const char *ifaddr, int id, int port);
+int add_iface(unsigned int id, const char *ifaddr, int port);
 int del_iface(int id);
 int start_iface(int id);
 int stop_iface(int id);

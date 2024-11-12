@@ -270,7 +270,7 @@ static int init_subsys(struct nofuse_context *ctx)
 	return 0;
 }
 
-int add_iface(const char *ifaddr, int id, int port)
+int add_iface(unsigned int id, const char *ifaddr, int port)
 {
 	struct interface *iface;
 	int ret;
@@ -279,34 +279,25 @@ int add_iface(const char *ifaddr, int id, int port)
 	if (!iface)
 		return -ENOMEM;
 	memset(iface, 0, sizeof(*iface));
-	if (ifaddr) {
-		strcpy(iface->port.trtype, "tcp");
-		strcpy(iface->port.traddr, ifaddr);
-		if (strchr(ifaddr, '.')) {
-			strcpy(iface->port.adrfam, "ipv4");
-		} else if (strchr(ifaddr, ':')) {
-			strcpy(iface->port.adrfam, "ipv6");
-		} else {
-			print_err("invalid transport address '%s'", ifaddr);
-			free(iface);
-			return -EINVAL;
-		}
-	} else {
-		strcpy(iface->port.trtype, "loop");
-		sprintf(iface->port.traddr, "%d", id);
-	}
-	iface->port.port_id = id;
-	if (ifaddr && port)
-		sprintf(iface->port.trsvcid, "%d", port);
-	ret = inode_add_port(&iface->port);
+	iface->portid = id;
+	ret = inode_add_port(id);
 	if (ret < 0) {
-		print_err("cannot add port, error %d\n", ret);
+		fprintf(stderr,"iface %d: cannot add port, error %d\n",
+			id, ret);
 		free(iface);
 		return ret;
 	}
-	ret = inode_add_ana_group(iface->port.port_id, 1, NVME_ANA_OPTIMIZED);
+	if (port) {
+		char trsvcid[5];
+
+		sprintf(trsvcid, "%d", port);
+		inode_set_port_attr(iface->portid, "addr_trsvcid", trsvcid);
+	}
+	ret = inode_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
-		print_err("cannot add ana group to port, error %d\n", ret);
+		fprintf(stderr,
+			"iface %d: cannot add ana group to port, error %d\n",
+			iface->portid, ret);
 		inode_del_port(&iface->port);
 		free(iface);
 		return ret;
@@ -315,10 +306,6 @@ int add_iface(const char *ifaddr, int id, int port)
 	INIT_LINKED_LIST(&iface->ep_list);
 	list_add_tail(&iface->node, &iface_linked_list);
 
-	printf("iface %d: listening on %s address %s port %s\n",
-	       iface->port.port_id, iface->port.adrfam,
-	       iface->port.traddr, iface->port.trsvcid);
-	fflush(stdout);
 	return 0;
 }
 
@@ -439,7 +426,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = add_iface(ctx->traddr, num_ifaces + 1, 8009);
+	ret = add_iface(num_ifaces + 1, ctx->traddr, 8009);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add interface for %s\n",
 			ctx->traddr);
@@ -448,7 +435,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	num_ifaces++;
 
 	if (ctx->portnum) {
-		ret = add_iface(ctx->traddr, num_ifaces + 1,
+		ret = add_iface(num_ifaces + 1, ctx->traddr,
 				ctx->portnum);
 		if (ret < 0) {
 			print_err("Invalid port %d\n", ctx->portnum);
