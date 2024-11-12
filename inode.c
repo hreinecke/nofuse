@@ -588,7 +588,7 @@ int inode_del_subsys(struct nofuse_subsys *subsys)
 static char add_namespace_sql[] =
 	"INSERT INTO namespaces (device_uuid, nsid, subsys_id, ctime) "
 	"SELECT '%s', '%d', s.id, CURRENT_TIMESTAMP "
-	"FROM subsystems AS s WHERE s.nqn = '%s';";
+	"FROM subsystems AS s WHERE s.nqn = '%s' AND s.attr_type == '2';";
 
 int inode_add_namespace(const char *subsysnqn, int nsid)
 {
@@ -605,6 +605,8 @@ int inode_add_namespace(const char *subsysnqn, int nsid)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (sqlite3_changes(inode_db) == 0)
+		return -EPERM;
 	return ret;
 }
 
