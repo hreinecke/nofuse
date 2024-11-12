@@ -283,10 +283,8 @@ int add_iface(const char *ifaddr, int id, int port)
 		strcpy(iface->port.trtype, "tcp");
 		strcpy(iface->port.traddr, ifaddr);
 		if (strchr(ifaddr, '.')) {
-			iface->adrfam = AF_INET;
 			strcpy(iface->port.adrfam, "ipv4");
 		} else if (strchr(ifaddr, ':')) {
-			iface->adrfam = AF_INET6;
 			strcpy(iface->port.adrfam, "ipv6");
 		} else {
 			print_err("invalid transport address '%s'", ifaddr);
@@ -295,8 +293,8 @@ int add_iface(const char *ifaddr, int id, int port)
 		}
 	} else {
 		strcpy(iface->port.trtype, "loop");
+		sprintf(iface->port.traddr, "%d", id);
 	}
-	iface->port_num = port;
 	iface->port.port_id = id;
 	if (ifaddr && port)
 		sprintf(iface->port.trsvcid, "%d", port);
@@ -318,8 +316,7 @@ int add_iface(const char *ifaddr, int id, int port)
 	list_add_tail(&iface->node, &iface_linked_list);
 
 	printf("iface %d: listening on %s address %s port %s\n",
-	       iface->port.port_id,
-	       iface->adrfam == AF_INET ? "ipv4" : "ipv6",
+	       iface->port.port_id, iface->port.adrfam,
 	       iface->port.traddr, iface->port.trsvcid);
 	fflush(stdout);
 	return 0;

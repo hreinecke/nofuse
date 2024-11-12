@@ -160,8 +160,6 @@ struct interface {
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
 	struct nofuse_port port;
-	sa_family_t adrfam;
-	int port_num;
 	int listenfd;
 	bool tls;
 };

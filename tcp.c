@@ -185,9 +185,12 @@ static int tcp_init_listener(struct interface *iface)
 	int listenfd;
 	int ret;
 	struct addrinfo *ai, hints;
+	sa_family_t adrfam = AF_INET;
 
+	if (!strcmp(iface->port.adrfam, "ipv6"))
+		adrfam = AF_INET6;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = iface->adrfam;
+	hints.ai_family = adrfam;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
