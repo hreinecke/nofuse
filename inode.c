@@ -560,6 +560,8 @@ int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 	char *sql;
 	int ret;
 
+	if (!strcmp(attr, "attr_type"))
+		return -EPERM;
 	ret = asprintf(&sql, set_subsys_attr_sql, attr, buf, nqn);
 	if (ret < 0)
 		return ret;
