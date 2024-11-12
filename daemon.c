@@ -124,7 +124,7 @@ int add_namespace(const char *subsysnqn, int nsid)
 		return ret;
 	}
 	list_add_tail(&ns->node, &device_linked_list);
-	return nsid;
+	return 0;
 }
 
 int enable_namespace(const char *subsysnqn, int nsid)
