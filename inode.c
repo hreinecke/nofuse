@@ -1208,7 +1208,7 @@ int inode_del_ana_group(const char *port, const char *grpid)
 static char add_host_subsys_sql[] =
 	"INSERT INTO host_subsys (host_id, subsys_id, ctime) "
 	"SELECT h.id, s.id, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
-	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
+	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';";
 
 int inode_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
@@ -1669,7 +1669,7 @@ next:
 
 static char host_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, s.type AS subtype, p.addr_trtype AS trtype, "
+	"p.id, s.attr_type AS subtype, p.addr_trtype AS trtype, "
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
@@ -1681,7 +1681,7 @@ static char host_disc_entry_sql[] =
 
 static char any_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, s.type AS subtype, p.addr_trtype AS trtype, "
+	"p.id, s.attr_type AS subtype, p.addr_trtype AS trtype, "
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
