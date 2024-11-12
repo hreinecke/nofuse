@@ -30,7 +30,15 @@ int cmd_debug;
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
 
-struct nofuse_context *ctx;
+struct nofuse_context {
+	const char *hostnqn;
+	const char *subsysnqn;
+	const char *traddr;
+	const char *dbname;
+	int portnum;
+	int debug;
+	int help;
+};
 
 extern int run_fuse(struct fuse_args *args);
 
@@ -238,7 +246,7 @@ int del_namespace(const char *subsysnqn, int nsid)
 	return 0;
 }
 
-static int init_subsys(void)
+static int init_subsys(struct nofuse_context *ctx)
 {
 	struct nofuse_subsys *subsys;
 	struct interface *iface;
@@ -414,7 +422,7 @@ static void show_help(void)
 	print_info("  --dbname=<filename> - Database filename");
 }
 
-static int init_args(struct fuse_args *args)
+static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 {
 	const char *traddr = "127.0.0.1";
 	int tls_keyring;
@@ -460,7 +468,7 @@ static int init_args(struct fuse_args *args)
 
 	tls_keyring = tls_global_init();
 
-	if (init_subsys())
+	if (init_subsys(ctx))
 		return 1;
 
 	if (list_empty(&iface_linked_list)) {
@@ -526,6 +534,7 @@ int free_subsys(const char *subsysnqn)
 int main(int argc, char *argv[])
 {
 	int ret = 1;
+	struct nofuse_context *ctx;
 	struct interface *iface;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
@@ -542,7 +551,7 @@ int main(int argc, char *argv[])
 	if (ret)
 		return 1;
 
-	ret = init_args(&args);
+	ret = init_args(&args, ctx);
 	if (ret)
 		goto out_close;
 

@@ -1368,7 +1368,7 @@ int run_fuse(struct fuse_args *args)
 {
 	int ret;
 
-	ret = fuse_main(args->argc, args->argv, &nofuse_oper, ctx);
+	ret = fuse_main(args->argc, args->argv, &nofuse_oper, NULL);
 	if (ret)
 		fprintf(stderr, "fuse terminated with %d\n", ret);
 	fuse_opt_free_args(args);

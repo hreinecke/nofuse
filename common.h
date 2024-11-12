@@ -176,18 +176,6 @@ struct nofuse_subsys {
 	bool allow_any;
 };
 
-struct nofuse_context {
-	const char *hostnqn;
-	const char *subsysnqn;
-	const char *traddr;
-	const char *dbname;
-	int portnum;
-	int debug;
-	int help;
-};
-
-extern struct nofuse_context *ctx;
-
 static inline void set_response(struct nvme_completion *resp,
 				u16 ccid, u16 status, bool dnr)
 {
