@@ -76,7 +76,8 @@ static int port_getattr(char *port, struct stat *stbuf)
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
+		stbuf->st_nlink = 5;
+		stbuf->st_size = 0;
 		return 0;
 	}
 
