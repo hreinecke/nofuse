@@ -170,7 +170,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 	p = strtok(NULL, "/");
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
+		stbuf->st_nlink = 4;
 		return 0;
 	}
 	printf("%s: subsys %s attr %s\n", __func__, subsysnqn, p);
