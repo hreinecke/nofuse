@@ -159,7 +159,6 @@ struct interface {
 	struct xp_ops *ops;
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
-	struct nofuse_port port;
 	int portid;
 	int listenfd;
 	bool tls;

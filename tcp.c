@@ -7,6 +7,7 @@
 #include "common.h"
 #include "tcp.h"
 #include "ops.h"
+#include "inode.h"
 #include "tls.h"
 
 #define NVME_OPCODE_MASK 0x3
@@ -185,18 +186,39 @@ static int tcp_init_listener(struct interface *iface)
 	int listenfd;
 	int ret;
 	struct addrinfo *ai, hints;
+	char traddr[256];
+	char trsvcid[32];
+	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
-	if (!strcmp(iface->port.adrfam, "ipv6"))
+	ret = inode_get_port_attr(iface->portid, "addr_traddr", traddr);
+	if (ret < 0) {
+		fprintf(stderr, "iface %d: failed to get traddr\n",
+			iface->portid);
+		return ret;
+	}
+	ret = inode_get_port_attr(iface->portid, "addr_trsvcid", trsvcid);
+	if (ret < 0) {
+		fprintf(stderr, "iface %d: failed to get trsvcid\n",
+			iface->portid);
+		return ret;
+	}
+	ret = inode_get_port_attr(iface->portid, "addr_adrfam", adrfam_str);
+	if (ret < 0) {
+		fprintf(stderr, "iface %d: failed to get adrfam\n",
+			iface->portid);
+		return ret;
+	}
+	if (!strcmp(adrfam_str, "ipv6"))
 		adrfam = AF_INET6;
+
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = adrfam;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
 
-	ret = getaddrinfo(iface->port.traddr, iface->port.trsvcid,
-			  &hints, &ai);
+	ret = getaddrinfo(traddr, trsvcid, &hints, &ai);
 	if (ret != 0) {
 		fprintf(stderr, "iface %d: getaddrinfo() failed: %s\n",
 			iface->portid, gai_strerror(ret));
@@ -220,8 +242,7 @@ static int tcp_init_listener(struct interface *iface)
 	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
 	if (ret < 0) {
 		fprintf(stderr, "iface %d: socket %s:%s bind error %d\n",
-			iface->portid, iface->port.traddr,
-			iface->port.trsvcid, errno);
+			iface->portid, traddr, trsvcid, errno);
 		ret = -errno;
 		goto err_close;
 	}

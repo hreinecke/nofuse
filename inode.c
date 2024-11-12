@@ -850,8 +850,8 @@ int inode_del_namespace(const char *subsysnqn, int nsid)
 }
 
 static char add_port_sql[] =
-	"INSERT INTO ports (id, addr_trtype, ctime)"
-	" VALUES ('%d', 'tcp', CURRENT_TIMESTAMP);";
+	"INSERT INTO ports (id, addr_trtype, addr_traddr, addr_adrfam, ctime)"
+	" VALUES ('%d', 'tcp', '127.0.0.1', 'ipv4', CURRENT_TIMESTAMP);";
 
 int inode_add_port(unsigned int portid)
 {
@@ -1002,17 +1002,17 @@ int inode_set_port_attr(unsigned int port, const char *attr, const char *value)
 static char del_port_sql[] =
 	"DELETE FROM ports WHERE id = '%d';";
 
-int inode_del_port(struct nofuse_port *port)
+int inode_del_port(unsigned int portid)
 {
 	char *sql;
 	int ret, portnum = 0;
 
-	ret = inode_count_subsys_port(port->port_id, &portnum);
+	ret = inode_count_subsys_port(portid, &portnum);
 	if (ret < 0)
 		return ret;
 	if (portnum > 0)
 		return -EBUSY;
-	ret = asprintf(&sql, del_port_sql, port->port_id);
+	ret = asprintf(&sql, del_port_sql, portid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -1458,25 +1458,24 @@ static char allowed_host_sql[] =
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
 	"INNER JOIN hosts AS h ON hs.host_id = h.id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
-	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND "
-	"p.addr_trtype = '%s' AND p.addr_traddr = '%s' AND p.addr_trsvcid = '%s';";
+	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND p.id = '%d';";
 
 static char allow_any_sql[] =
 	"SELECT count(s.nqn) AS subsys_num "
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
-	"WHERE s.attr_allow_any_host = '1' AND s.nqn = '%s' AND "
-	"p.addr_trtype = '%s' AND p.addr_traddr = '%s' AND p.addr_trsvcid = '%s';";
+	"WHERE s.attr_allow_any_host = '1' "
+	"AND s.nqn = '%s' AND p.id = '%d';";
 
 int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
-			     struct nofuse_port *port)
+			     unsigned int portid)
 {
 	int ret, num = 0;
 	char *sql;
 
-	ret = asprintf(&sql, allowed_host_sql, hostnqn, subsysnqn,
-		       port->trtype, port->traddr, port->trsvcid);
+	ret = asprintf(&sql, allowed_host_sql, hostnqn,
+		       subsysnqn, portid);
 	if (ret < 0)
 		return ret;
 
@@ -1487,8 +1486,7 @@ int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 		       hostnqn, subsysnqn);
 		return num;
 	}
-	ret = asprintf(&sql, allow_any_sql, subsysnqn,
-		       port->trtype, port->traddr, port->trsvcid);
+	ret = asprintf(&sql, allow_any_sql, subsysnqn, portid);
 	if (ret < 0)
 		return ret;
 

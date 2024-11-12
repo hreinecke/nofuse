@@ -50,7 +50,7 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 	}
 
 	if (inode_check_allowed_host(hostnqn, subsys->nqn,
-				     &ep->iface->port) <= 0) {
+				     ep->iface->portid) <= 0) {
 		ep_err(ep, "Rejecting host NQN '%s'\n", hostnqn);
 		ret = -EPERM;
 		goto out_unlock;
@@ -116,8 +116,8 @@ static int start_interface(struct interface *iface)
 
 	ret = iface->ops->init_listener(iface);
 	if (ret < 0) {
-		fprintf(stderr, "iface %s: init_listener failed\n",
-			iface->port.traddr);
+		fprintf(stderr, "iface %d: init_listener failed\n",
+			iface->portid);
 		return ret;
 	}
 	return 0;
@@ -359,7 +359,7 @@ void *run_host_interface(void *arg)
 	ret = start_interface(iface);
 	if (ret) {
 		fprintf(stderr, "iface %d: failed to start, error %d\n",
-			iface->port.port_id, ret);
+			iface->portid, ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
@@ -388,12 +388,12 @@ void *run_host_interface(void *arg)
 			ep->pthread = 0;
 			fprintf(stderr,
 				"iface %d: pthread_create failed with %d\n",
-				iface->port.port_id, ret);
+				iface->portid, ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	printf("iface %d: destroy listener\n", iface->port.port_id);
+	printf("iface %d: destroy listener\n", iface->portid);
 
 	iface->ops->destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);

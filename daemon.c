@@ -261,7 +261,7 @@ static int init_subsys(struct nofuse_context *ctx)
 	if (!subsys)
 		return -ENOENT;
 	list_for_each_entry(iface, &iface_linked_list, node) {
-		inode_add_subsys_port(subsys->nqn, iface->port.port_id);
+		inode_add_subsys_port(subsys->nqn, iface->portid);
 	}
 
 	if (ctx->hostnqn)
@@ -287,6 +287,12 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 		free(iface);
 		return ret;
 	}
+	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
+		if (!strchr(ifaddr, ','))
+			inode_set_port_attr(iface->portid, "addr_adrfam",
+					    "ipv6");
+		inode_set_port_attr(iface->portid, "addr_traddr", ifaddr);
+	}
 	if (port) {
 		char trsvcid[5];
 
@@ -298,7 +304,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 		fprintf(stderr,
 			"iface %d: cannot add ana group to port, error %d\n",
 			iface->portid, ret);
-		inode_del_port(&iface->port);
+		inode_del_port(iface->portid);
 		free(iface);
 		return ret;
 	}
@@ -316,7 +322,7 @@ int start_iface(int id)
 	int ret;
 
 	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface->port.port_id == id) {
+		if (_iface->portid == id) {
 			iface = _iface;
 			break;
 		}
@@ -333,7 +339,7 @@ int start_iface(int id)
 	if (ret) {
 		iface->pthread = 0;
 		fprintf(stderr, "iface %d: failed to start thread\n",
-			iface->port.port_id);
+			iface->portid);
 		ret = -ret;
 	}
 	pthread_attr_destroy(&pthread_attr);
@@ -346,7 +352,7 @@ int stop_iface(int id)
 	struct interface *iface = NULL, *_iface;
 
 	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface->port.port_id == id) {
+		if (_iface->portid == id) {
 			iface = _iface;
 			break;
 		}
@@ -365,7 +371,7 @@ int del_iface(int id)
 	int ret;
 
 	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface->port.port_id == id) {
+		if (_iface->portid == id) {
 			iface = _iface;
 			break;
 		}
@@ -373,7 +379,7 @@ int del_iface(int id)
 	if (!iface)
 		return -EINVAL;
 
-	ret = inode_del_port(&iface->port);
+	ret = inode_del_port(iface->portid);
 	if (ret < 0)
 		return ret;
 	list_del(&iface->node);
