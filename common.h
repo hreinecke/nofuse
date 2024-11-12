@@ -68,16 +68,6 @@ enum { DISCONNECTED, CONNECTED };
 
 extern int stopped;
 
-struct nofuse_port {
-	int port_id;
-	char trtype[256];
-	char traddr[256];
-	char trsvcid[256];
-	char adrfam[256];
-	char treq[256];
-	char tsas[256];
-};
-
 struct ep_qe {
 	struct linked_list node;
 	int tag;
