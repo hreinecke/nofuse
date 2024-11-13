@@ -36,11 +36,11 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 
 	if (configdb_check_allowed_host(hostnqn, subsys->nqn,
 				     ep->iface->portid) <= 0) {
-		ep_err(ep, "Rejecting host NQN '%s'\n", hostnqn);
+		ep_err(ep, "Rejecting host NQN '%s'", hostnqn);
 		ret = -EPERM;
 		goto out_unlock;
 	}
-	ep_info(ep, "Allocating new controller '%s' for '%s'\n",
+	ep_info(ep, "Allocating new controller '%s' for '%s'",
 		hostnqn, subsysnqn);
 	ctrl = malloc(sizeof(*ctrl));
 	if (!ctrl) {
@@ -70,6 +70,7 @@ out_unlock:
 static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
+	int ep_num = ep->sockfd;
 
 	ep->ops->destroy_endpoint(ep);
 
@@ -82,8 +83,8 @@ static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 		ctrl->num_endpoints--;
 		ep->ctrl = NULL;
 		if (!ctrl->num_endpoints) {
-			ep_info(ep, "deleting controller %u",
-				ctrl->cntlid);
+			printf("ep %d: deleting controller %u\n",
+			       ep_num, ctrl->cntlid);
 			list_del(&ctrl->node);
 			free(ctrl);
 		}
@@ -113,7 +114,7 @@ int start_endpoint(struct endpoint *ep, int id)
 
 	ret = ep->ops->create_endpoint(ep, id);
 	if (ret) {
-		fprintf(stderr, "ep %d: Failed to create endpoint\n", ret);
+		fprintf(stderr, "ep %d: Failed to create endpoint", ret);
 		return ret;
 	}
 
@@ -271,7 +272,6 @@ static void *endpoint_thread(void *arg)
 out_disconnect:
 	disconnect_endpoint(ep, !stopped);
 
-	ctrl_info(ep, "%s", stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
 	return NULL;
@@ -301,7 +301,7 @@ static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 
 	ret = start_endpoint(ep, id);
 	if (ret) {
-		fprintf(stderr, "ep %d: failed to start endpoint\n", id);
+		fprintf(stderr, "ep %d: failed to start endpoint", id);
 		goto out;
 	}
 
@@ -331,7 +331,7 @@ void *run_host_interface(void *arg)
 
 	ret = start_interface(iface);
 	if (ret) {
-		iface_err(iface, "failed to start, error %d\n", ret);
+		iface_err(iface, "failed to start, error %d", ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
