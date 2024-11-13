@@ -11,33 +11,6 @@
 #include "tcp.h"
 #include "configdb.h"
 
-#define ctrl_info(e, f, x...)					\
-	if (cmd_debug) {					\
-		if ((e)->ctrl) {				\
-			printf("ctrl %d qid %d: " f "\n",	\
-			       (e)->ctrl->cntlid,		\
-			       (e)->qid, ##x);			\
-		} else {					\
-			printf("ep %d: " f "\n",		\
-			       (e)->sockfd, ##x);		\
-		}						\
-		fflush(stdout);					\
-	}
-
-#define ctrl_err(e, f, x...)					\
-	do {							\
-		if ((e)->ctrl) {				\
-			fprintf(stderr,				\
-				"ctrl %d qid %d: " f "\n",	\
-				(e)->ctrl->cntlid,		\
-				(e)->qid, ##x);			\
-		} else {					\
-			fprintf(stderr, "ep %d: " f "\n",	\
-			       (e)->sockfd, ##x);		\
-		}						\
-		fflush(stderr);					\
-	} while (0)
-
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
 static int send_response(struct endpoint *ep, struct ep_qe *qe,
@@ -228,11 +201,12 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 {
 	struct nvme_id_ctrl id;
+	int ret;
 
 	memset(&id, 0, sizeof(id));
 
 	memset(id.fr, ' ', sizeof(id.fr));
-	strncpy((char *) id.fr, " ", sizeof(id.fr));
+	memset(id.mn, ' ', sizeof(id.mn));
 
 	id.mdts = 0;
 	id.cmic = 3;
@@ -244,9 +218,11 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.ioccsz = NVME_NVM_IOSQES;
 	id.iorcsz = NVME_NVM_IOCQES;
 
-	id.cntrltype = ep->ctrl->ctrl_type;
-	strcpy(id.subnqn, ep->ctrl->subsys->nqn);
-	if (ep->ctrl->ctrl_type == NVME_CTRL_CNTRLTYPE_DISC) {
+	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys->nqn, &id);
+	if (ret < 0)
+		return ret;
+
+	if (id.cntrltype == NVME_CTRL_CNTRLTYPE_DISC) {
 		id.maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
 		id.maxcmd = htole16(ep->qsize);

@@ -27,6 +27,7 @@ int debug;
 int tcp_debug;
 int cmd_debug;
 int ep_debug;
+int iface_debug;
 
 static char default_nqn[] =
 	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
@@ -282,8 +283,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	iface->portid = id;
 	ret = configdb_add_port(id);
 	if (ret < 0) {
-		fprintf(stderr,"iface %d: cannot add port, error %d\n",
-			id, ret);
+		iface_err(iface, "cannot register port, error %d", ret);
 		free(iface);
 		return ret;
 	}
@@ -301,9 +301,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	}
 	ret = configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
-		fprintf(stderr,
-			"iface %d: cannot add ana group to port, error %d\n",
-			iface->portid, ret);
+		iface_err(iface, "cannot add ana group to port, error %d", ret);
 		configdb_del_port(iface->portid);
 		free(iface);
 		return ret;
@@ -338,8 +336,7 @@ int start_iface(int id)
 			     run_host_interface, iface);
 	if (ret) {
 		iface->pthread = 0;
-		fprintf(stderr, "iface %d: failed to start thread\n",
-			iface->portid);
+		iface_err(iface, "failed to start thread");
 		ret = -ret;
 	}
 	pthread_attr_destroy(&pthread_attr);
@@ -403,14 +400,14 @@ static const struct fuse_opt nofuse_options[] = {
 
 static void show_help(void)
 {
-	print_info("Usage: nofuse <args>");
-	print_info("Possible values for <args>");
-	print_info("  --debug - enable debug prints in log files");
-	print_info("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
-	print_info("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
-	print_info("  --hostnqn=<NQN> - Host NQN of the configured host");
-	print_info("  --subsysnqn=<NQN> - Subsystem NQN to use");
-	print_info("  --dbname=<filename> - Database filename");
+	printf("Usage: nofuse <args>");
+	printf("Possible values for <args>");
+	printf("  --debug - enable debug prints in log files");
+	printf("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
+	printf("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
+	printf("  --hostnqn=<NQN> - Host NQN of the configured host");
+	printf("  --subsysnqn=<NQN> - Subsystem NQN to use");
+	printf("  --dbname=<filename> - Database filename");
 }
 
 static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
@@ -424,6 +421,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		tcp_debug = 1;
 		cmd_debug = 1;
 		ep_debug = 1;
+		iface_debug = 1;
 	}
 
 	if (!ctx->subsysnqn)
@@ -444,7 +442,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		ret = add_iface(num_ifaces + 1, ctx->traddr,
 				ctx->portnum);
 		if (ret < 0) {
-			print_err("Invalid port %d\n", ctx->portnum);
+			fprintf(stderr, "Invalid port %d\n", ctx->portnum);
 			return 1;
 		}
 		num_ifaces++;
@@ -464,7 +462,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		return 1;
 
 	if (list_empty(&iface_linked_list)) {
-		print_err("invalid host interface configuration");
+		fprintf(stderr, "invalid host interface configuration");
 		return 1;
 	} else if (tls_keyring) {
 		struct interface *iface;
@@ -558,8 +556,7 @@ int main(int argc, char *argv[])
 				     run_host_interface, iface);
 		if (ret) {
 			iface->pthread = 0;
-			print_err("failed to start iface thread");
-			print_errno("pthread_create failed", ret);
+			iface_err(iface, "failed to start iface thread");
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}

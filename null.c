@@ -19,13 +19,7 @@ int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
 
 int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
 {
-	int ret;
-
-	ret = ep->ops->rma_write(ep, qe, qe->data_len);
-	if (ret)
-		print_errno("rma_write failed", ret);
-
-	return ret;
+	return ep->ops->rma_write(ep, qe, qe->data_len);
 }
 
 int null_ns_prep_read(struct endpoint *ep, struct ep_qe *qe)

@@ -193,20 +193,17 @@ static int tcp_init_listener(struct interface *iface)
 
 	ret = configdb_get_port_attr(iface->portid, "addr_traddr", traddr);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: failed to get traddr\n",
-			iface->portid);
+		iface_err(iface, "failed to get traddr, error %d", ret);
 		return ret;
 	}
 	ret = configdb_get_port_attr(iface->portid, "addr_trsvcid", trsvcid);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: failed to get trsvcid\n",
-			iface->portid);
+		iface_err(iface, "failed to get trsvcid, errot %d", ret);
 		return ret;
 	}
 	ret = configdb_get_port_attr(iface->portid, "addr_adrfam", adrfam_str);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: failed to get adrfam\n",
-			iface->portid);
+		iface_err(iface, "failed to get adrfam, error %d", ret);
 		return ret;
 	}
 	if (!strcmp(adrfam_str, "ipv6"))
@@ -220,41 +217,37 @@ static int tcp_init_listener(struct interface *iface)
 
 	ret = getaddrinfo(traddr, trsvcid, &hints, &ai);
 	if (ret != 0) {
-		fprintf(stderr, "iface %d: getaddrinfo() failed: %s\n",
-			iface->portid, gai_strerror(ret));
+		iface_err(iface, "getaddrinfo() failed: %s",
+			  gai_strerror(ret));
 		return -EINVAL;
 	}
 	if (!ai) {
-		fprintf(stderr, "iface %d: no results from getaddrinfo()\n",
-			iface->portid);
+		iface_err(iface, "no results from getaddrinfo()");
 		return -EHOSTUNREACH;
 	}
 
 	listenfd = socket(ai->ai_family, ai->ai_socktype,
 			  ai->ai_protocol);
 	if (listenfd < 0) {
-		fprintf(stderr, "iface %d: socket error %d\n",
-			iface->portid, errno);
+		iface_err(iface, "socket error %d", errno);
 		ret = -errno;
 		goto err_free;
 	}
 
 	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: socket %s:%s bind error %d\n",
-			iface->portid, traddr, trsvcid, errno);
+		iface_err(iface, "socket %s:%s bind error %d",
+			  traddr, trsvcid, errno);
 		ret = -errno;
 		goto err_close;
 	}
 	if (ai->ai_next)
-		fprintf(stderr, "iface %d: duplicate addresses\n",
-			iface->portid);
+		iface_err(iface, "duplicate addresses");
 	freeaddrinfo(ai);
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: socket listen error %d\n",
-			iface->portid, errno);
+		iface_err(iface, "socket listen error %d\n", errno);
 		ret = -errno;
 		goto err_close;
 	}
@@ -395,8 +388,7 @@ static int tcp_wait_for_connection(struct interface *iface)
 		tmo.tv_usec = 0;
 		ret = select(iface->listenfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
-			fprintf(stderr, "iface %d: select error %d\n",
-				iface->portid, errno);
+			iface_err(iface, "select error %d", errno);
 			ret = -errno;
 			break;
 		}
@@ -411,9 +403,7 @@ static int tcp_wait_for_connection(struct interface *iface)
 			NULL);
 	if (sockfd < 0) {
 		if (errno != EAGAIN)
-			fprintf(stderr,
-				"iface %d: failed to accept error %d\n",
-				iface->portid, errno);
+			iface_err(iface, "accept error %d", errno);
 		ret = -EAGAIN;
 	} else
 		ret = sockfd;

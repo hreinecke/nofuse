@@ -83,6 +83,8 @@ int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 			     unsigned int portid);
 int configdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len);
 int configdb_host_genctr(const char *hostnqn, int *genctr);
+int configdb_subsys_identify_ctrl(const char *subsysnqn,
+				  struct nvme_id_ctrl *id);
 
 #endif /* _CONFIGDB_H */
 

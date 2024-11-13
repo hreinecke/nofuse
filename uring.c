@@ -16,7 +16,7 @@ int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 	qe->opcode = nvme_cmd_write;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		print_err("No SQEs available");
+		ctrl_err(ep, "tag %d No sqes available", qe->tag);
 		return NVME_SC_QUEUE_SIZE;
 	}
 
@@ -25,8 +25,8 @@ int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret < 0) {
-		print_err("endpoint %d tag %d: io_uring_submit error %d",
-			  ep->qid, qe->tag, errno);
+		ctrl_err(ep, "tag %d io_uring_submit error %d",
+		       qe->tag, errno);
 		return NVME_SC_INTERNAL;
 	}
 	
@@ -41,7 +41,7 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 	qe->opcode = nvme_cmd_read;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		print_err("No SQEs available");
+		ctrl_err(ep, "tag %d no sqes available", qe->tag);
 		return NVME_SC_QUEUE_SIZE;
 	}
 	io_uring_prep_readv(sqe, qe->ns->fd, &qe->iovec, 1,
@@ -50,8 +50,8 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret < 0) {
-		print_err("endpoint %d tag %d: io_uring_submit error %d",
-			  ep->qid, qe->tag, errno);
+		ctrl_err(ep, "tag %d io_uring_submit error %d",
+		       qe->tag, errno);
 		return NVME_SC_INTERNAL;
 	}
 	return 0;
@@ -60,23 +60,20 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 {
 	int status = 0, ret;
-	u16 ccid = qe->ccid, tag = qe->tag;
-	int cntlid = ep->ctrl ? ep->ctrl->cntlid : -1;
 
-	print_info("ctrl %d qid %d tag %#x ccid %#x handle qe res %d",
-		   cntlid, ep->qid, tag, ccid, res);
+	ctrl_info(ep, "tag %#x ccid %#x handle qe res %d",
+		  qe->tag, qe->ccid, res);
 	if (qe->opcode != nvme_cmd_write &&
 	    qe->opcode != nvme_cmd_read) {
-		print_err("ctrl %d qid %d tag %#x unhandled opcode %d",
-			  cntlid, ep->qid, qe->tag, qe->opcode);
+		ctrl_err(ep, "tag %#x unhandled opcode %d",
+			 qe->tag, qe->opcode);
 		status = NVME_SC_INVALID_OPCODE;
 		goto out_rsp;
 	}
 	if (res < 0) {
 		if (res != -EAGAIN)
 			return res;
-		print_info("ctrl %d qid %d tag %#x retry",
-			   cntlid, ep->qid, qe->tag);
+		ctrl_err(ep, "tag %#x retry", qe->tag);
 		if (qe->opcode == nvme_cmd_write)
 			status = uring_submit_read(ep, qe);
 		else
@@ -97,7 +94,7 @@ static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
 	}
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
-	set_response(&qe->resp, ccid, status, true);
+	set_response(&qe->resp, qe->ccid, status, true);
 	ret = ep->ops->send_rsp(ep, &qe->resp);
 	ep->ops->release_tag(ep, qe);
 	return ret;

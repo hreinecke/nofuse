@@ -1322,16 +1322,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		attr = p;
 		p = strtok(NULL, "/");
 		if (!p) {
-			if (!strcmp(attr, "attr_type")) {
-				if (!strcmp(value, "cur"))
-					sprintf(value, "%d", NVME_NQN_CUR);
-				else if (!strcmp(value, "ref"))
-					sprintf(value, "%d", NVME_NQN_REF);
-				else if (!strcmp(value, "nvm"))
-					sprintf(value, "%d", NVME_NQN_NVM);
-				else
-					return -EINVAL;
-			}
+			if (!strcmp(attr, "attr_type"))
+				return -EPERM;
 			ret = configdb_set_subsys_attr(subsysnqn, attr, value);
 			if (ret < 0) {
 				ret = -EINVAL;

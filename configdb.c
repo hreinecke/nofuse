@@ -412,8 +412,9 @@ int configdb_del_host(const char *nqn)
 }
 
 static char add_subsys_sql[] =
-	"INSERT INTO subsystems (nqn, attr_allow_any_host, attr_type, ctime) "
-	"VALUES ('%s', '%d', '%d', CURRENT_TIMESTAMP);";
+	"INSERT INTO subsystems "
+	"(nqn, attr_model, attr_ieee_oui, attr_allow_any_host, attr_type, ctime) "
+	"VALUES ('%s', 'nofuse', '851255', '%d', '%d', CURRENT_TIMESTAMP);";
 
 int configdb_add_subsys(struct nofuse_subsys *subsys)
 {
@@ -553,7 +554,7 @@ int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 
 static char set_subsys_attr_sql[] =
 	"UPDATE subsystems SET %s = '%s' "
-	"WHERE nqn = '%s' AND attr_type = '2';";
+	"WHERE nqn = '%s';";
 
 int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 {
@@ -1713,6 +1714,68 @@ int configdb_host_genctr(const char *hostnqn, int *genctr)
 		return ret;
 	ret = sql_exec_int(sql, "genctr", genctr);
 	free(sql);
+	return ret;
+}
+
+static char subsys_identify_ctrl_sql[] =
+	"SELECT s.nqn, s.attr_firmware AS firmware, "
+	"s.attr_ieee_oui AS ieee_oui, s.attr_model AS model, "
+	"s.attr_serial AS serial, s.attr_type AS type "
+	"FROM subsystems AS s WHERE s.nqn = '%s';";
+
+static int subsys_identify_ctrl_cb(void *p, int argc, char **argv, char **col)
+{
+	struct nvme_id_ctrl *id = p;
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (!argv[i])
+			continue;
+		if (!strcmp(col[i], "nqn")) {
+			strcpy(id->subnqn, argv[i]);
+		} else if (!strcmp(col[i], "firmware")) {
+			strcpy(id->fr, argv[i]);
+		} else if (!strcmp(col[i], "model")) {
+			strcpy(id->mn, argv[i]);
+		} else if (!strcmp(col[i], "ieee_oui")) {
+			u32 oui, oui_le;
+			char *eptr = NULL;
+
+			oui = strtoul(argv[i], &eptr, 10);
+			if (argv[i] == eptr)
+				continue;
+			oui_le = htole32(oui & 0xfff);
+			memcpy(id->ieee, &oui_le, sizeof(id->ieee));
+		} else if (!strcmp(col[i], "type")) {
+			if (!strcmp(argv[i], "2"))
+				id->cntrltype = NVME_CTRL_CNTRLTYPE_IO;
+			else
+				id->cntrltype = NVME_CTRL_CNTRLTYPE_DISC;
+		}
+	}
+	return 0;
+}
+
+int configdb_subsys_identify_ctrl(const char *subsysnqn,
+				  struct nvme_id_ctrl *id)
+{
+	int ret;
+	char *sql, *errmsg;
+
+	ret = asprintf(&sql, subsys_identify_ctrl_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+
+	ret = sqlite3_exec(configdb_db, sql, subsys_identify_ctrl_cb,
+			   id, &errmsg);
+	free(sql);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
 	return ret;
 }
 

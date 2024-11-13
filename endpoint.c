@@ -12,21 +12,6 @@
 
 static int nvmf_ctrl_id = 1;
 
-#define ep_info(e, f, x...)				\
-	if (ep_debug) {					\
-		printf("ep %d: " f "\n",		\
-		       (e)->sockfd, ##x);		\
-		fflush(stdout);				\
-}
-
-#define ep_err(e, f, x...)				\
-	do {						\
-		fprintf(stderr, "ep %d: " f "\n",	\
-			(e)->sockfd, ##x);		\
-		fflush(stderr);				\
-	} while (0)
-
-
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn)
 {
@@ -116,8 +101,7 @@ static int start_interface(struct interface *iface)
 
 	ret = iface->ops->init_listener(iface);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: init_listener failed\n",
-			iface->portid);
+		iface_err(iface, "init_listener failed with %d", ret);
 		return ret;
 	}
 	return 0;
@@ -231,16 +215,12 @@ static void *endpoint_thread(void *arg)
 		if (cqe_data == pollin_sqe) {
 			ret = cqe->res;
 			if (ret < 0) {
-				fprintf(stderr, "ctrl %d qid %d poll error %d",
-					ep->ctrl ? ep->ctrl->cntlid : -1,
-					ep->qid, ret);
+				ctrl_err(ep, "poll error %d", ret);
 				break;
 			}
 			if (ret & POLLERR) {
 				ret = -ENODATA;
-				printf("ctrl %d qid %d poll conn closed",
-				       ep->ctrl ? ep->ctrl->cntlid : -1,
-				       ep->qid);
+				ctrl_info(ep, "poll conn closed");
 				break;
 			}
 			pollin_sqe = NULL;
@@ -264,9 +244,7 @@ static void *endpoint_thread(void *arg)
 		} else {
 			struct ep_qe *qe = cqe_data;
 			if (!qe) {
-				fprintf(stderr, "ctrl %d qid %d empty cqe",
-					ep->ctrl ? ep->ctrl->cntlid : -1,
-					ep->qid);
+				ctrl_err(ep, "empty cqe");
 				ret = -EAGAIN;
 			}
 			ret = handle_data(ep, qe, cqe->res);
@@ -279,15 +257,12 @@ static void *endpoint_thread(void *arg)
 		 * is closed; that shouldn't count as an error.
 		 */
 		if (ret == -ENODATA) {
-			printf("ctrl %d qid %d connection closed",
-			       ep->ctrl ? ep->ctrl->cntlid : -1,
-			       ep->qid);
+			ctrl_info(ep, "connection closed");
 			break;
 		}
 		if (ret < 0) {
-			fprintf(stderr, "ctrl %d qid %d error %d retry %d",
-				ep->ctrl ? ep->ctrl->cntlid : -1,
-				ep->qid, ret, ep->kato_countdown);
+			ctrl_err(ep, "error %d retry %d",
+				 ret, ep->kato_countdown);
 			break;
 		}
 	}
@@ -296,9 +271,7 @@ static void *endpoint_thread(void *arg)
 out_disconnect:
 	disconnect_endpoint(ep, !stopped);
 
-	printf("ctrl %d qid %d %s",
-	       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-	       stopped ? "stopped" : "disconnected");
+	ctrl_info(ep, "%s", stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
 	return NULL;
@@ -358,8 +331,7 @@ void *run_host_interface(void *arg)
 
 	ret = start_interface(iface);
 	if (ret) {
-		fprintf(stderr, "iface %d: failed to start, error %d\n",
-			iface->portid, ret);
+		iface_err(iface, "failed to start, error %d\n", ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
@@ -372,8 +344,9 @@ void *run_host_interface(void *arg)
 
 		if (id < 0) {
 			if (id != -EAGAIN)
-				fprintf(stderr,
-					"Host connection failed, error %d\n", id);
+				iface_err(iface,
+					  "wait for connection failed, error %d", id);
+
 			continue;
 		}
 		ep = enqueue_endpoint(id, iface);
@@ -386,14 +359,12 @@ void *run_host_interface(void *arg)
 				     endpoint_thread, ep);
 		if (ret) {
 			ep->pthread = 0;
-			fprintf(stderr,
-				"iface %d: pthread_create failed with %d\n",
-				iface->portid, ret);
+			iface_err(iface, "pthread_create failed with %d", ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	printf("iface %d: destroy listener\n", iface->portid);
+	iface_info(iface, "destroy listener");
 
 	iface->ops->destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);

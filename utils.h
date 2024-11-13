@@ -130,31 +130,6 @@ static inline void list_splice_tail(struct linked_list *list,
 	     entry = tmp,						   \
 	     tmp = list_entry(tmp->member.next, typeof(*tmp), member))
 
-#define print_debug(f, x...) \
-	do { \
-		if (debug) { \
-			printf("%s(%d) " f "\n", __func__, __LINE__, ##x); \
-			fflush(stdout); \
-		} \
-	} while (0)
-#define print_trace()\
-	do { \
-		printf("%s(%d)\n", __func__, __LINE__); \
-		fflush(stdout); \
-	} while (0)
-#define print_info(f, x...)\
-	do { \
-		printf(f "\n", ##x); \
-		fflush(stdout); \
-	} while (0)
-#define print_err(f, x...)\
-	do { \
-		fprintf(stderr, "Error: " f "\n", ##x); \
-		fflush(stderr); \
-	} while (0)
-#define print_errno(s, e)\
-	print_err("%s - %s (%d)", s, strerror(((e) < 0) ? -(e) : (e)), e)
-
 #define UNUSED(x) ((void) x)
 
 #define min(x, y) ((x < y) ? x : y)
