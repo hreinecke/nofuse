@@ -344,11 +344,6 @@ int start_iface(int id)
 		iface_err(iface, "failed to start thread");
 		ret = -ret;
 	}
-	if (iface->listenfd < 0) {
-		pthread_join(iface->pthread, NULL);
-		iface->pthread = 0;
-		ret = -EAGAIN;
-	}
 	pthread_attr_destroy(&pthread_attr);
 
 	return ret;

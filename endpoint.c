@@ -339,7 +339,7 @@ void *run_host_interface(void *arg)
 		return NULL;
 	}
 
-	while (!stopped) {
+	while (iface->listenfd > 0) {
 		id = iface->ops->wait_for_connection(iface);
 
 		if (stopped)
