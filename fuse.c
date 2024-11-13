@@ -561,6 +561,14 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 		}
 		ret = add_namespace(subsysnqn, nsid);
 	}
+	if (!strcmp(root, hosts_dir)) {
+		char *hostnqn = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		ret = configdb_add_host(hostnqn);
+	}
 out_free:
 	free(pathbuf);
 	return ret;
@@ -642,6 +650,14 @@ static int nofuse_rmdir(const char *path)
 			goto out_free;
 		}
 		ret = del_namespace(subsysnqn, nsid);
+	}
+	if (!strcmp(root, hosts_dir)) {
+		const char *hostnqn = p;
+
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		ret = configdb_del_host(hostnqn);
 	}
 out_free:
 	free(pathbuf);
