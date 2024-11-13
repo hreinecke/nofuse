@@ -281,6 +281,12 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 			res = 0;
 			goto out_free;
 		}
+		if (strcmp(root, hosts_dir) &&
+		    strcmp(root, ports_dir) &&
+		    strcmp(root, subsys_dir)) {
+			res = -ENOENT;
+			goto out_free;
+		}
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
 		res = configdb_count_table(root, &nlinks);
@@ -590,8 +596,9 @@ static int nofuse_rmdir(const char *path)
 	if (!p)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		char *port = p, *ana_grpid, *eptr = NULL;
+		char *port = p, *ana_grp, *eptr = NULL;
 		unsigned int portid;
+		int ana_grpid;
 
 		portid = strtoul(port, &eptr, 10);
 		if (port == eptr)
@@ -610,18 +617,26 @@ static int nofuse_rmdir(const char *path)
 		p = strtok(NULL, "/");
 		if (!p)
 			goto out_free;
-		ana_grpid = p;
-		printf("%s: port %s ana group %s\n", __func__,
-		       port, ana_grpid);
-		if (!strcmp(ana_grpid, "1")) {
+		ana_grp = p;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		ana_grpid = strtoul(ana_grp, &eptr, 10);
+		if (ana_grp == eptr) {
+			ret = -EINVAL;
+			goto out_free;
+		}
+		printf("%s: port %d ana group %d\n", __func__,
+		       portid, ana_grpid);
+		if (ana_grpid == 1) {
 			ret = -EACCES;
 			goto out_free;
 		}
-		ret = configdb_del_ana_group(port, ana_grpid);
+		ret = configdb_del_ana_group(portid, ana_grpid);
 		if (ret < 0) {
-			printf("%s: cannot remove ana group %s from "
-			       "port %s, error %d\n", __func__,
-			       ana_grpid, port, ret);
+			printf("%s: cannot remove ana group %d from "
+			       "port %d, error %d\n", __func__,
+			       ana_grpid, portid, ret);
 			ret = -ENOENT;
 			goto out_free;
 		}
@@ -1247,7 +1262,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	value = malloc(strlen(buf) + 1);
 	if (!value)
 		return -ENOMEM;
-	memset(value, 0, strlen(buf));
+	memset(value, 0, strlen(buf) + 1);
 	strncpy(value, buf, len);
 	ptr = value;
 
@@ -1302,7 +1317,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				goto out_free;
 
 			for (i = 0; i < 5; i++) {
-				if (!strncmp(ana_value_map[i].desc, buf,
+				if (!strncmp(ana_value_map[i].desc, value,
 					     strlen(ana_value_map[i].desc))) {
 					ana_state = ana_value_map[i].val;
 					break;
@@ -1350,7 +1365,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			ret = -ENOENT;
 			goto out_free;
 		} else {
-			ret = write_namespace(subsysnqn, p, buf, len);
+			ret = write_namespace(subsysnqn, p, value, len);
 		}
 	}
 out_free:

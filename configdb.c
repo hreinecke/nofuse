@@ -1042,6 +1042,10 @@ int configdb_add_ana_group(int port, int grpid, int ana_state)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0) {
+		sql_exec_simple("SELECT * FROM ana_groups;");
+		sql_exec_simple("SELECT * FROM ports;");
+	}
 
 	return ret;
 }
@@ -1166,15 +1170,15 @@ int configdb_set_ana_group(const char *port, const char *ana_grpid,
 
 static char del_ana_group_sql[] =
 	"DELETE FROM ana_groups AS ag WHERE ag.port_id IN "
-	"(SELECT id FROM ports WHERE id = '%s') AND "
-	"ag.grpid = '%s';";
+	"(SELECT id FROM ports WHERE id = '%d') AND "
+	"ag.grpid = '%d';";
 
-int configdb_del_ana_group(const char *port, const char *grpid)
+int configdb_del_ana_group(unsigned int portid, int grpid)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, del_ana_group_sql, port, grpid);
+	ret = asprintf(&sql, del_ana_group_sql, portid, grpid);
 	if (ret < 0)
 		return ret;
 	printf("%s: %s\n", __func__, sql);

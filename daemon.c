@@ -89,6 +89,7 @@ int add_subsys(const char *nqn, int type)
 	}
 
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
+	INIT_LINKED_LIST(&subsys->node);
 	INIT_LINKED_LIST(&subsys->ctrl_list);
 	list_add(&subsys->node, &subsys_linked_list);
 
@@ -99,6 +100,7 @@ static int del_subsys(struct nofuse_subsys *subsys)
 {
 	int ret;
 
+	printf("deleting subsys %s\n", subsys->nqn);
 	ret = configdb_del_subsys(subsys);
 	if (ret < 0)
 		return ret;
@@ -125,6 +127,7 @@ int add_namespace(const char *subsysnqn, int nsid)
 		free(ns);
 		return ret;
 	}
+	INIT_LINKED_LIST(&ns->node);
 	list_add_tail(&ns->node, &device_linked_list);
 	return 0;
 }
@@ -280,6 +283,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	if (!iface)
 		return -ENOMEM;
 	memset(iface, 0, sizeof(*iface));
+	iface->listenfd = -1;
 	iface->portid = id;
 	ret = configdb_add_port(id);
 	if (ret < 0) {
@@ -308,6 +312,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	}
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LINKED_LIST(&iface->ep_list);
+	INIT_LINKED_LIST(&iface->node);
 	list_add_tail(&iface->node, &iface_linked_list);
 
 	return 0;
@@ -376,9 +381,17 @@ int del_iface(int id)
 	if (!iface)
 		return -EINVAL;
 
-	ret = configdb_del_port(iface->portid);
-	if (ret < 0)
+	ret = configdb_del_ana_group(iface->portid, 1);
+	if (ret < 0) {
+		iface_err(iface, "cannot delete ana group from port, error %d",
+			  ret);
 		return ret;
+	}
+	ret = configdb_del_port(iface->portid);
+	if (ret < 0) {
+		configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
+		return ret;
+	}
 	list_del(&iface->node);
 	free(iface);
 	return 0;
@@ -510,13 +523,12 @@ int free_subsys(const char *subsysnqn)
 	int ret = 0;
 
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
-		if (!subsysnqn || strcmp(subsys->nqn, subsysnqn))
-			continue;
-		if (subsys->type == NVME_NQN_CUR)
-			return -EPERM;
-		ret = del_subsys(subsys);
-		if (ret < 0)
+		if (!subsysnqn ||
+		    (!strcmp(subsys->nqn, subsysnqn) &&
+		     subsys->type != NVME_NQN_CUR)) {
+			ret = del_subsys(subsys);
 			break;
+		}
 	}
 	return ret;
 }

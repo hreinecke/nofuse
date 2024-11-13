@@ -53,7 +53,7 @@ int configdb_get_ana_group(const char *port, const char *ana_grpid,
 			int *ana_state);
 int configdb_set_ana_group(const char *port, const char *ana_grpid,
 			int ana_state);
-int configdb_del_ana_group(const char *port, const char *grpid);
+int configdb_del_ana_group(unsigned int portid, int grpid);
 
 int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn);
 int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts);

@@ -61,6 +61,7 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 	} else {
 		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
 	}
+	INIT_LINKED_LIST(&ctrl->node);
 	list_add(&ctrl->node, &subsys->ctrl_list);
 out_unlock:
 	pthread_mutex_unlock(&subsys->ctrl_mutex);
@@ -148,6 +149,7 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize)
 	for (i = 0; i <= qsize; i++) {
 		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
+		INIT_LINKED_LIST(&ep->node);
 	}
 	ep->qsize = qsize + 1;
 	return 0;
@@ -298,6 +300,7 @@ static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 	ep->qid = -1;
 	ep->recv_state = RECV_PDU;
 	ep->io_ops = tcp_register_io_ops();
+	INIT_LINKED_LIST(&ep->node);
 
 	ret = start_endpoint(ep, id);
 	if (ret) {

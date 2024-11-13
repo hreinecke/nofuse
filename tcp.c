@@ -385,6 +385,9 @@ static int tcp_wait_for_connection(struct interface *iface)
 	int sockfd;
 	int ret = -ESHUTDOWN;
 
+	if (iface->listenfd < 0)
+		return ret;
+
 	while (!stopped) {
 		fd_set rfd;
 		struct timeval tmo;
