@@ -1,5 +1,5 @@
 /*
- * inode.c
+ * configdb.c
  * SQLite3 configfs emulation
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
@@ -26,9 +26,9 @@
 #include <errno.h>
 
 #include "common.h"
-#include "inode.h"
+#include "configdb.h"
 
-static sqlite3 *inode_db;
+static sqlite3 *configdb_db;
 
 static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 {
@@ -51,7 +51,7 @@ static int sql_exec_simple(const char *sql_str)
 	int ret;
 	char *errmsg = NULL;
 
-	ret = sqlite3_exec(inode_db, sql_str, sql_simple_cb, NULL, &errmsg);
+	ret = sqlite3_exec(configdb_db, sql_str, sql_simple_cb, NULL, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql_str);
 		fprintf(stderr, "SQL error: %s\n", errmsg);
@@ -111,7 +111,7 @@ static int sql_exec_int(const char *sql, const char *col, int *value)
 	};
 	int ret;
 
-	ret = sqlite3_exec(inode_db, sql, sql_int_value_cb,
+	ret = sqlite3_exec(configdb_db, sql, sql_int_value_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -177,7 +177,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	};
 	int ret;
 
-	ret = sqlite3_exec(inode_db, sql, sql_str_value_cb,
+	ret = sqlite3_exec(configdb_db, sql, sql_str_value_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -247,7 +247,7 @@ static const char *init_sql[NUM_TABLES] = {
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
-int inode_init(void)
+int configdb_init(void)
 {
 	int i, ret;
 
@@ -272,7 +272,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE hosts;",
 };
 
-int inode_exit(void)
+int configdb_exit(void)
 {
 	int i, ret;
 
@@ -317,7 +317,7 @@ static int fill_filter_cb(void *p, int argc, char **argv, char **colname)
 static char count_table_id_sql[] =
 	"SELECT count(id) AS num FROM %s;";
 
-int inode_count_table(const char *tbl, int *num)
+int configdb_count_table(const char *tbl, int *num)
 {
 	char *sql;
 	int ret;
@@ -334,7 +334,7 @@ int inode_count_table(const char *tbl, int *num)
 static char add_host_sql[] =
 	"INSERT INTO hosts (nqn, ctime) VALUES ('%s', CURRENT_TIMESTAMP);";
 
-int inode_add_host(const char *nqn)
+int configdb_add_host(const char *nqn)
 {
 	char *sql;
 	int ret;
@@ -351,7 +351,7 @@ int inode_add_host(const char *nqn)
 static char stat_host_sql[] =
 	"SELECT unixepoch(ctime) AS tv FROM hosts WHERE nqn = '%s';";
 
-int inode_stat_host(const char *hostnqn, struct stat *stbuf)
+int configdb_stat_host(const char *hostnqn, struct stat *stbuf)
 {
 		char *sql;
 	int ret, timeval;
@@ -373,7 +373,7 @@ int inode_stat_host(const char *hostnqn, struct stat *stbuf)
 static char fill_host_dir_sql[] =
 	"SELECT nqn FROM hosts;";
 
-int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler)
+int configdb_fill_host_dir(void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -383,7 +383,7 @@ int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler)
 	char *errmsg;
 	int ret;
 
-	ret = sqlite3_exec(inode_db, fill_host_dir_sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, fill_host_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
@@ -398,7 +398,7 @@ int inode_fill_host_dir(void *buf, fuse_fill_dir_t filler)
 static char del_host_sql[] =
 	"DELETE FROM hosts WHERE nqn = '%s';";
 
-int inode_del_host(const char *nqn)
+int configdb_del_host(const char *nqn)
 {
 	char *sql;
 	int ret;
@@ -415,7 +415,7 @@ static char add_subsys_sql[] =
 	"INSERT INTO subsystems (nqn, attr_allow_any_host, attr_type, ctime) "
 	"VALUES ('%s', '%d', '%d', CURRENT_TIMESTAMP);";
 
-int inode_add_subsys(struct nofuse_subsys *subsys)
+int configdb_add_subsys(struct nofuse_subsys *subsys)
 {
 	char *sql;
 	int ret;
@@ -432,7 +432,7 @@ int inode_add_subsys(struct nofuse_subsys *subsys)
 static char get_discover_nqn_sql[] =
 	"SELECT nqn FROM subsystems WHERE attr_type = '3';";
 
-int inode_get_discovery_nqn(char *nqn)
+int configdb_get_discovery_nqn(char *nqn)
 {
 	return sql_exec_str(get_discover_nqn_sql, "nqn", nqn);
 }
@@ -440,7 +440,7 @@ int inode_get_discovery_nqn(char *nqn)
 static char set_discover_nqn_sql[] =
 	"UPDATE subsystems SET nqn = '%s' WHERE attr_type = '3';";
 
-int inode_set_discovery_nqn(char *nqn)
+int configdb_set_discovery_nqn(char *nqn)
 {
 	char *sql;
 	int ret;
@@ -457,7 +457,7 @@ int inode_set_discovery_nqn(char *nqn)
 static char stat_subsys_sql[] =
 	"SELECT unixepoch(ctime) AS tv FROM subsystems WHERE nqn = '%s';";
 
-int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
+int configdb_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 {
 	char *sql;
 	int ret, timeval;
@@ -479,7 +479,7 @@ int inode_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 static char fill_subsys_dir_sql[] =
 	"SELECT nqn FROM subsystems;";
 
-int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
+int configdb_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -489,7 +489,7 @@ int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 	char *errmsg;
 	int ret;
 
-	ret = sqlite3_exec(inode_db, fill_subsys_dir_sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, fill_subsys_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", fill_subsys_dir_sql);
@@ -505,7 +505,7 @@ int inode_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 static char fill_subsys_sql[] =
 	"SELECT * FROM subsystems WHERE nqn = '%s';";
 
-int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
+int configdb_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -518,7 +518,7 @@ int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
 	ret = asprintf(&sql, fill_subsys_sql, nqn);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(inode_db, sql, fill_filter_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_filter_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -537,7 +537,7 @@ int inode_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
 static char get_subsys_attr_sql[] =
 	"SELECT %s FROM subsystems WHERE nqn = '%s';";
 
-int inode_get_subsys_attr(const char *nqn, const char *attr, char *buf)
+int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 {
 	char *sql;
 	int ret;
@@ -555,7 +555,7 @@ static char set_subsys_attr_sql[] =
 	"UPDATE subsystems SET %s = '%s' "
 	"WHERE nqn = '%s' AND attr_type = '2';";
 
-int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
+int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 {
 	char *sql;
 	int ret;
@@ -568,7 +568,7 @@ int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 
 	ret = sql_exec_simple(sql);
 	free(sql);
-	if (sqlite3_changes(inode_db) == 0)
+	if (sqlite3_changes(configdb_db) == 0)
 		ret = -EPERM;
 	return ret;
 }
@@ -576,7 +576,7 @@ int inode_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
 static char del_subsys_sql[] =
 	"DELETE FROM subsystems WHERE nqn = '%s';";
 
-int inode_del_subsys(struct nofuse_subsys *subsys)
+int configdb_del_subsys(struct nofuse_subsys *subsys)
 {
 	char *sql;
 	int ret;
@@ -594,7 +594,7 @@ static char add_namespace_sql[] =
 	"SELECT '%s', '%d', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s' AND s.attr_type == '2';";
 
-int inode_add_namespace(const char *subsysnqn, int nsid)
+int configdb_add_namespace(const char *subsysnqn, int nsid)
 {
 	char *sql;
 	uuid_t uuid;
@@ -609,7 +609,7 @@ int inode_add_namespace(const char *subsysnqn, int nsid)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
-	if (sqlite3_changes(inode_db) == 0)
+	if (sqlite3_changes(configdb_db) == 0)
 		return -EPERM;
 	return ret;
 }
@@ -619,7 +619,7 @@ static char count_namespaces_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
-int inode_count_namespaces(const char *subsysnqn, int *num)
+int configdb_count_namespaces(const char *subsysnqn, int *num)
 {
 	char *sql;
 	int ret;
@@ -638,7 +638,7 @@ static char stat_namespace_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
 	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
 
-int inode_stat_namespace(const char *subsysnqn, int nsid,
+int configdb_stat_namespace(const char *subsysnqn, int nsid,
 			 struct stat *stbuf)
 {
 	char *sql;
@@ -661,7 +661,7 @@ static char fill_namespace_dir_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
-int inode_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t filler)
+int configdb_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -674,7 +674,7 @@ int inode_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t filler)
 	ret = asprintf(&sql, fill_namespace_dir_sql, nqn);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -717,7 +717,7 @@ static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 	return 0;
 }
 
-int inode_fill_namespace(const char *nqn, int nsid,
+int configdb_fill_namespace(const char *nqn, int nsid,
 			 void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
@@ -732,7 +732,7 @@ int inode_fill_namespace(const char *nqn, int nsid,
 	if (ret < 0)
 		return ret;
 
-	ret = sqlite3_exec(inode_db, sql, fill_ns_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_ns_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -751,7 +751,7 @@ static char get_namespace_attr_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
 	"WHERE s.nqn = '%s' AND ns.nsid = '%d';";
 
-int inode_get_namespace_attr(const char *subsysnqn, int nsid,
+int configdb_get_namespace_attr(const char *subsysnqn, int nsid,
 			     const char *attr, char *buf)
 {
 	int ret;
@@ -774,7 +774,7 @@ static char set_namespace_attr_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id) AS sel "
 	"WHERE sel.nqn = '%s' AND sel.nsid = '%d';";
 
-int inode_set_namespace_attr(const char *subsysnqn, int nsid,
+int configdb_set_namespace_attr(const char *subsysnqn, int nsid,
 			     const char *attr, const char *buf)
 {
 	int ret;
@@ -796,7 +796,7 @@ static char get_namespace_anagrp_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
 	"WHERE s.nqn = '%s' AND ns.nsid = '%d';";
 
-int inode_get_namespace_anagrp(const char *subsysnqn, int nsid,
+int configdb_get_namespace_anagrp(const char *subsysnqn, int nsid,
 			       int *ana_grpid)
 {
 	int ret;
@@ -821,7 +821,7 @@ static char set_namespace_anagrp_sql[] =
 	"WHERE sel.subsysnqn = '%s' "
 	"AND sel.grpid = '%d' AND nsid = '%d';";
 
-int inode_set_namespace_anagrp(const char *subsysnqn, int nsid,
+int configdb_set_namespace_anagrp(const char *subsysnqn, int nsid,
 			       int ana_grpid)
 {
 	char *sql;
@@ -841,7 +841,7 @@ static char del_namespace_sql[] =
 	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
 	"ns.nsid = '%d';";
 
-int inode_del_namespace(const char *subsysnqn, int nsid)
+int configdb_del_namespace(const char *subsysnqn, int nsid)
 {
 	int ret;
 	char *sql;
@@ -859,7 +859,7 @@ static char add_port_sql[] =
 	"INSERT INTO ports (id, addr_trtype, addr_traddr, addr_adrfam, ctime)"
 	" VALUES ('%d', 'tcp', '127.0.0.1', 'ipv4', CURRENT_TIMESTAMP);";
 
-int inode_add_port(unsigned int portid)
+int configdb_add_port(unsigned int portid)
 {
 	char *sql;
 	int ret;
@@ -881,7 +881,7 @@ int inode_add_port(unsigned int portid)
 static char stat_port_sql[] =
 	"SELECT unixepoch(ctime) AS tv FROM ports WHERE id = '%d';";
 
-int inode_stat_port(unsigned int port, struct stat *stbuf)
+int configdb_stat_port(unsigned int port, struct stat *stbuf)
 {
 	char *sql;
 	int ret, timeval;
@@ -905,7 +905,7 @@ int inode_stat_port(unsigned int port, struct stat *stbuf)
 static char fill_port_dir_sql[] =
 	"SELECT id FROM ports;";
 
-int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler)
+int configdb_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -915,7 +915,7 @@ int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 	char *errmsg;
 	int ret;
 
-	ret = sqlite3_exec(inode_db, fill_port_dir_sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, fill_port_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", fill_port_dir_sql);
@@ -930,7 +930,7 @@ int inode_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 static char fill_port_sql[] =
 	"SELECT * FROM ports WHERE id = '%d';";
 
-int inode_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler)
+int configdb_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -943,7 +943,7 @@ int inode_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler)
 	ret = asprintf(&sql, fill_port_sql, port);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(inode_db, sql, fill_filter_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_filter_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -963,7 +963,7 @@ int inode_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler)
 static char get_port_attr_sql[] =
 	"SELECT %s FROM ports WHERE id = '%d';";
 
-int inode_get_port_attr(unsigned int port, const char *attr, char *buf)
+int configdb_get_port_attr(unsigned int port, const char *attr, char *buf)
 {
 	int ret;
 	char *sql;
@@ -985,7 +985,7 @@ static char update_genctr_port_sql[] =
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
 	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
 
-int inode_set_port_attr(unsigned int port, const char *attr, const char *value)
+int configdb_set_port_attr(unsigned int port, const char *attr, const char *value)
 {
 	char *sql;
 	int ret;
@@ -1008,12 +1008,12 @@ int inode_set_port_attr(unsigned int port, const char *attr, const char *value)
 static char del_port_sql[] =
 	"DELETE FROM ports WHERE id = '%d';";
 
-int inode_del_port(unsigned int portid)
+int configdb_del_port(unsigned int portid)
 {
 	char *sql;
 	int ret, portnum = 0;
 
-	ret = inode_count_subsys_port(portid, &portnum);
+	ret = configdb_count_subsys_port(portid, &portnum);
 	if (ret < 0)
 		return ret;
 	if (portnum > 0)
@@ -1031,7 +1031,7 @@ static char add_ana_group_sql[] =
 	"SELECT '%d', p.id, CURRENT_TIMESTAMP "
 	"FROM ports AS p WHERE p.id = '%d';";
 
-int inode_add_ana_group(int port, int grpid, int ana_state)
+int configdb_add_ana_group(int port, int grpid, int ana_state)
 {
 	char *sql;
 	int ret;
@@ -1050,7 +1050,7 @@ static char count_ana_groups_sql[] =
 	"INNER JOIN ports AS p ON p.id = ag.port_id "
 	"WHERE p.id = '%s';";
 
-int inode_count_ana_groups(const char *port, int *num)
+int configdb_count_ana_groups(const char *port, int *num)
 {
 	char *sql;
 	int ret;
@@ -1069,7 +1069,7 @@ static char stat_ana_group_sql[] =
 	"INNER JOIN ports AS p ON p.id = ag.port_id "
 	"WHERE p.id = '%s' AND ag.grpid = '%s';";
 
-int inode_stat_ana_group(const char *port, const char *ana_grpid,
+int configdb_stat_ana_group(const char *port, const char *ana_grpid,
 			 struct stat *stbuf)
 {
 	int ret, timeval;
@@ -1097,7 +1097,7 @@ static char fill_ana_groups_sql[] =
 	"INNER JOIN ports AS p ON p.id = ag.port_id "
 	"WHERE p.id = '%s';";
 
-int inode_fill_ana_groups(const char *port,
+int configdb_fill_ana_groups(const char *port,
 			  void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
@@ -1111,7 +1111,7 @@ int inode_fill_ana_groups(const char *port,
 	ret = asprintf(&sql, fill_ana_groups_sql, port);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
@@ -1129,7 +1129,7 @@ static char get_ana_group_sql[] =
 	"INNER JOIN ports AS p ON p.id = ag.port_id "
 	"WHERE p.id = '%s' AND ag.grpid = '%s';";
 
-int inode_get_ana_group(const char *port, const char *ana_grpid,
+int configdb_get_ana_group(const char *port, const char *ana_grpid,
 			int *ana_state)
 {
 	int ret;
@@ -1148,7 +1148,7 @@ static char set_ana_group_sql[] =
 	"UPDATE ana_groups SET ana_state = '%d' "
 	"WHERE port_id = '%s' AND grpid = '%s';";
 
-int inode_set_ana_group(const char *port, const char *ana_grpid,
+int configdb_set_ana_group(const char *port, const char *ana_grpid,
 			int ana_state)
 {
 	int ret;
@@ -1168,7 +1168,7 @@ static char del_ana_group_sql[] =
 	"(SELECT id FROM ports WHERE id = '%s') AND "
 	"ag.grpid = '%s';";
 
-int inode_del_ana_group(const char *port, const char *grpid)
+int configdb_del_ana_group(const char *port, const char *grpid)
 {
 	char *sql;
 	int ret;
@@ -1188,7 +1188,7 @@ static char add_host_subsys_sql[] =
 	"SELECT h.id, s.id, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';";
 
-int inode_add_host_subsys(const char *hostnqn, const char *subsysnqn)
+int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
 	char *sql;
 	int ret;
@@ -1214,7 +1214,7 @@ static char fill_host_subsys_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
 	"WHERE s.nqn = '%s';";
 
-int inode_fill_host_subsys(const char *subsysnqn,
+int configdb_fill_host_subsys(const char *subsysnqn,
 			   void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
@@ -1228,7 +1228,7 @@ int inode_fill_host_subsys(const char *subsysnqn,
 	ret = asprintf(&sql, fill_host_subsys_sql, subsysnqn);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
@@ -1246,7 +1246,7 @@ static char count_host_subsys_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
 	"WHERE s.nqn = '%s';";
 
-int inode_count_host_subsys(const char *subsysnqn, int *num_hosts)
+int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts)
 {
 	int ret;
 	char *sql;
@@ -1265,7 +1265,7 @@ static char stat_host_subsys_sql[] =
 	"INNER JOIN hosts AS h ON h.id = hs.host_id "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
 
-int inode_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
+int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 			   struct stat *stbuf)
 {
 	char *sql;
@@ -1294,7 +1294,7 @@ static char del_host_subsys_sql[] =
 	"hs.subsys_id IN "
 	"(SELECT id FROM subsystems WHERE nqn = '%s');";
 
-int inode_del_host_subsys(const char *hostnqn, const char *subsysnqn)
+int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
 	char *sql;
 	int ret;
@@ -1321,7 +1321,7 @@ static char update_genctr_host_subsys_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id) AS hs "
 	"WHERE hs.host_id = hosts.id AND hs.subsys_nqn = '%s';";
 
-int inode_add_subsys_port(const char *subsysnqn, unsigned int port)
+int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 {
 	char *sql;
 	int ret;
@@ -1352,7 +1352,7 @@ static char del_subsys_port_sql[] =
 	"sp.port_id IN "
 	"(SELECT id FROM ports WHERE id = %d);";
 
-int inode_del_subsys_port(const char *subsysnqn, unsigned int port)
+int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
 {
 	char *sql;
 	int ret;
@@ -1383,7 +1383,7 @@ static char count_subsys_port_sql[] =
 	"WHERE p.id = '%d';";
 
 
-int inode_count_subsys_port(unsigned int port, int *portnum)
+int configdb_count_subsys_port(unsigned int port, int *portnum)
 {
 	char *sql;
 	int ret;
@@ -1402,7 +1402,7 @@ static char fill_subsys_port_sql[] =
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE p.id = '%d';";
 
-int inode_fill_subsys_port(unsigned int port,
+int configdb_fill_subsys_port(unsigned int port,
 			   void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
@@ -1416,7 +1416,7 @@ int inode_fill_subsys_port(unsigned int port,
 	ret = asprintf(&sql, fill_subsys_port_sql, port);
 	if (ret < 0)
 		return ret;
-	ret = sqlite3_exec(inode_db, sql, fill_root_cb,
+	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
@@ -1435,7 +1435,7 @@ static char stat_subsys_port_sql[] =
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE s.nqn = '%s' AND p.id = '%d';";
 
-int inode_stat_subsys_port(const char *subsysnqn, unsigned int port,
+int configdb_stat_subsys_port(const char *subsysnqn, unsigned int port,
 			   struct stat *stbuf)
 {
 	char *sql;
@@ -1474,7 +1474,7 @@ static char allow_any_sql[] =
 	"WHERE s.attr_allow_any_host = '1' "
 	"AND s.nqn = '%s' AND p.id = '%d';";
 
-int inode_check_allowed_host(const char *hostnqn, const char *subsysnqn,
+int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 			     unsigned int portid)
 {
 	int ret, num = 0;
@@ -1665,7 +1665,7 @@ static char any_disc_entry_sql[] =
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE s.attr_allow_any_host = '1';";
 
-int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
+int configdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 {
 	struct sql_disc_entry_parm parm = {
 		.buffer = log,
@@ -1679,7 +1679,7 @@ int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 	if (ret < 0)
 		return ret;
 	printf("Display disc entries for %s\n", hostnqn);
-	ret = sqlite3_exec(inode_db, sql, sql_disc_entry_cb, &parm, &errmsg);
+	ret = sqlite3_exec(configdb_db, sql, sql_disc_entry_cb, &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
 		fprintf(stderr, "SQL error: %s\n", errmsg);
@@ -1689,7 +1689,7 @@ int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
 
 	printf("Display disc entries for any host\n");
-	ret = sqlite3_exec(inode_db, any_disc_entry_sql,
+	ret = sqlite3_exec(configdb_db, any_disc_entry_sql,
 			   sql_disc_entry_cb, &parm, &errmsg);
 	if (ret != SQLITE_OK) {
 		fprintf(stderr, "SQL error executing %s\n", sql);
@@ -1703,7 +1703,7 @@ int inode_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 static char host_genctr_sql[] =
 	"SELECT genctr FROM hosts WHERE nqn LIKE '%s';";
 
-int inode_host_genctr(const char *hostnqn, int *genctr)
+int configdb_host_genctr(const char *hostnqn, int *genctr)
 {
 	char *sql;
 	int ret;
@@ -1716,28 +1716,28 @@ int inode_host_genctr(const char *hostnqn, int *genctr)
 	return ret;
 }
 
-int inode_open(const char *filename)
+int configdb_open(const char *filename)
 {
 	int ret;
 
-	ret = sqlite3_open(filename, &inode_db);
+	ret = sqlite3_open(filename, &configdb_db);
 	if (ret) {
 		fprintf(stderr, "Can't open database: %s\n",
-			sqlite3_errmsg(inode_db));
-		sqlite3_close(inode_db);
+			sqlite3_errmsg(configdb_db));
+		sqlite3_close(configdb_db);
 		return -ENOENT;
 	}
-	ret = inode_init();
+	ret = configdb_init();
 	if (ret) {
 		fprintf(stderr, "Can't initialize database, error %d\n", ret);
-		sqlite3_close(inode_db);
+		sqlite3_close(configdb_db);
 	}
 	return ret;
 }
 
-void inode_close(const char *filename)
+void configdb_close(const char *filename)
 {
-	inode_exit();
-	sqlite3_close(inode_db);
+	configdb_exit();
+	sqlite3_close(configdb_db);
 	unlink(filename);
 }

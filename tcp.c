@@ -7,7 +7,7 @@
 #include "common.h"
 #include "tcp.h"
 #include "ops.h"
-#include "inode.h"
+#include "configdb.h"
 #include "tls.h"
 
 #define NVME_OPCODE_MASK 0x3
@@ -191,19 +191,19 @@ static int tcp_init_listener(struct interface *iface)
 	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
-	ret = inode_get_port_attr(iface->portid, "addr_traddr", traddr);
+	ret = configdb_get_port_attr(iface->portid, "addr_traddr", traddr);
 	if (ret < 0) {
 		fprintf(stderr, "iface %d: failed to get traddr\n",
 			iface->portid);
 		return ret;
 	}
-	ret = inode_get_port_attr(iface->portid, "addr_trsvcid", trsvcid);
+	ret = configdb_get_port_attr(iface->portid, "addr_trsvcid", trsvcid);
 	if (ret < 0) {
 		fprintf(stderr, "iface %d: failed to get trsvcid\n",
 			iface->portid);
 		return ret;
 	}
-	ret = inode_get_port_attr(iface->portid, "addr_adrfam", adrfam_str);
+	ret = configdb_get_port_attr(iface->portid, "addr_adrfam", adrfam_str);
 	if (ret < 0) {
 		fprintf(stderr, "iface %d: failed to get adrfam\n",
 			iface->portid);

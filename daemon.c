@@ -16,7 +16,7 @@
 #include "common.h"
 #include "ops.h"
 #include "tls.h"
-#include "inode.h"
+#include "configdb.h"
 
 LINKED_LIST(subsys_linked_list);
 LINKED_LIST(iface_linked_list);
@@ -81,7 +81,7 @@ int add_subsys(const char *nqn, int type)
 		subsys->allow_any = 1;
 	else
 		subsys->allow_any = 0;
-	ret = inode_add_subsys(subsys);
+	ret = configdb_add_subsys(subsys);
 	if (ret < 0) {
 		free(subsys);
 		return ret;
@@ -98,7 +98,7 @@ static int del_subsys(struct nofuse_subsys *subsys)
 {
 	int ret;
 
-	ret = inode_del_subsys(subsys);
+	ret = configdb_del_subsys(subsys);
 	if (ret < 0)
 		return ret;
 	list_del(&subsys->node);
@@ -119,7 +119,7 @@ int add_namespace(const char *subsysnqn, int nsid)
 	ns->fd = -1;
 	strcpy(ns->subsysnqn, subsysnqn);
 	ns->nsid = nsid;
-	ret = inode_add_namespace(subsysnqn, ns->nsid);
+	ret = configdb_add_namespace(subsysnqn, ns->nsid);
 	if (ret < 0) {
 		free(ns);
 		return ret;
@@ -145,7 +145,7 @@ int enable_namespace(const char *subsysnqn, int nsid)
 	}
 	if (!ns)
 		return -ENOENT;
-	ret = inode_get_namespace_attr(subsysnqn, nsid, "device_path", path);
+	ret = configdb_get_namespace_attr(subsysnqn, nsid, "device_path", path);
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d no device path, error %d\n",
 			subsysnqn, nsid, ret);
@@ -176,7 +176,7 @@ int enable_namespace(const char *subsysnqn, int nsid)
 		ns->blksize = st.st_blksize;
 		ns->ops = uring_register_ops();
 	}
-	ret = inode_set_namespace_attr(subsysnqn, nsid,
+	ret = configdb_set_namespace_attr(subsysnqn, nsid,
 				       "device_enable", "1");
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d enable error %d\n",
@@ -208,7 +208,7 @@ int disable_namespace(const char *subsysnqn, int nsid)
 	}
 	if (!ns)
 		return -ENOENT;
-	ret = inode_set_namespace_attr(subsysnqn, nsid,
+	ret = configdb_set_namespace_attr(subsysnqn, nsid,
 				       "device_enable", "0");
 	if (ret < 0)
 		return ret;
@@ -237,7 +237,7 @@ int del_namespace(const char *subsysnqn, int nsid)
 	}
 	if (!ns)
 		return ret;
-	ret = inode_del_namespace(subsysnqn, ns->nsid);
+	ret = configdb_del_namespace(subsysnqn, ns->nsid);
 	if (ret < 0)
 		return ret;
 	list_del(&ns->node);
@@ -261,11 +261,11 @@ static int init_subsys(struct nofuse_context *ctx)
 	if (!subsys)
 		return -ENOENT;
 	list_for_each_entry(iface, &iface_linked_list, node) {
-		inode_add_subsys_port(subsys->nqn, iface->portid);
+		configdb_add_subsys_port(subsys->nqn, iface->portid);
 	}
 
 	if (ctx->hostnqn)
-		inode_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
+		configdb_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
 
 	return 0;
 }
@@ -280,7 +280,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 		return -ENOMEM;
 	memset(iface, 0, sizeof(*iface));
 	iface->portid = id;
-	ret = inode_add_port(id);
+	ret = configdb_add_port(id);
 	if (ret < 0) {
 		fprintf(stderr,"iface %d: cannot add port, error %d\n",
 			id, ret);
@@ -289,22 +289,22 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	}
 	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
 		if (!strchr(ifaddr, ','))
-			inode_set_port_attr(iface->portid, "addr_adrfam",
+			configdb_set_port_attr(iface->portid, "addr_adrfam",
 					    "ipv6");
-		inode_set_port_attr(iface->portid, "addr_traddr", ifaddr);
+		configdb_set_port_attr(iface->portid, "addr_traddr", ifaddr);
 	}
 	if (port) {
 		char trsvcid[5];
 
 		sprintf(trsvcid, "%d", port);
-		inode_set_port_attr(iface->portid, "addr_trsvcid", trsvcid);
+		configdb_set_port_attr(iface->portid, "addr_trsvcid", trsvcid);
 	}
-	ret = inode_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
+	ret = configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
 		fprintf(stderr,
 			"iface %d: cannot add ana group to port, error %d\n",
 			iface->portid, ret);
-		inode_del_port(iface->portid);
+		configdb_del_port(iface->portid);
 		free(iface);
 		return ret;
 	}
@@ -379,7 +379,7 @@ int del_iface(int id)
 	if (!iface)
 		return -EINVAL;
 
-	ret = inode_del_port(iface->portid);
+	ret = configdb_del_port(iface->portid);
 	if (ret < 0)
 		return ret;
 	list_del(&iface->node);
@@ -451,7 +451,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	}
 
 	if (ctx->hostnqn)
-		inode_add_host(ctx->hostnqn);
+		configdb_add_host(ctx->hostnqn);
 
 	if (ctx->help) {
 		show_help();
@@ -486,7 +486,7 @@ void free_devices(void)
 	list_for_each_safe(p, n, &device_linked_list) {
 		list_del(p);
 		dev = container_of(p, struct nofuse_namespace, node);
-		inode_del_namespace(dev->subsysnqn, dev->nsid);
+		configdb_del_namespace(dev->subsysnqn, dev->nsid);
 		if (dev->fd >= 0)
 			close(dev->fd);
 		free(dev);
@@ -539,7 +539,7 @@ int main(int argc, char *argv[])
 	if (fuse_opt_parse(&args, ctx, nofuse_options, NULL) < 0)
 		return 1;
 
-	ret = inode_open(ctx->dbname);
+	ret = configdb_open(ctx->dbname);
 	if (ret)
 		return 1;
 
@@ -579,7 +579,7 @@ int main(int argc, char *argv[])
 
 	free_subsys(NULL);
 out_close:
-	inode_close(ctx->dbname);
+	configdb_close(ctx->dbname);
 
 	free(ctx);
 

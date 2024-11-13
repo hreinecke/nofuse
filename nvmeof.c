@@ -9,7 +9,7 @@
 #include "ops.h"
 #include "nvme.h"
 #include "tcp.h"
-#include "inode.h"
+#include "configdb.h"
 
 #define ctrl_info(e, f, x...)					\
 	if (cmd_debug) {					\
@@ -320,7 +320,7 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_
 	uuid_t uuid;
 
 	memset(desc_list, 0, len);
-	ret = inode_get_namespace_attr(ep->ctrl->subsys->nqn, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys->nqn, nsid,
 				       "device_uuid", uuid_str);
 	if (ret < 0)
 		return ret;
@@ -389,7 +389,7 @@ static int format_disc_log(void *data, u64 data_offset,
 	struct nvmf_disc_rsp_page_hdr *log_hdr;
 	struct nvmf_disc_rsp_page_entry *log_ptr;
 
-	len = inode_host_disc_entries(ep->ctrl->nqn, NULL, 0);
+	len = configdb_host_disc_entries(ep->ctrl->nqn, NULL, 0);
 	if (len < 0) {
 		ctrl_err(ep, "error formatting discovery log page");
 		return -1;
@@ -407,7 +407,7 @@ static int format_disc_log(void *data, u64 data_offset,
 	log_ptr = log_hdr->entries;
 
 	if (num_recs) {
-		len = inode_host_disc_entries(ep->ctrl->nqn,
+		len = configdb_host_disc_entries(ep->ctrl->nqn,
 					      (u8 *)log_ptr, len);
 		if (len < 0) {
 			ctrl_err(ep, "error fetching discovery log entries");
@@ -415,7 +415,7 @@ static int format_disc_log(void *data, u64 data_offset,
 		}
 	}
 
-	ret = inode_host_genctr(ep->ctrl->nqn, &genctr);
+	ret = configdb_host_genctr(ep->ctrl->nqn, &genctr);
 	if (ret < 0) {
 		ctrl_err(ep, "error retrieving genctr");
 		genctr = 0;

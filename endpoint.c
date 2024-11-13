@@ -8,7 +8,7 @@
 
 #include "common.h"
 #include "ops.h"
-#include "inode.h"
+#include "configdb.h"
 
 static int nvmf_ctrl_id = 1;
 
@@ -49,7 +49,7 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		goto out_unlock;
 	}
 
-	if (inode_check_allowed_host(hostnqn, subsys->nqn,
+	if (configdb_check_allowed_host(hostnqn, subsys->nqn,
 				     ep->iface->portid) <= 0) {
 		ep_err(ep, "Rejecting host NQN '%s'\n", hostnqn);
 		ret = -EPERM;

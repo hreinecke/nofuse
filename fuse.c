@@ -12,7 +12,7 @@
 #include <ctype.h>
 
 #include "common.h"
-#include "inode.h"
+#include "configdb.h"
 
 const char hosts_dir[] = "hosts";
 const char ports_dir[] = "ports";
@@ -48,7 +48,7 @@ static int host_getattr(char *host, struct stat *stbuf)
 	int ret;
 	char *p;
 
-	ret = inode_stat_host(host, stbuf);
+	ret = configdb_stat_host(host, stbuf);
 	if (ret < 0)
 		return -ENOENT;
 
@@ -69,7 +69,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	portid = strtoul(port, &eptr, 10);
 	if (port == eptr)
 		return -ENOENT;
-	ret = inode_stat_port(portid, stbuf);
+	ret = configdb_stat_port(portid, stbuf);
 	if (ret)
 		return -ENOENT;
 
@@ -94,7 +94,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
-			ret = inode_count_subsys_port(portid, &num_subsys);
+			ret = configdb_count_subsys_port(portid, &num_subsys);
 			if (ret)
 				return -ENOENT;
 			stbuf->st_nlink += num_subsys;
@@ -104,7 +104,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 		if (p)
 			return -ENOENT;
 		printf("%s: port %d subsys %s\n", __func__, portid, subsys);
-		return inode_stat_subsys_port(subsys, portid, stbuf);
+		return configdb_stat_subsys_port(subsys, portid, stbuf);
 	}
 	if (!strcmp(attr, "ana_groups")) {
 		const char *ana_grp = p;
@@ -114,7 +114,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 1;
-			ret = inode_count_ana_groups(port, &num_grps);
+			ret = configdb_count_ana_groups(port, &num_grps);
 			if (ret)
 				return -ENOENT;
 			stbuf->st_nlink += num_grps;
@@ -123,7 +123,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 
 		printf("%s: port %s ana group %s\n",
 		       __func__, port, ana_grp);
-		ret = inode_stat_ana_group(port, ana_grp, stbuf);
+		ret = configdb_stat_ana_group(port, ana_grp, stbuf);
 		if (ret < 0)
 			return ret;
 
@@ -149,7 +149,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	if (strncmp(attr, "addr_", 5))
 		return -ENOENT;
 
-	ret = inode_get_port_attr(portid, attr, NULL);
+	ret = configdb_get_port_attr(portid, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFREG | 0644;
@@ -163,7 +163,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 	char *p, *attr;
 	int ret;
 
-	ret = inode_stat_subsys(subsysnqn, stbuf);
+	ret = configdb_stat_subsys(subsysnqn, stbuf);
 	if (ret)
 		return -ENOENT;
 
@@ -186,7 +186,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
-			ret = inode_count_host_subsys(subsysnqn, &num_hosts);
+			ret = configdb_count_host_subsys(subsysnqn, &num_hosts);
 			if (ret)
 				return -ENOENT;
 			stbuf->st_nlink += num_hosts;
@@ -196,7 +196,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 		if (p)
 			return -ENOENT;
 		printf("%s: subsys %s host %s\n", __func__, subsysnqn, hostnqn);
-		return inode_stat_host_subsys(hostnqn, subsysnqn, stbuf);
+		return configdb_stat_host_subsys(hostnqn, subsysnqn, stbuf);
 	}
 
 	if (!strcmp(attr, "namespaces")) {
@@ -209,7 +209,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 
 			stbuf->st_mode = S_IFDIR | 0755;
 			stbuf->st_nlink = 2;
-			ret = inode_count_namespaces(subsysnqn, &num_ns);
+			ret = configdb_count_namespaces(subsysnqn, &num_ns);
 			if (ret)
 				return -ENOENT;
 			stbuf->st_nlink += num_ns;
@@ -218,7 +218,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 		nsid = strtoul(ns, &eptr, 10);
 		if (ns == eptr)
 			return -EINVAL;
-		ret = inode_stat_namespace(subsysnqn, nsid, stbuf);
+		ret = configdb_stat_namespace(subsysnqn, nsid, stbuf);
 		if (ret)
 			return -ENOENT;
 		printf("%s: subsys %s ns %d\n", __func__, subsysnqn, nsid);
@@ -233,7 +233,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 			return -ENOENT;
 		printf("%s: subsys %s ns %d attr %s\n", __func__,
 		       subsysnqn, nsid, attr);
-		ret = inode_get_namespace_attr(subsysnqn, nsid, attr, NULL);
+		ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
 		if (ret < 0)
 			return -ENOENT;
 		goto found;
@@ -241,7 +241,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 
 	if (strncmp(attr, "attr_", 5))
 		return -ENOENT;
-	ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
+	ret = configdb_get_subsys_attr(subsysnqn, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
 found:
@@ -283,7 +283,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		}
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		res = inode_count_table(root, &nlinks);
+		res = configdb_count_table(root, &nlinks);
 		if (res)
 			goto out_free;
 		stbuf->st_nlink += nlinks;
@@ -312,7 +312,7 @@ static int fill_host(const char *path,
 	if (p)
 		return -ENOENT;
 
-	return inode_fill_host_dir(buf, filler);
+	return configdb_fill_host_dir(buf, filler);
 }
 
 static int fill_port(const char *port,
@@ -326,7 +326,7 @@ static int fill_port(const char *port,
 		/* list contents of /ports */
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_port_dir(buf, filler);
+		return configdb_fill_port_dir(buf, filler);
 	}
 
 	portid = strtoul(port, &eptr, 10);
@@ -337,7 +337,7 @@ static int fill_port(const char *port,
 		/* list contents of /ports/<portid> */
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_port(portid, buf, filler);
+		return configdb_fill_port(portid, buf, filler);
 	}
 	subdir = p;
 	p = strtok(NULL, "/");
@@ -351,11 +351,11 @@ static int fill_port(const char *port,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (subsys) {
-			if (inode_stat_subsys_port(subsys, portid, NULL) < 0)
+			if (configdb_stat_subsys_port(subsys, portid, NULL) < 0)
 				return -ENOENT;
 			return 0;
 		}
-		return inode_fill_subsys_port(portid, buf, filler);
+		return configdb_fill_subsys_port(portid, buf, filler);
 	}
 	if (!strcmp(subdir, "ana_groups")) {
 		const char *ana_grp = p;
@@ -369,8 +369,8 @@ static int fill_port(const char *port,
 			return 0;
 		}
 		if (!ana_grp)
-			return inode_fill_ana_groups(port, buf, filler);
-		if (inode_stat_ana_group(port, ana_grp, NULL) < 0)
+			return configdb_fill_ana_groups(port, buf, filler);
+		if (configdb_stat_ana_group(port, ana_grp, NULL) < 0)
 			return -ENOENT;
 		filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -394,7 +394,7 @@ static int fill_subsys(const char *subsys,
 		/* list contents of /subsystems */
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_subsys_dir(buf, filler);
+		return configdb_fill_subsys_dir(buf, filler);
 	}
 	p = strtok(NULL, "/");
 	if (!p) {
@@ -402,7 +402,7 @@ static int fill_subsys(const char *subsys,
 		printf("%s: subsys %s\n", __func__, subsys);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_subsys(subsys, buf, filler);
+		return configdb_fill_subsys(subsys, buf, filler);
 	}
 	subdir = p;
 	p = strtok(NULL, "/");
@@ -414,7 +414,7 @@ static int fill_subsys(const char *subsys,
 		if (!ns) {
 			filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 			filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-			return inode_fill_namespace_dir(subsys, buf, filler);
+			return configdb_fill_namespace_dir(subsys, buf, filler);
 		}
 		nsid = strtoul(ns, &eptr, 10);
 		if (ns == eptr)
@@ -426,7 +426,7 @@ static int fill_subsys(const char *subsys,
 		printf("%s: subsys %s ns %d\n", __func__, subsys, nsid);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return inode_fill_namespace(subsys, nsid, buf, filler);
+		return configdb_fill_namespace(subsys, nsid, buf, filler);
 	}
 	if (!strcmp(subdir, "allowed_hosts")) {
 		const char *host = p;
@@ -437,11 +437,11 @@ static int fill_subsys(const char *subsys,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (host) {
-			if (inode_stat_host_subsys(host, subsys, NULL) < 0)
+			if (configdb_stat_host_subsys(host, subsys, NULL) < 0)
 				return -ENOENT;
 			return 0;
 		}
-		return inode_fill_host_subsys(subsys, buf, filler);
+		return configdb_fill_host_subsys(subsys, buf, filler);
 	}
 	return -ENOENT;
 }
@@ -526,7 +526,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 			goto out_free;
 		printf("%s: port %d ana group %d\n", __func__,
 		       portid, ana_grpid);
-		ret = inode_add_ana_group(portid, ana_grpid,
+		ret = configdb_add_ana_group(portid, ana_grpid,
 					  NVME_ANA_OPTIMIZED);
 		if (ret < 0) {
 			printf("%s: cannot add ana group %d to "
@@ -609,7 +609,7 @@ static int nofuse_rmdir(const char *path)
 			ret = -EACCES;
 			goto out_free;
 		}
-		ret = inode_del_ana_group(port, ana_grpid);
+		ret = configdb_del_ana_group(port, ana_grpid);
 		if (ret < 0) {
 			printf("%s: cannot remove ana group %s from "
 			       "port %s, error %d\n", __func__,
@@ -682,7 +682,7 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
-		ret = inode_stat_subsys_port(subsys, portid, NULL);
+		ret = configdb_stat_subsys_port(subsys, portid, NULL);
 		if (ret < 0)
 			goto out_free;
 		sprintf(buf, "../../../subsystems/%s", subsys);
@@ -704,7 +704,7 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
-		ret = inode_stat_host_subsys(host, subsys, NULL);
+		ret = configdb_stat_host_subsys(host, subsys, NULL);
 		if (ret < 0)
 			goto out_free;
 		sprintf(buf, "../../../hosts/%s", host);
@@ -752,18 +752,18 @@ static int nofuse_symlink(const char *from, const char *to)
 			goto out_free;
 		printf("%s: subsys %s portid %d\n",
 		       __func__, subsys, portid);
-		ret = inode_add_subsys_port(subsys, portid);
+		ret = configdb_add_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
-		ret = inode_count_subsys_port(portid, &subsysnum);
+		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0) {
-			inode_del_subsys_port(subsys, portid);
+			configdb_del_subsys_port(subsys, portid);
 			goto out_free;
 		}
 		if (subsysnum == 1) {
 			ret = start_iface(portid);
 			if (ret) {
-				inode_del_subsys_port(subsys, portid);
+				configdb_del_subsys_port(subsys, portid);
 				goto out_free;
 			}
 		}
@@ -785,7 +785,7 @@ static int nofuse_symlink(const char *from, const char *to)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
-		ret = inode_add_host_subsys(host, subsys);
+		ret = configdb_add_host_subsys(host, subsys);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -832,10 +832,10 @@ static int nofuse_unlink(const char *path)
 			goto out_free;
 		printf("%s: subsys %s portid %d\n",
 		       __func__, subsys, portid);
-		ret = inode_count_subsys_port(portid, &subsysnum);
+		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0)
 			goto out_free;
-		ret = inode_del_subsys_port(subsys, portid);
+		ret = configdb_del_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
 		if (subsysnum == 1) {
@@ -861,7 +861,7 @@ static int nofuse_unlink(const char *path)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
-		ret = inode_del_host_subsys(host, subsys);
+		ret = configdb_del_host_subsys(host, subsys);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -944,7 +944,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 				goto out_free;
 			printf("%s: port %d ana_grp %s attr %s\n", __func__,
 			       portid, ana_grp, p);
-			ret = inode_get_ana_group(port, ana_grp, NULL);
+			ret = configdb_get_ana_group(port, ana_grp, NULL);
 			if (ret < 0) {
 				printf("%s: error %d\n", __func__, ret);
 				ret = -ENOENT;
@@ -952,7 +952,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 				ret = 0;
 			goto out_free;
 		} else {
-			ret = inode_get_port_attr(portid, attr, NULL);
+			ret = configdb_get_port_attr(portid, attr, NULL);
 			if (ret < 0)
 				ret = -ENOENT;
 			goto out_free;
@@ -970,7 +970,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		printf("%s: subsys %s attr %s p %s\n", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
-			ret = inode_get_subsys_attr(subsysnqn, attr, NULL);
+			ret = configdb_get_subsys_attr(subsysnqn, attr, NULL);
 			if (ret < 0)
 				ret = -ENOENT;
 			goto out_free;
@@ -984,11 +984,11 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			goto out_free;
 		}
 		if (!strcmp(attr, "ana_grpid")) {
-			ret = inode_get_namespace_anagrp(subsysnqn,
+			ret = configdb_get_namespace_anagrp(subsysnqn,
 							 nsid, NULL);
 			goto out_free;
 		}
-		ret = inode_get_namespace_attr(subsysnqn, nsid,
+		ret = configdb_get_namespace_attr(subsysnqn, nsid,
 					       attr, NULL);
 		if (ret < 0)
 			ret = -ENOENT;
@@ -1038,7 +1038,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	if (!p) {
 		if (strcmp(root, "discovery_nqn"))
 			goto out_free;
-		ret = inode_get_discovery_nqn(buf);
+		ret = configdb_get_discovery_nqn(buf);
 		if (ret < 0)
 			goto out_free;
 	} else if (!strcmp(root, ports_dir)) {
@@ -1068,7 +1068,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				goto out_free;
 			printf("%s: port %s ana_grp %s\n", __func__,
 			       port, ana_grp);
-			ret = inode_get_ana_group(port, ana_grp, &ana_state);
+			ret = configdb_get_ana_group(port, ana_grp, &ana_state);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1081,7 +1081,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 			ret = 0;
 		} else {
-			ret = inode_get_port_attr(portid, attr, buf);
+			ret = configdb_get_port_attr(portid, attr, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1100,7 +1100,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		printf("%s: subsys %s attr %s p %s\n", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
-			ret = inode_get_subsys_attr(subsysnqn, attr, buf);
+			ret = configdb_get_subsys_attr(subsysnqn, attr, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1128,7 +1128,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			if (!strcmp(attr, "ana_grpid")) {
 				int anagrp;
 
-				ret = inode_get_namespace_anagrp(subsysnqn,
+				ret = configdb_get_namespace_anagrp(subsysnqn,
 								 nsid,
 								 &anagrp);
 				if (ret < 0) {
@@ -1137,7 +1137,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				}
 				sprintf(buf, "%d", anagrp);
 			} else {
-				ret = inode_get_namespace_attr(subsysnqn, nsid,
+				ret = configdb_get_namespace_attr(subsysnqn, nsid,
 							       attr, buf);
 				if (ret < 0) {
 					ret = -ENOENT;
@@ -1175,10 +1175,10 @@ static int write_namespace(const char *subsysnqn, const char *p,
 		if (buf == eptr)
 			return -EINVAL;
 
-		ret = inode_set_namespace_anagrp(subsysnqn, nsid, ana_grp);
+		ret = configdb_set_namespace_anagrp(subsysnqn, nsid, ana_grp);
 		if (ret < 0)
 			return ret;
-		ret = inode_get_namespace_anagrp(subsysnqn, nsid,
+		ret = configdb_get_namespace_anagrp(subsysnqn, nsid,
 						 &new_ana_grp);
 		if (ret < 0)
 			return ret;
@@ -1207,7 +1207,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 		ret = len;
 	} else {
 		printf("%s: attr %s\n", __func__, attr);
-		ret = inode_set_namespace_attr(subsysnqn, nsid,
+		ret = configdb_set_namespace_attr(subsysnqn, nsid,
 					       attr, buf);
 		if (ret < 0)
 			return ret;
@@ -1255,7 +1255,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	if (!p) {
 		if (strcmp(root, "discovery_nqn"))
 			goto out_free;
-		ret = inode_set_discovery_nqn(value);
+		ret = configdb_set_discovery_nqn(value);
 		if (ret < 0)
 			goto out_free;
 		ret = len;
@@ -1298,14 +1298,14 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			}
 			printf("%s: port %s ana_grp %s state %d\n", __func__,
 			       port, ana_grp, ana_state);
-			ret = inode_set_ana_group(port, ana_grp, ana_state);
+			ret = configdb_set_ana_group(port, ana_grp, ana_state);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
 			}
 			ret = len;
 		} else {
-			ret = inode_set_port_attr(portid, attr, value);
+			ret = configdb_set_port_attr(portid, attr, value);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
@@ -1332,7 +1332,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				else
 					return -EINVAL;
 			}
-			ret = inode_set_subsys_attr(subsysnqn, attr, value);
+			ret = configdb_set_subsys_attr(subsysnqn, attr, value);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
