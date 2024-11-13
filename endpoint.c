@@ -346,6 +346,8 @@ void *run_host_interface(void *arg)
 			break;
 
 		if (id < 0) {
+			if (id == -ESHUTDOWN)
+				break;
 			if (id != -EAGAIN)
 				iface_err(iface,
 					  "wait for connection failed, error %d", id);

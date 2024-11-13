@@ -344,6 +344,11 @@ int start_iface(int id)
 		iface_err(iface, "failed to start thread");
 		ret = -ret;
 	}
+	if (iface->listenfd < 0) {
+		pthread_join(iface->pthread, NULL);
+		iface->pthread = 0;
+		ret = -EAGAIN;
+	}
 	pthread_attr_destroy(&pthread_attr);
 
 	return ret;
@@ -359,9 +364,12 @@ int stop_iface(int id)
 			break;
 		}
 	}
-	if (!iface)
+	if (!iface) {
+		printf("interface %d not found\n", id);
 		return -EINVAL;
+	}
 
+	iface_info(iface, "stop pthread %ld", iface->pthread);
 	if (iface->pthread)
 		pthread_kill(iface->pthread, SIGTERM);
 	return 0;
@@ -381,6 +389,12 @@ int del_iface(int id)
 	if (!iface)
 		return -EINVAL;
 
+	if (iface->pthread) {
+		iface->ops->destroy_listener(iface);
+		pthread_kill(iface->pthread, SIGTERM);
+		pthread_join(iface->pthread, NULL);
+		iface->pthread = 0;
+	}
 	ret = configdb_del_ana_group(iface->portid, 1);
 	if (ret < 0) {
 		iface_err(iface, "cannot delete ana group from port, error %d",
@@ -392,6 +406,7 @@ int del_iface(int id)
 		configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
 		return ret;
 	}
+	pthread_mutex_destroy(&iface->ep_mutex);
 	list_del(&iface->node);
 	free(iface);
 	return 0;

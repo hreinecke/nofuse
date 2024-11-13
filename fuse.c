@@ -861,18 +861,21 @@ static int nofuse_unlink(const char *path)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
-		printf("%s: subsys %s portid %d\n",
-		       __func__, subsys, portid);
-		ret = configdb_count_subsys_port(portid, &subsysnum);
-		if (ret < 0)
-			goto out_free;
 		ret = configdb_del_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
-		if (subsysnum == 1) {
+		ret = configdb_count_subsys_port(portid, &subsysnum);
+		if (ret < 0)
+			goto out_free;
+		printf("%s: subsys %s portid %d num %d\n",
+		       __func__, subsys, portid, subsysnum);
+		if (subsysnum == 0) {
 			ret = stop_iface(portid);
-			if (ret)
+			if (ret) {
+				printf("%s: failed to stop port %d\n",
+				   __func__, portid);
 				goto out_free;
+			}
 		}
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
