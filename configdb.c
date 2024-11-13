@@ -1143,7 +1143,6 @@ int configdb_get_ana_group(const char *port, const char *ana_grpid,
 	ret = asprintf(&sql, get_ana_group_sql, port, ana_grpid);
 	if (ret < 0)
 		return ret;
-	printf("%s: %s\n", __func__, sql);
 	ret = sql_exec_int(sql, "ana_state", ana_state);
 	free(sql);
 	return ret;
@@ -1162,7 +1161,6 @@ int configdb_set_ana_group(const char *port, const char *ana_grpid,
 	ret = asprintf(&sql, set_ana_group_sql, ana_state, port, ana_grpid);
 	if (ret < 0)
 		return ret;
-	printf("%s: %s\n", __func__, sql);
 	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;

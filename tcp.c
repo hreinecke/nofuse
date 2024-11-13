@@ -258,6 +258,7 @@ static int tcp_init_listener(struct interface *iface)
 		ret = -errno;
 		goto err_close;
 	}
+	iface_info(iface, "listening on %s:%s\n", traddr, trsvcid);
 	iface->listenfd = listenfd;
 	return 0;
 err_close:
