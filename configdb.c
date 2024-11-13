@@ -413,8 +413,8 @@ int configdb_del_host(const char *nqn)
 
 static char add_subsys_sql[] =
 	"INSERT INTO subsystems "
-	"(nqn, attr_model, attr_ieee_oui, attr_allow_any_host, attr_type, ctime) "
-	"VALUES ('%s', 'nofuse', '851255', '%d', '%d', CURRENT_TIMESTAMP);";
+	"(nqn, attr_model, attr_version, attr_ieee_oui, attr_allow_any_host, attr_type, ctime) "
+	"VALUES ('%s', 'nofuse', '2.0', '851255', '%d', '%d', CURRENT_TIMESTAMP);";
 
 int configdb_add_subsys(struct nofuse_subsys *subsys)
 {
@@ -1724,7 +1724,8 @@ int configdb_host_genctr(const char *hostnqn, int *genctr)
 static char subsys_identify_ctrl_sql[] =
 	"SELECT s.nqn, s.attr_firmware AS firmware, "
 	"s.attr_ieee_oui AS ieee_oui, s.attr_model AS model, "
-	"s.attr_serial AS serial, s.attr_type AS type "
+	"s.attr_serial AS serial, s.attr_type AS type, "
+	"s.attr_version AS version "
 	"FROM subsystems AS s WHERE s.nqn = '%s';";
 
 static int subsys_identify_ctrl_cb(void *p, int argc, char **argv, char **col)
@@ -1755,6 +1756,14 @@ static int subsys_identify_ctrl_cb(void *p, int argc, char **argv, char **col)
 				id->cntrltype = NVME_CTRL_CNTRLTYPE_IO;
 			else
 				id->cntrltype = NVME_CTRL_CNTRLTYPE_DISC;
+		} else if (!strcmp(col[i], "version")) {
+			int maj, min;
+
+			if (sscanf(argv[i], "%d.%d", &maj, &min) != 2) {
+				maj = 2;
+				min = 0;
+			}
+			id->ver = htole32((maj & 0xff) << 16 | (min & 0xff) << 8);
 		}
 	}
 	return 0;
