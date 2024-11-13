@@ -184,7 +184,7 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 static int tcp_init_listener(struct interface *iface)
 {
 	int listenfd;
-	int ret;
+	int ret, reuse = 1;
 	struct addrinfo *ai, hints;
 	char traddr[256];
 	char trsvcid[32];
@@ -232,6 +232,13 @@ static int tcp_init_listener(struct interface *iface)
 		iface_err(iface, "socket error %d", errno);
 		ret = -errno;
 		goto err_free;
+	}
+
+	if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR,
+		       &reuse, sizeof(int)) < 0) {
+		iface_err(iface, "setsockopt SO_REUSEADDR error %d", errno);
+		ret = -errno;
+		goto err_close;
 	}
 
 	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
