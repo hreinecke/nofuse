@@ -274,6 +274,18 @@ static int init_subsys(struct nofuse_context *ctx)
 	return 0;
 }
 
+struct interface *find_iface(unsigned int id)
+{
+	struct interface *iface;
+
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		if (iface->portid == id) {
+			return iface;
+		}
+	}
+	return NULL;
+}
+
 int add_iface(unsigned int id, const char *ifaddr, int port)
 {
 	struct interface *iface;
@@ -320,16 +332,11 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 
 int start_iface(int id)
 {
-	struct interface *iface = NULL, *_iface;
+	struct interface *iface = NULL;
 	pthread_attr_t pthread_attr;
 	int ret;
 
-	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface->portid == id) {
-			iface = _iface;
-			break;
-		}
-	}
+	iface = find_iface(id);
 	if (!iface)
 		return -EINVAL;
 
@@ -351,14 +358,9 @@ int start_iface(int id)
 
 int stop_iface(int id)
 {
-	struct interface *iface = NULL, *_iface;
+	struct interface *iface;
 
-	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface->portid == id) {
-			iface = _iface;
-			break;
-		}
-	}
+	iface = find_iface(id);
 	if (!iface) {
 		printf("interface %d not found\n", id);
 		return -EINVAL;
@@ -372,15 +374,10 @@ int stop_iface(int id)
 
 int del_iface(int id)
 {
-	struct interface *iface = NULL, *_iface;
+	struct interface *iface;
 	int ret;
 
-	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface->portid == id) {
-			iface = _iface;
-			break;
-		}
-	}
+	iface = find_iface(id);
 	if (!iface)
 		return -EINVAL;
 
