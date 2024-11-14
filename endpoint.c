@@ -36,7 +36,8 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 
 	if (configdb_check_allowed_host(hostnqn, subsys->nqn,
 				     ep->iface->portid) <= 0) {
-		ep_err(ep, "Rejecting host NQN '%s'", hostnqn);
+		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
+		       hostnqn, subsys->nqn);
 		ret = -EPERM;
 		goto out_unlock;
 	}
@@ -179,6 +180,21 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 	return sqe;
 }
 
+static void pop_disconnect(void *arg)
+{
+	struct endpoint *ep = arg;
+
+	ep_info(ep, "qid %d disconnect", ep->qid);
+	disconnect_endpoint(ep, !stopped);
+}
+
+static void pop_uring_exit(void *arg)
+{
+	struct endpoint *ep = arg;
+
+	io_uring_queue_exit(&ep->uring);
+}
+
 static void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
@@ -190,12 +206,16 @@ static void *endpoint_thread(void *arg)
 	sigaddset(&set, SIGPIPE);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
+	pthread_cleanup_push(pop_disconnect, ep);
+
 	ret = io_uring_queue_init(32, &ep->uring, 0);
 	if (ret) {
 		ep_err(ep, "qid %d error %d creating uring",
 		       ep->qid, ret);
 		goto out_disconnect;
 	}
+
+	pthread_cleanup_push(pop_uring_exit, ep);
 
 	while (!stopped) {
 		struct io_uring_cqe *cqe;
@@ -269,10 +289,10 @@ static void *endpoint_thread(void *arg)
 			break;
 		}
 	}
-	io_uring_queue_exit(&ep->uring);
+	pthread_cleanup_pop(1);
 
 out_disconnect:
-	disconnect_endpoint(ep, !stopped);
+	pthread_cleanup_pop(1);
 
 	pthread_exit(NULL);
 
@@ -308,6 +328,7 @@ static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 		goto out;
 	}
 
+	ep_info(ep, "start endpoint");
 	pthread_mutex_lock(&iface->ep_mutex);
 	list_add(&ep->node, &iface->ep_list);
 	pthread_mutex_unlock(&iface->ep_mutex);
@@ -321,6 +342,7 @@ out:
 void dequeue_endpoint(struct endpoint *ep)
 {
 	if (ep->pthread) {
+		pthread_cancel(ep->pthread);
 		pthread_join(ep->pthread, NULL);
 		ep->pthread = 0;
 	}
@@ -389,7 +411,7 @@ void *run_interface(void *arg)
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	pthread_cleanup_pop(0);
+	pthread_cleanup_pop(1);
 	pthread_exit(NULL);
 	return NULL;
 }
