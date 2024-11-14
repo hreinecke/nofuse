@@ -254,11 +254,11 @@ static int tcp_init_listener(struct interface *iface)
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		iface_err(iface, "socket listen error %d\n", errno);
+		iface_err(iface, "socket listen error %d", errno);
 		ret = -errno;
 		goto err_close;
 	}
-	iface_info(iface, "listening on %s:%s\n", traddr, trsvcid);
+	iface_info(iface, "listening on %s:%s", traddr, trsvcid);
 	iface->listenfd = listenfd;
 	return 0;
 err_close:

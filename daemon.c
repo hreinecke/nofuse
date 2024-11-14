@@ -88,6 +88,9 @@ int add_subsys(const char *nqn, int type)
 		return ret;
 	}
 
+	printf("creating %s subsys %s\n",
+	       subsys->type == NVME_NQN_CUR ? "discovery" : "nvm",
+	       subsys->nqn);
 	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->node);
 	INIT_LINKED_LIST(&subsys->ctrl_list);

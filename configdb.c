@@ -1179,7 +1179,6 @@ int configdb_del_ana_group(unsigned int portid, int grpid)
 	ret = asprintf(&sql, del_ana_group_sql, portid, grpid);
 	if (ret < 0)
 		return ret;
-	printf("%s: %s\n", __func__, sql);
 	ret = sql_exec_simple(sql);
 	free(sql);
 
