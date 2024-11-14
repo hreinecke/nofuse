@@ -236,6 +236,7 @@ void *run_interface(void *arg);
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
+void dequeue_endpoint(struct endpoint *ep);
 
 int add_subsys(const char *nqn, int type);
 int free_subsys(const char *subsysnqn);

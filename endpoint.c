@@ -318,10 +318,28 @@ out:
 	return NULL;
 }
 
+void dequeue_endpoint(struct endpoint *ep)
+{
+	if (ep->pthread) {
+		pthread_join(ep->pthread, NULL);
+		ep->pthread = 0;
+	}
+	list_del(&ep->node);
+	free(ep);
+}
+
+static void pop_listener(void *arg)
+{
+	struct interface *iface = arg;
+
+	iface_info(iface, "destroy_listener");
+	iface->ops->destroy_listener(iface);
+}
+
 void *run_interface(void *arg)
 {
 	struct interface *iface = arg;
-	struct endpoint *ep, *_ep;
+	struct endpoint *ep;
 	sigset_t set;
 	int id;
 	pthread_attr_t pthread_attr;
@@ -339,7 +357,9 @@ void *run_interface(void *arg)
 		return NULL;
 	}
 
-	while (iface->listenfd > 0) {
+	pthread_cleanup_push(pop_listener, iface);
+
+	while (!stopped) {
 		id = iface->ops->wait_for_connection(iface);
 
 		if (stopped)
@@ -369,18 +389,7 @@ void *run_interface(void *arg)
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	iface_info(iface, "destroy listener");
-
-	iface->ops->destroy_listener(iface);
-	pthread_mutex_lock(&iface->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
-		if (ep->pthread) {
-			pthread_join(ep->pthread, NULL);
-		}
-		list_del(&ep->node);
-		free(ep);
-	}
-	pthread_mutex_unlock(&iface->ep_mutex);
+	pthread_cleanup_pop(0);
 	pthread_exit(NULL);
 	return NULL;
 }

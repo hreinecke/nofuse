@@ -356,12 +356,19 @@ int start_iface(struct interface *iface)
 
 int stop_iface(struct interface *iface)
 {
+	struct endpoint *ep, *_ep;
+
 	iface_info(iface, "stop pthread %ld", iface->pthread);
 	if (iface->pthread) {
-		pthread_kill(iface->pthread, SIGTERM);
+		pthread_cancel(iface->pthread);
 		pthread_join(iface->pthread, NULL);
 		iface->pthread = 0;
 	}
+
+	pthread_mutex_lock(&iface->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node)
+		dequeue_endpoint(ep);
+	pthread_mutex_unlock(&iface->ep_mutex);
 	return 0;
 }
 
