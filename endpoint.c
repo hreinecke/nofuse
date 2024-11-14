@@ -318,7 +318,7 @@ out:
 	return NULL;
 }
 
-void *run_host_interface(void *arg)
+void *run_interface(void *arg)
 {
 	struct interface *iface = arg;
 	struct endpoint *ep, *_ep;

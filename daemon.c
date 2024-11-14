@@ -338,7 +338,7 @@ int start_iface(int id)
 
 	pthread_attr_init(&pthread_attr);
 	ret = pthread_create(&iface->pthread, &pthread_attr,
-			     run_host_interface, iface);
+			     run_interface, iface);
 	if (ret) {
 		iface->pthread = 0;
 		iface_err(iface, "failed to start thread");
@@ -575,7 +575,7 @@ int main(int argc, char *argv[])
 		pthread_attr_init(&pthread_attr);
 
 		ret = pthread_create(&iface->pthread, &pthread_attr,
-				     run_host_interface, iface);
+				     run_interface, iface);
 		if (ret) {
 			iface->pthread = 0;
 			iface_err(iface, "failed to start iface thread");
