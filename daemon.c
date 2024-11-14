@@ -274,18 +274,6 @@ static int init_subsys(struct nofuse_context *ctx)
 	return 0;
 }
 
-struct interface *find_iface(unsigned int id)
-{
-	struct interface *iface;
-
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		if (iface->portid == id) {
-			return iface;
-		}
-	}
-	return NULL;
-}
-
 int add_iface(unsigned int id, const char *ifaddr, int port)
 {
 	struct interface *iface;
@@ -330,15 +318,22 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	return 0;
 }
 
-int start_iface(int id)
+struct interface *find_iface(unsigned int id)
 {
-	struct interface *iface = NULL;
+	struct interface *iface;
+
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		if (iface->portid == id) {
+			return iface;
+		}
+	}
+	return NULL;
+}
+
+int start_iface(struct interface *iface)
+{
 	pthread_attr_t pthread_attr;
 	int ret;
-
-	iface = find_iface(id);
-	if (!iface)
-		return -EINVAL;
 
 	if (iface->pthread)
 		return 0;
@@ -348,7 +343,7 @@ int start_iface(int id)
 			     run_interface, iface);
 	if (ret) {
 		iface->pthread = 0;
-		iface_err(iface, "failed to start thread");
+		iface_err(iface, "failed to start iface thread");
 		ret = -ret;
 	}
 	pthread_attr_destroy(&pthread_attr);
@@ -356,36 +351,24 @@ int start_iface(int id)
 	return ret;
 }
 
-int stop_iface(int id)
+int stop_iface(struct interface *iface)
 {
-	struct interface *iface;
-
-	iface = find_iface(id);
-	if (!iface) {
-		printf("interface %d not found\n", id);
-		return -EINVAL;
-	}
-
 	iface_info(iface, "stop pthread %ld", iface->pthread);
-	if (iface->pthread)
-		pthread_kill(iface->pthread, SIGTERM);
-	return 0;
-}
-
-int del_iface(int id)
-{
-	struct interface *iface;
-	int ret;
-
-	iface = find_iface(id);
-	if (!iface)
-		return -EINVAL;
-
 	if (iface->pthread) {
-		iface->ops->destroy_listener(iface);
 		pthread_kill(iface->pthread, SIGTERM);
 		pthread_join(iface->pthread, NULL);
 		iface->pthread = 0;
+	}
+	return 0;
+}
+
+int del_iface(struct interface *iface)
+{
+	int ret;
+
+	if (iface->pthread) {
+		iface_err(iface, "interface still running");
+		return -EBUSY;
 	}
 	ret = configdb_del_ana_group(iface->portid, 1);
 	if (ret < 0) {
@@ -515,13 +498,8 @@ void free_interfaces(void)
 {
 	struct interface *iface, *_iface;
 
-	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node) {
-		if (iface->pthread)
-			pthread_join(iface->pthread, NULL);
-		pthread_mutex_destroy(&iface->ep_mutex);
-		list_del(&iface->node);
-		free(iface);
-	}
+	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node)
+		del_iface(iface);
 }
 
 int free_subsys(const char *subsysnqn)
@@ -566,28 +544,15 @@ int main(int argc, char *argv[])
 
 	stopped = 0;
 
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		pthread_attr_t pthread_attr;
-
-		pthread_attr_init(&pthread_attr);
-
-		ret = pthread_create(&iface->pthread, &pthread_attr,
-				     run_interface, iface);
-		if (ret) {
-			iface->pthread = 0;
-			iface_err(iface, "failed to start iface thread");
-		}
-		pthread_attr_destroy(&pthread_attr);
-	}
+	list_for_each_entry(iface, &iface_linked_list, node)
+		start_iface(iface);
 
 	run_fuse(&args);
 
 	stopped = 1;
 
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		if (iface->pthread)
-			pthread_kill(iface->pthread, SIGTERM);
-	}
+	list_for_each_entry(iface, &iface_linked_list, node)
+		stop_iface(iface);
 
 	free_interfaces();
 

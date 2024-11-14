@@ -605,7 +605,15 @@ static int nofuse_rmdir(const char *path)
 			goto out_free;
 		p = strtok(NULL, "/");
 		if (!p) {
-			ret = del_iface(portid);
+			struct interface *iface = find_iface(portid);
+
+			if (!iface) {
+				printf("%s: no interface for port %d\n",
+				       __func__, portid);
+				ret = -EINVAL;
+				goto out_free;
+			}
+			ret = del_iface(iface);
 			if (ret < 0) {
 				printf("%s: cannot remove port %d, error %d\n",
 				       __func__, portid, ret);
@@ -792,7 +800,16 @@ static int nofuse_symlink(const char *from, const char *to)
 			goto out_free;
 		}
 		if (subsysnum == 1) {
-			ret = start_iface(portid);
+			struct interface *iface = find_iface(portid);
+
+			if (!iface) {
+				printf("%s: no interface for port %d",
+				       __func__, portid);
+				configdb_del_subsys_port(subsys, portid);
+				ret = -EINVAL;
+				goto out_free;
+			}
+			ret = start_iface(iface);
 			if (ret) {
 				configdb_del_subsys_port(subsys, portid);
 				goto out_free;
@@ -870,10 +887,20 @@ static int nofuse_unlink(const char *path)
 		printf("%s: subsys %s portid %d num %d\n",
 		       __func__, subsys, portid, subsysnum);
 		if (subsysnum == 0) {
-			ret = stop_iface(portid);
+			struct interface *iface = find_iface(portid);
+
+			if (!iface) {
+				printf("%s: no interface for port %d\n",
+				       __func__, portid);
+				configdb_add_subsys_port(subsys, portid);
+				ret = -EINVAL;
+				goto out_free;
+			}
+			ret = stop_iface(iface);
 			if (ret) {
-				printf("%s: failed to stop port %d\n",
+				printf("%s: failed to stop iface %d\n",
 				   __func__, portid);
+				configdb_add_subsys_port(subsys, portid);
 				goto out_free;
 			}
 		}
