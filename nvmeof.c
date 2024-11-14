@@ -249,8 +249,8 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 			break;
 		}
 	}
-	if (!ns)
-		return -ENODEV;
+	if (!ns || !ns->size)
+		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
 	memset(&id, 0, sizeof(id));
 
@@ -281,6 +281,8 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 		if (len < 4)
 			break;
 		if (strcmp(ns->subsysnqn, ep->ctrl->subsys->nqn))
+			continue;
+		if (!ns->size)
 			continue;
 		memcpy(ns_list, &nsid, 4);
 		ns_list += 4;

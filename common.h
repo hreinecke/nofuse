@@ -65,7 +65,7 @@ extern struct linked_list iface_linked_list;
 #define IPV6_OFFSET		8
 #define IPV6_DELIM		":"
 
-enum { DISCONNECTED, CONNECTED };
+enum { CONNECTED, STOPPED, DISCONNECTED };
 
 extern int stopped;
 
@@ -237,6 +237,7 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 void dequeue_endpoint(struct endpoint *ep);
+void terminate_endpoints(struct interface *iface, const char *subsysnqn);
 
 int add_subsys(const char *nqn, int type);
 int free_subsys(const char *subsysnqn);

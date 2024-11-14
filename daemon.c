@@ -196,6 +196,8 @@ int enable_namespace(const char *subsysnqn, int nsid)
 		ns->blksize = 0;
 		ns->ops = NULL;
 	}
+	printf("subsys %s nsid %d size %lu blksize %u\n",
+	       subsysnqn, nsid, ns->size, ns->blksize);
 	return ret;
 }
 

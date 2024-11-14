@@ -860,6 +860,7 @@ static int nofuse_unlink(const char *path)
 		const char *port, *subsys;
 		char *eptr = NULL;
 		int portid, subsysnum = 0;
+		struct interface *iface;
 
 		port = strtok(NULL, "/");
 		if (!port)
@@ -878,24 +879,22 @@ static int nofuse_unlink(const char *path)
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
+		iface = find_iface(portid);
+		if (!iface) {
+			printf("%s: no interface for port %d\n",
+			       __func__, portid);
+			goto out_free;
+		}
 		ret = configdb_del_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
+		terminate_endpoints(iface, subsys);
 		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0)
 			goto out_free;
 		printf("%s: subsys %s portid %d num %d\n",
 		       __func__, subsys, portid, subsysnum);
 		if (subsysnum == 0) {
-			struct interface *iface = find_iface(portid);
-
-			if (!iface) {
-				printf("%s: no interface for port %d\n",
-				       __func__, portid);
-				configdb_add_subsys_port(subsys, portid);
-				ret = -EINVAL;
-				goto out_free;
-			}
 			ret = stop_iface(iface);
 			if (ret) {
 				printf("%s: failed to stop iface %d\n",

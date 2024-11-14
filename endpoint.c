@@ -169,7 +169,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 	}
 
 	io_uring_prep_poll_add(sqe, ep->sockfd, poll_flags);
-	io_uring_sqe_set_data(sqe, sqe);
+	io_uring_sqe_set_data(sqe, ep);
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
@@ -178,6 +178,29 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 		return NULL;
 	}
 	return sqe;
+}
+
+static int endpoint_submit_cancel(struct endpoint *ep)
+{
+	struct io_uring_sqe *sqe;
+	int ret;
+
+	sqe = io_uring_get_sqe(&ep->uring);
+	if (!sqe) {
+		ep_err(ep, "qid %d failed to get poll sqe", ep->qid);
+		return -ENOMEM;
+	}
+
+	io_uring_prep_cancel(sqe, ep, 0);
+	io_uring_sqe_set_data(sqe, NULL);
+
+	ret = io_uring_submit(&ep->uring);
+	if (ret <= 0) {
+		ep_err(ep, "qid %d submit cancel failed, error %d",
+		       ep->qid, ret);
+		return ret;
+	}
+	return 0;
 }
 
 static void pop_disconnect(void *arg)
@@ -217,25 +240,36 @@ static void *endpoint_thread(void *arg)
 
 	pthread_cleanup_push(pop_uring_exit, ep);
 
-	while (!stopped) {
+	while (ep->state == CONNECTED) {
 		struct io_uring_cqe *cqe;
+		struct __kernel_timespec *ts, real_ts = {
+			.tv_sec = (ep->kato_interval / 1000),
+			.tv_nsec = (ep->kato_interval % 1000) * 1000 * 1000,
+		};
 		void *cqe_data;
 
 		if (!pollin_sqe) {
 			pollin_sqe = endpoint_submit_poll(ep, POLLIN);
 			if (!pollin_sqe)
 				break;
-		}
+			ts = &real_ts;
+		} else
+			ts = NULL;
 
-		ret = io_uring_wait_cqe(&ep->uring, &cqe);
+		ret = io_uring_wait_cqe_timeout(&ep->uring, &cqe, ts);
 		if (ret < 0) {
+			if (ret == -ETIME) {
+				ep_err(ep, "qid %d wait cqe timeout",
+				       ep->qid);
+				continue;
+			}
 			ep_err(ep, "qid %d wait cqe error %d",
 			       ep->qid, ret);
 			break;
 		}
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
-		if (cqe_data == pollin_sqe) {
+		if (cqe_data == ep) {
 			ret = cqe->res;
 			if (ret < 0) {
 				ctrl_err(ep, "poll error %d", ret);
@@ -263,14 +297,11 @@ static void *endpoint_thread(void *arg)
 				else
 					ep->kato_countdown = RETRY_COUNT;
 			}
-
-		} else {
+		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
-			if (!qe) {
-				ctrl_err(ep, "empty cqe");
-				ret = -EAGAIN;
-			}
 			ret = handle_data(ep, qe, cqe->res);
+		} else {
+			ctrl_err(ep, "cancel cqe");
 		}
 		if (ret == -EAGAIN)
 			if (--ep->kato_countdown > 0)
@@ -341,13 +372,39 @@ out:
 
 void dequeue_endpoint(struct endpoint *ep)
 {
+	if (ep->state == CONNECTED) {
+		ep->state = STOPPED;
+		endpoint_submit_cancel(ep);
+	}
 	if (ep->pthread) {
+		ep_info(ep, "dequeue endpoint");
 		pthread_cancel(ep->pthread);
 		pthread_join(ep->pthread, NULL);
 		ep->pthread = 0;
 	}
 	list_del(&ep->node);
 	free(ep);
+}
+
+void terminate_endpoints(struct interface *iface, const char *subsysnqn)
+{
+	struct endpoint *ep = NULL, *_ep;
+
+	pthread_mutex_lock(&iface->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
+		printf("%s: ctrl %d qid %d subsys %s\n",
+		       __func__,
+		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+		       ep->ctrl->subsys ? ep->ctrl->subsys->nqn : "<none>");
+		if (ep->state != CONNECTED)
+			continue;
+		if (!ep->ctrl)
+			continue;
+		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
+			continue;
+		dequeue_endpoint(ep);
+	}
+	pthread_mutex_unlock(&iface->ep_mutex);
 }
 
 static void pop_listener(void *arg)
