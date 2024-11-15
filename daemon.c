@@ -44,15 +44,15 @@ struct nofuse_context {
 
 extern int run_fuse(struct fuse_args *args);
 
-static struct nofuse_subsys *find_subsys(const char *subsysnqn)
+struct nofuse_subsys *find_subsys(const char *nqn)
 {
 	struct nofuse_subsys *subsys = NULL;
 
 	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME) &&
+		if (!strcmp(nqn, NVME_DISC_SUBSYS_NAME) &&
 		    subsys->type == NVME_NQN_CUR)
 			return subsys;
-		if (!strcmp(subsys->nqn, subsysnqn))
+		if (!strcmp(nqn, subsys->nqn))
 			return subsys;
 	}
 	return NULL;
@@ -99,7 +99,7 @@ int add_subsys(const char *nqn, int type)
 	return ret;
 }
 
-static int del_subsys(struct nofuse_subsys *subsys)
+int del_subsys(struct nofuse_subsys *subsys)
 {
 	int ret;
 
@@ -514,20 +514,13 @@ void free_interfaces(void)
 		del_iface(iface);
 }
 
-int free_subsys(const char *subsysnqn)
+void free_subsys(void)
 {
 	struct nofuse_subsys *subsys, *_subsys;
-	int ret = 0;
 
 	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
-		if (!subsysnqn ||
-		    (!strcmp(subsys->nqn, subsysnqn) &&
-		     subsys->type != NVME_NQN_CUR)) {
-			ret = del_subsys(subsys);
-			break;
-		}
+		del_subsys(subsys);
 	}
-	return ret;
 }
 
 int main(int argc, char *argv[])
@@ -570,7 +563,7 @@ int main(int argc, char *argv[])
 
 	free_devices();
 
-	free_subsys(NULL);
+	free_subsys();
 out_close:
 	configdb_close(ctx->dbname);
 

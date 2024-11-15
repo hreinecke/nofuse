@@ -48,13 +48,14 @@ static int host_getattr(char *host, struct stat *stbuf)
 	int ret;
 	char *p;
 
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+
 	ret = configdb_stat_host(host, stbuf);
 	if (ret < 0)
 		return -ENOENT;
 
-	p = strtok(NULL, "/");
-	if (p)
-		return -ENOENT;
 	stbuf->st_mode = S_IFDIR | 0755;
 	stbuf->st_nlink = 2;
 	return 0;
@@ -103,8 +104,11 @@ static int port_getattr(char *port, struct stat *stbuf)
 		p = strtok(NULL, "/");
 		if (p)
 			return -ENOENT;
-		printf("%s: port %d subsys %s\n", __func__, portid, subsys);
-		return configdb_stat_subsys_port(subsys, portid, stbuf);
+		ret = configdb_stat_subsys_port(subsys, portid, stbuf);
+		if (ret < 0) {
+			printf("%s: stat error %d\n", __func__, ret);
+		}
+		return ret;
 	}
 	if (!strcmp(attr, "ana_groups")) {
 		const char *ana_grp = p;
@@ -123,9 +127,6 @@ static int port_getattr(char *port, struct stat *stbuf)
 
 		printf("%s: port %s ana group %s\n",
 		       __func__, port, ana_grp);
-		ret = configdb_stat_ana_group(port, ana_grp, stbuf);
-		if (ret < 0)
-			return ret;
 
 		p = strtok(NULL, "/");
 		if (!p) {
@@ -135,6 +136,9 @@ static int port_getattr(char *port, struct stat *stbuf)
 		}
 		if (strcmp(p, "ana_state"))
 			return -ENOENT;
+		ret = configdb_stat_ana_group(port, ana_grp, stbuf);
+		if (ret < 0)
+			return ret;
 		return 0;
 	}
 	if (p)
@@ -307,6 +311,8 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 
 out_free:
 	free(pathbuf);
+	if (res != 0)
+		printf("%s: error %d\n", __func__, res);
 	return res;
 }
 
@@ -488,6 +494,8 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		printf("%s: error %d\n", __func__, ret);
 	return ret;
 }
 
@@ -577,6 +585,8 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 	}
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		printf("%s: error %d\n", __func__, ret);
 	return ret;
 }
 
@@ -655,7 +665,10 @@ static int nofuse_rmdir(const char *path)
 
 		p = strtok(NULL, "/");
 		if (!p) {
-			ret = free_subsys(subsysnqn);
+			struct nofuse_subsys *subsys = find_subsys(subsysnqn);
+			if (!subsys)
+				goto out_free;
+			ret = del_subsys(subsys);
 			goto out_free;
 		}
 		if (strcmp(p, "namespaces"))
@@ -684,6 +697,8 @@ static int nofuse_rmdir(const char *path)
 	}
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		printf("%s: error %d\n", __func__, ret);
 	return ret;
 }
 
@@ -751,6 +766,8 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 	}
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		printf("%s: error %d\n", __func__, ret);
 	return ret;
 }
 
@@ -792,8 +809,11 @@ static int nofuse_symlink(const char *from, const char *to)
 		printf("%s: subsys %s portid %d\n",
 		       __func__, subsys, portid);
 		ret = configdb_add_subsys_port(subsys, portid);
-		if (ret < 0)
+		if (ret < 0) {
+			printf("%s: failed to add subsys, error %d\n",
+			       __func__, ret);
 			goto out_free;
+		}
 		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0) {
 			configdb_del_subsys_port(subsys, portid);
@@ -840,6 +860,8 @@ static int nofuse_symlink(const char *from, const char *to)
 	}
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		printf("%s: error %d\n", __func__, ret);
 	return ret;
 }
 
@@ -928,6 +950,8 @@ static int nofuse_unlink(const char *path)
 	}
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		printf("%s: error %d\n", __func__, ret);
 	return ret;
 }
 
