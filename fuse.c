@@ -556,7 +556,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 
 		p = strtok(NULL, "/");
 		if (!p) {
-			ret = add_subsys(subsysnqn, NVME_NQN_NVM);
+			ret = add_subsys(subsysnqn);
 			goto out_free;
 		}
 		if (strcmp(p, "namespaces"))

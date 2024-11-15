@@ -240,7 +240,7 @@ void dequeue_endpoint(struct endpoint *ep);
 void terminate_endpoints(struct interface *iface, const char *subsysnqn);
 
 struct nofuse_subsys *find_subsys(const char *nqn);
-int add_subsys(const char *nqn, int type);
+int add_subsys(const char *nqn);
 int del_subsys(struct nofuse_subsys *subsys);
 
 int add_iface(unsigned int id, const char *ifaddr, int port);

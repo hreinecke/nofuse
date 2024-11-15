@@ -29,9 +29,6 @@ int cmd_debug;
 int ep_debug;
 int iface_debug;
 
-static char default_nqn[] =
-	"nqn.2014-08.org.nvmexpress:uuid:62f37f51-0cc7-46d5-9865-4de22e81bd9d";
-
 struct nofuse_context {
 	const char *hostnqn;
 	const char *subsysnqn;
@@ -58,30 +55,32 @@ struct nofuse_subsys *find_subsys(const char *nqn)
 	return NULL;
 }
 
-int add_subsys(const char *nqn, int type)
+int add_subsys(const char *nqn)
 {
 	struct nofuse_subsys *subsys;
+	char discovery_nqn[MAX_NQN_SIZE + 1];
 	int ret;
 
-	if (type == NVME_NQN_CUR)
-		subsys = find_subsys(NVME_DISC_SUBSYS_NAME);
-	else
-		subsys = find_subsys(nqn);
+	memset(discovery_nqn, 0, MAX_NQN_SIZE + 1);
+	ret = configdb_get_discovery_nqn(discovery_nqn);
+	if (ret)
+		strcpy(discovery_nqn, NVME_DISC_SUBSYS_NAME);
+
+	subsys = find_subsys(nqn);
 	if (subsys)
 		return -EEXIST;
 	subsys = malloc(sizeof(*subsys));
 	if (!subsys)
 		return -ENOMEM;
 	memset(subsys, 0, sizeof(*subsys));
-	if (!subsys->nqn)
-		strcpy(subsys->nqn, default_nqn);
-	else
-		strcpy(subsys->nqn, nqn);
-	subsys->type = type;
-	if (subsys->type == NVME_NQN_CUR)
+	if (!strcmp(nqn, discovery_nqn)) {
+		subsys->type = NVME_NQN_CUR;
 		subsys->allow_any = 1;
-	else
+	} else {
+		subsys->type = NVME_NQN_NVM;
 		subsys->allow_any = 0;
+	}
+	strcpy(subsys->nqn, nqn);
 	ret = configdb_add_subsys(subsys);
 	if (ret < 0) {
 		free(subsys);
@@ -262,7 +261,7 @@ static int init_subsys(struct nofuse_context *ctx)
 	struct interface *iface;
 	int ret;
 
-	ret = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
+	ret = add_subsys(ctx->subsysnqn);
 	if (ret)
 		return ret;
 
