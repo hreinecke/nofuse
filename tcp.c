@@ -313,7 +313,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	if (ret != hdr_len) {
 		tcp_err(ep, "icreq short header read, %d bytes missing",
 			hdr_len - ret);
-		ret = (ret < 0) ? -EAGAIN : -ENODATA;
+		ret = (ret > 0) ? -EAGAIN : -ENODATA;
 		goto out_free;
 	}
 
@@ -333,7 +333,7 @@ static int tcp_accept_connection(struct endpoint *ep)
 	if (ret != len) {
 		tcp_err(ep, "icreq short read, %d bytes missing",
 			len - ret);
-		ret = -ENODATA;
+		ret = (ret > 0) ? -EAGAIN : -ENODATA;
 		goto out_free;
 	}
 	if (icreq->hpda != 0) {
@@ -386,12 +386,9 @@ static int tcp_wait_for_connection(struct interface *iface)
 	int sockfd;
 	int ret = -ESHUTDOWN;
 
-	while (!stopped) {
+	while (iface->listenfd > 0) {
 		fd_set rfd;
 		struct timeval tmo;
-
-		if (iface->listenfd < 0)
-			return -ESHUTDOWN;
 
 		FD_ZERO(&rfd);
 		FD_SET(iface->listenfd, &rfd);
@@ -406,6 +403,9 @@ static int tcp_wait_for_connection(struct interface *iface)
 		if (ret > 0)
 			break;
 	}
+
+	if (iface->listenfd < 0)
+		return -ESHUTDOWN;
 
 	if (ret <= 0)
 		return ret ? ret : -ETIMEDOUT;
@@ -448,12 +448,18 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 			return -ETIMEDOUT;
 		}
 #endif
-		tcp_info(ep, "read %llu bytes",
+		tcp_info(ep, "recv %llu data bytes",
 			_len - offset);
-		len = ep->io_ops->io_read(ep, (u8 *)buf + offset, _len - offset);
+		len = ep->io_ops->io_read(ep, (u8 *)buf + offset,
+					  _len - offset);
 		if (len < 0) {
-			tcp_err(ep, "read returned %d", errno);
+			tcp_err(ep, "recv returned %d", errno);
 			return -errno;
+		}
+		if (len == 0) {
+			tcp_err(ep, "%s: disconnect during recv data",
+				__func__);
+			return -ENODATA;
 		}
 		offset += len;
 	}
@@ -721,7 +727,7 @@ static int tcp_read_msg(struct endpoint *ep)
 		}
 		/* No data received, disconnected */
 		if (!len) {
-			tcp_info(ep, "disconnect");
+			tcp_info(ep, "disconnect during read msg");
 			return -ENODATA;
 		}
 
@@ -747,12 +753,14 @@ static int tcp_read_msg(struct endpoint *ep)
 
 		tcp_info(ep, "read %u pdu bytes", msg_len);
 		len = ep->io_ops->io_read(ep, msg, msg_len);
-		if (len == 0)
-			return -EAGAIN;
 		if (len < 0) {
 			tcp_err(ep, "failed to read msg payload error %d",
 				errno);
 			return -errno;
+		}
+		if (len == 0) {
+			tcp_info(ep, "disconnect during read pdu");
+			return -ENODATA;
 		}
 		ep->recv_pdu_len += len;
 		msg_len -= len;
