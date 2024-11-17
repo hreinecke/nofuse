@@ -18,23 +18,6 @@ const char hosts_dir[] = "hosts";
 const char ports_dir[] = "ports";
 const char subsys_dir[] = "subsystems";
 
-enum dir_type {
-	TYPE_NONE,
-	TYPE_ROOT,
-	TYPE_HOST_DIR,		/* hosts */
-	TYPE_HOST,		/* hosts/<host> */
-	TYPE_PORT_DIR,		/* ports */
-	TYPE_PORT,		/* ports/<port> */
-	TYPE_PORT_ATTR,		/* ports/<port>/addr_<attr> */
-	TYPE_PORT_SUBSYS_DIR,	/* ports/<port>/subsystems */
-	TYPE_PORT_SUBSYS,	/* ports/<port>/subsystems/<subsys> */
-	TYPE_SUBSYS_DIR,	/* subsystems */
-	TYPE_SUBSYS,		/* subsystems/<subsys> */
-	TYPE_SUBSYS_ATTR,	/* subsystems/<subsys>/attr_<attr> */
-	TYPE_SUBSYS_HOSTS_DIR,	/* subsystems/<subsys>/allowed_hosts */
-	TYPE_SUBSYS_HOST,	/* subsystems/<subsys>/allowed_hosts/<host> */
-};
-
 static void *nofuse_init(struct fuse_conn_info *conn,
 			 struct fuse_config *cfg)
 {
