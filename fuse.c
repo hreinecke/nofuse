@@ -44,6 +44,70 @@ static int host_getattr(char *host, struct stat *stbuf)
 	return 0;
 }
 
+static int port_subsystems_getattr(unsigned int portid, const char *subsys,
+				   struct stat *stbuf)
+{
+	int ret;
+	const char *p;
+
+	printf("%s: port %d subsys %s\n", __func__,
+	       portid, subsys);
+	if (!subsys) {
+		int num_subsys = 0;
+
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		ret = configdb_count_subsys_port(portid, &num_subsys);
+		if (ret)
+			return -ENOENT;
+		stbuf->st_nlink += num_subsys;
+		return 0;
+	}
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	ret = configdb_stat_subsys_port(subsys, portid, stbuf);
+	if (ret < 0)
+		printf("%s: stat error %d\n", __func__, ret);
+
+	return ret;
+}
+
+static int port_ana_groups_getattr(const char *port, const char *ana_grp,
+				   struct stat *stbuf)
+{
+	int ret;
+	const char *p;
+
+	if (!ana_grp) {
+		int num_grps = 0;
+
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 1;
+		ret = configdb_count_ana_groups(port, &num_grps);
+		if (ret)
+			return -ENOENT;
+		stbuf->st_nlink += num_grps;
+		return 0;
+	}
+
+	printf("%s: port %s ana group %s\n",
+	       __func__, port, ana_grp);
+
+	p = strtok(NULL, "/");
+	if (!p) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+	if (strcmp(p, "ana_state"))
+		return -ENOENT;
+	ret = configdb_stat_ana_group(port, ana_grp, stbuf);
+	if (ret < 0)
+		return ret;
+	return 0;
+}
+
 static int port_getattr(char *port, struct stat *stbuf)
 {
 	int portid;
@@ -68,62 +132,11 @@ static int port_getattr(char *port, struct stat *stbuf)
 	attr = p;
 	p = strtok(NULL, "/");
 
-	if (!strcmp(attr, "subsystems")) {
-		const char *subsys = p;
+	if (!strcmp(attr, "subsystems"))
+		return port_subsystems_getattr(portid, p, stbuf);
+	if (!strcmp(attr, "ana_groups"))
+		return port_ana_groups_getattr(port, p, stbuf);
 
-		printf("%s: port %d subsys %s\n", __func__,
-		       portid, subsys);
-		if (!subsys) {
-			int num_subsys = 0;
-
-			stbuf->st_mode = S_IFDIR | 0755;
-			stbuf->st_nlink = 2;
-			ret = configdb_count_subsys_port(portid, &num_subsys);
-			if (ret)
-				return -ENOENT;
-			stbuf->st_nlink += num_subsys;
-			return 0;
-		}
-		p = strtok(NULL, "/");
-		if (p)
-			return -ENOENT;
-		ret = configdb_stat_subsys_port(subsys, portid, stbuf);
-		if (ret < 0) {
-			printf("%s: stat error %d\n", __func__, ret);
-		}
-		return ret;
-	}
-	if (!strcmp(attr, "ana_groups")) {
-		const char *ana_grp = p;
-
-		if (!ana_grp) {
-			int num_grps = 0;
-
-			stbuf->st_mode = S_IFDIR | 0755;
-			stbuf->st_nlink = 1;
-			ret = configdb_count_ana_groups(port, &num_grps);
-			if (ret)
-				return -ENOENT;
-			stbuf->st_nlink += num_grps;
-			return 0;
-		}
-
-		printf("%s: port %s ana group %s\n",
-		       __func__, port, ana_grp);
-
-		p = strtok(NULL, "/");
-		if (!p) {
-			stbuf->st_mode = S_IFDIR | 0755;
-			stbuf->st_nlink = 2;
-			return 0;
-		}
-		if (strcmp(p, "ana_state"))
-			return -ENOENT;
-		ret = configdb_stat_ana_group(port, ana_grp, stbuf);
-		if (ret < 0)
-			return ret;
-		return 0;
-	}
 	if (p)
 		return -ENOENT;
 
@@ -139,6 +152,78 @@ static int port_getattr(char *port, struct stat *stbuf)
 	ret = configdb_get_port_attr(portid, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
+	stbuf->st_mode = S_IFREG | 0644;
+	stbuf->st_nlink = 1;
+	stbuf->st_size = 256;
+	return 0;
+}
+
+static int subsys_allowed_hosts_getattr(const char *subsysnqn,
+					const char *hostnqn,
+					struct stat *stbuf)
+{
+	int ret;
+	const char *p;
+
+	if (!hostnqn) {
+		int num_hosts = 0;
+
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		ret = configdb_count_host_subsys(subsysnqn, &num_hosts);
+		if (ret)
+			return -ENOENT;
+		stbuf->st_nlink += num_hosts;
+		return 0;
+	}
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	printf("%s: subsys %s host %s\n", __func__, subsysnqn, hostnqn);
+	return configdb_stat_host_subsys(hostnqn, subsysnqn, stbuf);
+}
+
+static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
+				     struct stat *stbuf)
+{
+	int ret;
+	const char *attr, *p;
+	char *eptr;
+	int nsid;
+
+	if (!ns) {
+		int num_ns = 0;
+
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		ret = configdb_count_namespaces(subsysnqn, &num_ns);
+		if (ret)
+			return -ENOENT;
+		stbuf->st_nlink += num_ns;
+		return 0;
+	}
+	nsid = strtoul(ns, &eptr, 10);
+	if (ns == eptr)
+		return -EINVAL;
+	ret = configdb_stat_namespace(subsysnqn, nsid, stbuf);
+	if (ret)
+		return -ENOENT;
+	printf("%s: subsys %s ns %d\n", __func__, subsysnqn, nsid);
+	attr = strtok(NULL, "/");
+	if (!attr) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	printf("%s: subsys %s ns %d attr %s\n", __func__,
+	       subsysnqn, nsid, attr);
+	ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
+	if (ret < 0)
+		return -ENOENT;
+
 	stbuf->st_mode = S_IFREG | 0644;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;
@@ -165,73 +250,17 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 	attr = p;
 	p = strtok(NULL, "/");
 
-	if (!strcmp(attr, "allowed_hosts")) {
-		const char *hostnqn = p;
-
-		if (!hostnqn) {
-			int num_hosts = 0;
-
-			stbuf->st_mode = S_IFDIR | 0755;
-			stbuf->st_nlink = 2;
-			ret = configdb_count_host_subsys(subsysnqn, &num_hosts);
-			if (ret)
-				return -ENOENT;
-			stbuf->st_nlink += num_hosts;
-			return 0;
-		}
-		p = strtok(NULL, "/");
-		if (p)
-			return -ENOENT;
-		printf("%s: subsys %s host %s\n", __func__, subsysnqn, hostnqn);
-		return configdb_stat_host_subsys(hostnqn, subsysnqn, stbuf);
-	}
-
-	if (!strcmp(attr, "namespaces")) {
-		const char *ns = p;
-		char *eptr;
-		int nsid;
-
-		if (!ns) {
-			int num_ns = 0;
-
-			stbuf->st_mode = S_IFDIR | 0755;
-			stbuf->st_nlink = 2;
-			ret = configdb_count_namespaces(subsysnqn, &num_ns);
-			if (ret)
-				return -ENOENT;
-			stbuf->st_nlink += num_ns;
-			return 0;
-		}
-		nsid = strtoul(ns, &eptr, 10);
-		if (ns == eptr)
-			return -EINVAL;
-		ret = configdb_stat_namespace(subsysnqn, nsid, stbuf);
-		if (ret)
-			return -ENOENT;
-		printf("%s: subsys %s ns %d\n", __func__, subsysnqn, nsid);
-		attr = strtok(NULL, "/");
-		if (!attr) {
-			stbuf->st_mode = S_IFDIR | 0755;
-			stbuf->st_nlink = 2;
-			return 0;
-		}
-		p = strtok(NULL, "/");
-		if (p)
-			return -ENOENT;
-		printf("%s: subsys %s ns %d attr %s\n", __func__,
-		       subsysnqn, nsid, attr);
-		ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
-		if (ret < 0)
-			return -ENOENT;
-		goto found;
-	}
+	if (!strcmp(attr, "allowed_hosts"))
+		return subsys_allowed_hosts_getattr(subsysnqn, p, stbuf);
+	if (!strcmp(attr, "namespaces"))
+		return subsys_namespaces_getattr(subsysnqn, p, stbuf);
 
 	if (strncmp(attr, "attr_", 5))
 		return -ENOENT;
 	ret = configdb_get_subsys_attr(subsysnqn, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
-found:
+
 	stbuf->st_mode = S_IFREG | 0644;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;
