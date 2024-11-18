@@ -725,39 +725,82 @@ out_free:
 	return ret;
 }
 
+static int parse_port_link(char *s, unsigned int *portid,
+			   const char **subsys)
+{
+	const char *p, *port;
+	char *eptr = NULL;
+	unsigned int p_id;
+
+	port = strtok_r(NULL, "/", &s);
+	if (!port)
+		return -ENOENT;
+	p_id = strtoul(port, &eptr, 10);
+	if (port == eptr)
+		return -EINVAL;
+	p = strtok_r(NULL, "/", &s);
+	if (!p)
+		return -ENOENT;
+	if (strcmp(p, "subsystems"))
+		return -ENOENT;
+	*subsys = strtok_r(NULL, "/", &s);
+	if (!*subsys)
+		return -ENOENT;
+	p = strtok_r(NULL, "/", &s);
+	if (p) {
+		*subsys = NULL;
+		return -ENOENT;
+	}
+	*portid = p_id;
+	return 0;
+}
+
+static int parse_subsys_link(char *s, const char **subsys,
+			     const char **host)
+{
+	const char *p;
+
+	*subsys = strtok_r(NULL, "/", &s);
+	if (!*subsys)
+		return -ENOENT;
+	p = strtok(NULL, "/");
+	if (!p || strcmp(p, "allowed_hosts")) {
+		*subsys = NULL;
+		return -ENOENT;
+	}
+	*host = strtok_r(NULL, "/", &s);
+	if (!*host) {
+		*subsys = NULL;
+		return -ENOENT;
+	}
+	p = strtok_r(NULL, "/", &s);
+	if (p) {
+		*host = NULL;
+		*subsys = NULL;
+		return -ENOENT;
+	}
+	return 0;
+}
+
 static int nofuse_readlink(const char *path, char *buf, size_t len)
 {
-	char *p, *pathbuf, *root, *attr;
+	char *s, *pathbuf;
+	const char *root;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 	printf("%s: path %s\n", __func__, pathbuf);
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *port, *subsys;
-		char *eptr = NULL;
-		int portid;
+		const char *subsys;
+		unsigned int portid;
 
-		port = strtok(NULL, "/");
-		if (!port)
-			goto out_free;
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
-		attr = strtok(NULL, "/");
-		if (!attr)
-			goto out_free;
-		if (strcmp(attr, "subsystems"))
-			goto out_free;
-		subsys = strtok(NULL, "/");
-		if (!subsys)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (p)
+		ret = parse_port_link(s, &portid, &subsys);
+		if (ret < 0)
 			goto out_free;
 		ret = configdb_stat_subsys_port(subsys, portid, NULL);
 		if (ret < 0)
@@ -767,19 +810,8 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
 
-		subsys = strtok(NULL, "/");
-		if (!subsys)
-			goto out_free;
-		attr = strtok(NULL, "/");
-		if (!attr)
-			goto out_free;
-		if (strcmp(attr, "allowed_hosts"))
-			goto out_free;
-		host = strtok(NULL, "/");
-		if (!host)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (p)
+		ret = parse_subsys_link(s, &subsys, &host);
+		if (ret < 0)
 			goto out_free;
 		ret = configdb_stat_host_subsys(host, subsys, NULL);
 		if (ret < 0)
@@ -796,7 +828,8 @@ out_free:
 
 static int nofuse_symlink(const char *from, const char *to)
 {
-	char *p, *pathbuf, *root, *attr;
+	char *s, *pathbuf;
+	const char *root;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(to);
@@ -804,30 +837,16 @@ static int nofuse_symlink(const char *from, const char *to)
 		return -ENOMEM;
 	printf("%s: path %s from %s\n",
 	       __func__, pathbuf, from);
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *port, *subsys;
-		char *eptr = NULL;
-		int portid, subsysnum = 0;
+		const char *subsys;
+		unsigned int portid;
+		int subsysnum = 0;
 
-		port = strtok(NULL, "/");
-		if (!port)
-			goto out_free;
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
-		attr = strtok(NULL, "/");
-		if (!attr)
-			goto out_free;
-		if (strcmp(attr, "subsystems"))
-			goto out_free;
-		subsys = strtok(NULL, "/");
-		if (!subsys)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (p)
+		ret = parse_port_link(s, &portid, &subsys);
+		if (ret < 0)
 			goto out_free;
 		printf("%s: subsys %s portid %d\n",
 		       __func__, subsys, portid);
@@ -862,19 +881,8 @@ static int nofuse_symlink(const char *from, const char *to)
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
 
-		subsys = strtok(NULL, "/");
-		if (!subsys)
-			goto out_free;
-		attr = strtok(NULL, "/");
-		if (!attr)
-			goto out_free;
-		if (strcmp(attr, "allowed_hosts"))
-			goto out_free;
-		host = strtok(NULL, "/");
-		if (!host)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (p)
+		ret = parse_subsys_link(s, &subsys, &host);
+		if (ret < 0)
 			goto out_free;
 		ret = configdb_add_host_subsys(host, subsys);
 		if (ret < 0)
@@ -890,7 +898,8 @@ out_free:
 
 static int nofuse_unlink(const char *path)
 {
-	char *p, *pathbuf, *root, *attr;
+	char *pathbuf, *s;
+	const char *root;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
@@ -898,31 +907,17 @@ static int nofuse_unlink(const char *path)
 		return -ENOMEM;
 	printf("%s: path %s\n",
 	       __func__, pathbuf);
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *port, *subsys;
-		char *eptr = NULL;
-		int portid, subsysnum = 0;
+		const char *subsys;
+		unsigned int portid;
+		int subsysnum = 0;
 		struct interface *iface;
 
-		port = strtok(NULL, "/");
-		if (!port)
-			goto out_free;
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
-		attr = strtok(NULL, "/");
-		if (!attr)
-			goto out_free;
-		if (strcmp(attr, "subsystems"))
-			goto out_free;
-		subsys = strtok(NULL, "/");
-		if (!subsys)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (p)
+		ret = parse_port_link(s, &portid, &subsys);
+		if (ret < 0)
 			goto out_free;
 		iface = find_iface(portid);
 		if (!iface) {
@@ -952,19 +947,8 @@ static int nofuse_unlink(const char *path)
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
 
-		subsys = strtok(NULL, "/");
-		if (!subsys)
-			goto out_free;
-		attr = strtok(NULL, "/");
-		if (!attr)
-			goto out_free;
-		if (strcmp(attr, "allowed_hosts"))
-			goto out_free;
-		host = strtok(NULL, "/");
-		if (!host)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (p)
+		ret = parse_subsys_link(s, &subsys, &host);
+		if (ret < 0)
 			goto out_free;
 		ret = configdb_del_host_subsys(host, subsys);
 		if (ret < 0)
