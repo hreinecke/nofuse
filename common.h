@@ -130,6 +130,7 @@ struct nofuse_ctrl {
 	int num_endpoints;
 	int max_endpoints;
 	int aen_mask;
+	u64 ana_chgcnt;
 	u64 csts;
 	u64 cc;
 };

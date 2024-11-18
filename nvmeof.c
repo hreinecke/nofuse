@@ -209,14 +209,23 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	memset(id.mn, ' ', sizeof(id.mn));
 
 	id.mdts = 0;
-	id.cmic = 3;
+	id.cmic = NVME_CTRL_CMIC_MULTI_PORT | NVME_CTRL_CMIC_MULTI_CTRL |
+		NVME_CTRL_CMIC_ANA;
 	id.cntlid = htole16(ep->ctrl->cntlid);
 	id.ver = htole32(NVME_VER);
 	id.lpa = (1 << 2);
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */
+	id.ctratt = htole32(NVME_CTRL_ATTR_HID_128_BIT |
+			    NVME_CTRL_ATTR_TBKAS);
 	id.ioccsz = NVME_NVM_IOSQES;
 	id.iorcsz = NVME_NVM_IOCQES;
+	id.acl = 3;
+	id.aerl = 3;
+	id.nn = htole32(256);
+	id.mnan = htole32(256);
+	id.sqes = (0x6 << 4) | 0x6;
+	id.cqes = (0x4 << 4) | 0x4;
 
 	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys->nqn, &id);
 	if (ret < 0)
@@ -228,6 +237,10 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 		id.maxcmd = htole16(ep->qsize);
 	}
 
+	id.anacap = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
+	id.anatt = 10;
+	id.anagrpmax = htole32(256);
+	id.nanagrpid = htole32(256);
 	if (len > sizeof(id))
 		len = sizeof(id);
 
@@ -426,6 +439,60 @@ static int format_disc_log(void *data, u64 data_offset,
 	return log_len;
 }
 
+static int format_ana_log(void *data, u64 data_offset,
+			  u64 data_len, struct endpoint *ep)
+{
+	unsigned int len, log_len, num_recs;
+	u8 *log_buf;
+	struct nvme_ana_rsp_hdr *log_hdr;
+	struct nvme_ana_group_desc *log_entries;
+
+	len = configdb_ana_log_entries(ep->ctrl->subsys->nqn,
+				       ep->iface->portid, NULL, 0);
+	if (len < 0) {
+		ctrl_err(ep, "error formatting ana log page");
+		return len;
+	}
+	num_recs = len / sizeof(struct nvme_ana_group_desc);
+	log_len = len + sizeof(struct nvme_ana_rsp_hdr);
+	log_buf = malloc(log_len);
+	if (!log_buf) {
+		ctrl_err(ep, "error allocating ana log");
+		errno = ENOMEM;
+		return -1;
+	}
+	memset(log_buf, 0, log_len);
+	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
+	log_entries = log_hdr->entries;
+
+	if (num_recs) {
+		len = configdb_ana_log_entries(ep->ctrl->subsys->nqn,
+					       ep->iface->portid,
+					      (u8 *)log_entries, len);
+		if (len < 0) {
+			ctrl_err(ep, "error fetching ana log entries");
+			num_recs = 0;
+		}
+	}
+
+	log_hdr->ngrps = htole16(num_recs);
+	log_hdr->chgcnt = htole64(ep->ctrl->ana_chgcnt);
+	if (log_len < data_offset) {
+		ctrl_err(ep, "offset %llu beyond log page size %d",
+			 data_offset, log_len);
+		log_len = 0;
+	} else {
+		log_len -= data_offset;
+		if (log_len > data_len)
+			log_len = data_len;
+		memcpy(data, log_buf + data_offset, log_len);
+	}
+	ctrl_info(ep, "ana log page entries %d offset %llu len %d",
+		  num_recs, data_offset, log_len);
+	free(log_buf);
+	return log_len;
+}
+
 static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
@@ -442,6 +509,15 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		/* SMART Log */
 		log_len = qe->data_len;
 		memset(qe->data, 0, log_len);
+		break;
+	case 0x0c:
+		/* ANA Log */
+		log_len = format_ana_log(qe->data, qe->data_pos,
+					 qe->data_len, ep);
+		if (!log_len) {
+			ctrl_err(ep, "get_log_page: ana log failed");
+			return NVME_SC_INTERNAL;
+		}
 		break;
 	case 0x70:
 		/* Discovery log */

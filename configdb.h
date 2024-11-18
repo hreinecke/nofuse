@@ -85,6 +85,8 @@ int configdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len);
 int configdb_host_genctr(const char *hostnqn, int *genctr);
 int configdb_subsys_identify_ctrl(const char *subsysnqn,
 				  struct nvme_id_ctrl *id);
+int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
+			     u8 *log, int log_len);
 
 #endif /* _CONFIGDB_H */
 

@@ -327,6 +327,7 @@ struct nvme_id_ctrl {
 };
 
 enum {
+	NVME_CTRL_CMIC_MULTI_PORT		= 1 << 0,
 	NVME_CTRL_CMIC_MULTI_CTRL		= 1 << 1,
 	NVME_CTRL_CMIC_ANA			= 1 << 3,
 	NVME_CTRL_ONCS_COMPARE			= 1 << 0,
@@ -587,6 +588,7 @@ struct nvme_ana_rsp_hdr {
 	__u64	chgcnt;
 	__u16	ngrps;
 	__u16	rsvd10[3];
+	struct nvme_ana_group_desc entries[];
 };
 
 struct nvme_zone_descriptor {
