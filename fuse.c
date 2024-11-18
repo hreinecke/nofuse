@@ -763,7 +763,7 @@ static int parse_subsys_link(char *s, const char **subsys,
 	*subsys = strtok_r(NULL, "/", &s);
 	if (!*subsys)
 		return -ENOENT;
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p || strcmp(p, "allowed_hosts")) {
 		*subsys = NULL;
 		return -ENOENT;
@@ -784,7 +784,7 @@ static int parse_subsys_link(char *s, const char **subsys,
 
 static int nofuse_readlink(const char *path, char *buf, size_t len)
 {
-	char *s, *pathbuf;
+	char *s = NULL, *pathbuf;
 	const char *root;
 	int ret = -ENOENT;
 
@@ -828,7 +828,7 @@ out_free:
 
 static int nofuse_symlink(const char *from, const char *to)
 {
-	char *s, *pathbuf;
+	char *s = NULL, *pathbuf;
 	const char *root;
 	int ret = -ENOENT;
 
@@ -898,7 +898,7 @@ out_free:
 
 static int nofuse_unlink(const char *path)
 {
-	char *pathbuf, *s;
+	char *s = NULL, *pathbuf;
 	const char *root;
 	int ret = -ENOENT;
 
