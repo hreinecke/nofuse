@@ -322,7 +322,8 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_
 static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
 {
-	int cns = cmd->identify.cns;
+	u8 cns = cmd->identify.cns;
+	u8 csi = cmd->identify.csi;
 	int nsid = le32toh(cmd->identify.nsid);
 	u16 cid = cmd->identify.command_id;
 	int ret, id_len;
@@ -344,6 +345,14 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 		id_len = handle_identify_ns_desc_list(ep, nsid,
 						      qe->data, qe->data_len);
 		break;
+	case NVME_ID_CNS_CS_CTRL:
+		if (csi == 0) {
+			id_len = handle_identify_ctrl(ep, qe->data,
+						      qe->data_len);
+			break;
+		}
+		ctrl_err(ep, "unsupported identify ctrl csi %u\n", csi);
+		return NVME_SC_BAD_ATTRIBUTES;
 	default:
 		ctrl_err(ep, "unexpected identify command cns %u", cns);
 		return NVME_SC_BAD_ATTRIBUTES;
