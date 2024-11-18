@@ -17,7 +17,7 @@ int configdb_del_host(const char *nqn);
 
 int configdb_add_subsys(struct nofuse_subsys *subsys);
 int configdb_get_discovery_nqn(char *nqn);
-int configdb_set_discovery_nqn(char *nqn);
+int configdb_set_discovery_nqn(const char *nqn);
 int configdb_stat_subsys(const char *nqn, struct stat *stbuf);
 int configdb_fill_subsys_dir(void *buf, fuse_fill_dir_t filler);
 int configdb_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);

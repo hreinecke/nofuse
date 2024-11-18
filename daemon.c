@@ -39,6 +39,8 @@ struct nofuse_context {
 	int help;
 };
 
+char discovery_nqn[MAX_NQN_SIZE + 1] = {};
+
 extern int run_fuse(struct fuse_args *args);
 
 struct nofuse_subsys *find_subsys(const char *nqn)
@@ -58,13 +60,7 @@ struct nofuse_subsys *find_subsys(const char *nqn)
 int add_subsys(const char *nqn)
 {
 	struct nofuse_subsys *subsys;
-	char discovery_nqn[MAX_NQN_SIZE + 1];
 	int ret;
-
-	memset(discovery_nqn, 0, MAX_NQN_SIZE + 1);
-	ret = configdb_get_discovery_nqn(discovery_nqn);
-	if (ret)
-		strcpy(discovery_nqn, NVME_DISC_SUBSYS_NAME);
 
 	subsys = find_subsys(nqn);
 	if (subsys)
@@ -268,6 +264,7 @@ static int init_subsys(struct nofuse_context *ctx)
 	subsys = find_subsys(ctx->subsysnqn);
 	if (!subsys)
 		return -ENOENT;
+
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		configdb_add_subsys_port(subsys->nqn, iface->portid);
 	}
@@ -440,6 +437,8 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 
 	if (!ctx->subsysnqn)
 		ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
+	memcpy(discovery_nqn, ctx->subsysnqn,
+	       strlen(ctx->subsysnqn));
 
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);

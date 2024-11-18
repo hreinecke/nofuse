@@ -441,7 +441,7 @@ int configdb_get_discovery_nqn(char *nqn)
 static char set_discover_nqn_sql[] =
 	"UPDATE subsystems SET nqn = '%s' WHERE attr_type = '3';";
 
-int configdb_set_discovery_nqn(char *nqn)
+int configdb_set_discovery_nqn(const char *nqn)
 {
 	char *sql;
 	int ret;
