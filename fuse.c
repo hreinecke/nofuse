@@ -511,6 +511,74 @@ out_free:
 	return ret;
 }
 
+static int port_mkdir(const char *port)
+{
+	int ret;
+	char *p, *eptr = NULL;
+	int portid, ana_grpid;
+
+	portid = strtoul(port, &eptr, 10);
+	if (port == eptr)
+		return -EINVAL;
+
+	p = strtok(NULL, "/");
+	if (!p) {
+		ret = add_iface(portid, NULL, 0);
+		if (ret < 0)
+			printf("%s: cannot add port %d, error %d\n",
+			       __func__, portid, ret);
+		return ret;
+	}
+	if (strcmp(p, "ana_groups"))
+		return -ENOENT;
+
+	p = strtok(NULL, "/");
+	if (!p)
+		return -ENOENT;
+	eptr = NULL;
+	ana_grpid = strtoul(p, &eptr, 10);
+	if (p == eptr)
+		return -ENOENT;
+	printf("%s: port %d ana group %d\n", __func__,
+	       portid, ana_grpid);
+	ret = configdb_add_ana_group(portid, ana_grpid,
+				     NVME_ANA_OPTIMIZED);
+	if (ret < 0) {
+		printf("%s: cannot add ana group %d to "
+		       "port %d, error %d\n", __func__,
+		       portid, ana_grpid, ret);
+		return ret;
+	}
+	return 0;
+}
+
+static int subsys_mkdir(const char *subsysnqn)
+{
+	char *p, *ns, *eptr = NULL;
+	int nsid;
+
+	p = strtok(NULL, "/");
+	if (!p)
+		return add_subsys(subsysnqn);
+
+	if (strcmp(p, "namespaces"))
+		return -ENOENT;
+
+	p = strtok(NULL, "/");
+	if (!p)
+		return -ENOENT;
+
+	ns = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	nsid = strtoul(ns, &eptr, 10);
+	if (ns == eptr)
+		return -EINVAL;
+
+	return add_namespace(subsysnqn, nsid);
+}
+
 static int nofuse_mkdir(const char *path, mode_t mode)
 {
 	char *pathbuf, *root, *p;
@@ -527,65 +595,10 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 	if (!p)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		char *port = p, *eptr = NULL;
-		int portid, ana_grpid;
-
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p) {
-			ret = add_iface(portid, NULL, 0);
-			if (ret < 0)
-				printf("%s: cannot add port %d, error %d\n",
-				       __func__, portid, ret);
-			goto out_free;
-		}
-		if (strcmp(p, "ana_groups"))
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p)
-			goto out_free;
-		eptr = NULL;
-		ana_grpid = strtoul(p, &eptr, 10);
-		if (p == eptr)
-			goto out_free;
-		printf("%s: port %d ana group %d\n", __func__,
-		       portid, ana_grpid);
-		ret = configdb_add_ana_group(portid, ana_grpid,
-					  NVME_ANA_OPTIMIZED);
-		if (ret < 0) {
-			printf("%s: cannot add ana group %d to "
-			       "port %d, error %d\n", __func__,
-			       portid, ana_grpid, ret);
-			ret = -ENOENT;
-			goto out_free;
-		}
+		ret = port_mkdir(p);
 	}
 	if (!strcmp(root, subsys_dir)) {
-		char *subsysnqn = p, *ns, *eptr = NULL;
-		int nsid;
-
-		p = strtok(NULL, "/");
-		if (!p) {
-			ret = add_subsys(subsysnqn);
-			goto out_free;
-		}
-		if (strcmp(p, "namespaces"))
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p)
-			goto out_free;
-		ns = p;
-		p = strtok(NULL, "/");
-		if (p)
-			goto out_free;
-		nsid = strtoul(ns, &eptr, 10);
-		if (ns == eptr) {
-			ret = -EINVAL;
-			goto out_free;
-		}
-		ret = add_namespace(subsysnqn, nsid);
+		ret = subsys_mkdir(p);
 	}
 	if (!strcmp(root, hosts_dir)) {
 		char *hostnqn = p;
@@ -600,6 +613,80 @@ out_free:
 	if (ret != 0)
 		printf("%s: error %d\n", __func__, ret);
 	return ret;
+}
+
+static int port_rmdir(const char *port)
+{
+	char *p, *ana_grp, *eptr = NULL;
+	unsigned int portid;
+	int ana_grpid;
+
+	portid = strtoul(port, &eptr, 10);
+	if (port == eptr)
+		return -EINVAL;
+	p = strtok(NULL, "/");
+	if (!p) {
+		struct interface *iface = find_iface(portid);
+		int ret;
+
+		if (!iface) {
+			printf("%s: no interface for port %d\n",
+			       __func__, portid);
+			return -ENOENT;
+		}
+		ret = del_iface(iface);
+		if (ret < 0) {
+			printf("%s: cannot remove port %d, error %d\n",
+			       __func__, portid, ret);
+		}
+		return ret;;
+	}
+	if (strcmp(p, "ana_groups"))
+		return -ENOENT;
+	p = strtok(NULL, "/");
+	if (!p)
+		return -ENOENT;
+	ana_grp = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;;
+	ana_grpid = strtoul(ana_grp, &eptr, 10);
+	if (ana_grp == eptr)
+		return -EINVAL;
+	printf("%s: port %d ana group %d\n", __func__,
+	       portid, ana_grpid);
+	if (ana_grpid == 1)
+		return -EACCES;
+	return configdb_del_ana_group(portid, ana_grpid);
+}
+
+static int subsys_rmdir(const char *subsysnqn)
+{
+	char *p, *ns, *eptr = NULL;
+	int nsid;
+
+	p = strtok(NULL, "/");
+	if (!p) {
+		struct nofuse_subsys *subsys = find_subsys(subsysnqn);
+		if (!subsys)
+			return -ENOENT;
+
+		return del_subsys(subsys);
+	}
+	if (strcmp(p, "namespaces"))
+		return -ENOENT;
+
+	p = strtok(NULL, "/");
+	if (!p)
+		return -ENOENT;
+	ns = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	nsid = strtoul(ns, &eptr, 10);
+	if (ns == eptr)
+		return -EINVAL;
+	return del_namespace(subsysnqn, nsid);
 }
 
 static int nofuse_rmdir(const char *path)
@@ -618,86 +705,10 @@ static int nofuse_rmdir(const char *path)
 	if (!p)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		char *port = p, *ana_grp, *eptr = NULL;
-		unsigned int portid;
-		int ana_grpid;
-
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p) {
-			struct interface *iface = find_iface(portid);
-
-			if (!iface) {
-				printf("%s: no interface for port %d\n",
-				       __func__, portid);
-				ret = -EINVAL;
-				goto out_free;
-			}
-			ret = del_iface(iface);
-			if (ret < 0) {
-				printf("%s: cannot remove port %d, error %d\n",
-				       __func__, portid, ret);
-			}
-			goto out_free;
-		}
-		if (strcmp(p, "ana_groups"))
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p)
-			goto out_free;
-		ana_grp = p;
-		p = strtok(NULL, "/");
-		if (p)
-			goto out_free;
-		ana_grpid = strtoul(ana_grp, &eptr, 10);
-		if (ana_grp == eptr) {
-			ret = -EINVAL;
-			goto out_free;
-		}
-		printf("%s: port %d ana group %d\n", __func__,
-		       portid, ana_grpid);
-		if (ana_grpid == 1) {
-			ret = -EACCES;
-			goto out_free;
-		}
-		ret = configdb_del_ana_group(portid, ana_grpid);
-		if (ret < 0) {
-			printf("%s: cannot remove ana group %d from "
-			       "port %d, error %d\n", __func__,
-			       ana_grpid, portid, ret);
-			ret = -ENOENT;
-			goto out_free;
-		}
+		ret = port_rmdir(p);
 	}
 	if (!strcmp(root, subsys_dir)) {
-		char *subsysnqn = p, *ns, *eptr = NULL;
-		int nsid;
-
-		p = strtok(NULL, "/");
-		if (!p) {
-			struct nofuse_subsys *subsys = find_subsys(subsysnqn);
-			if (!subsys)
-				goto out_free;
-			ret = del_subsys(subsys);
-			goto out_free;
-		}
-		if (strcmp(p, "namespaces"))
-			goto out_free;
-		p = strtok(NULL, "/");
-		if (!p)
-			goto out_free;
-		ns = p;
-		p = strtok(NULL, "/");
-		if (p)
-			goto out_free;
-		nsid = strtoul(ns, &eptr, 10);
-		if (ns == eptr) {
-			ret = -EINVAL;
-			goto out_free;
-		}
-		ret = del_namespace(subsysnqn, nsid);
+		ret = subsys_rmdir(p);
 	}
 	if (!strcmp(root, hosts_dir)) {
 		const char *hostnqn = p;
