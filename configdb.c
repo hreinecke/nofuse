@@ -491,7 +491,8 @@ int configdb_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 	ret = sqlite3_exec(configdb_db, fill_subsys_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
 	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_subsys_dir_sql);
+		fprintf(stderr, "SQL error executing %s\n",
+			fill_subsys_dir_sql);
 		fprintf(stderr, "SQL error: %s\n", errmsg);
 		sqlite3_free(errmsg);
 		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
@@ -1040,11 +1041,6 @@ int configdb_add_ana_group(int port, int grpid, int ana_state)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
-	if (ret < 0) {
-		sql_exec_simple("SELECT * FROM ana_groups;");
-		sql_exec_simple("SELECT * FROM ports;");
-	}
-
 	return ret;
 }
 
@@ -1081,7 +1077,6 @@ int configdb_stat_ana_group(const char *port, const char *ana_grpid,
 	ret = asprintf(&sql, stat_ana_group_sql, port, ana_grpid);
 	if (ret < 0)
 		return ret;
-	sql_exec_simple("SELECT * FROM ana_groups;");
 	ret = sql_exec_int(sql, "tv", &timeval);
 	free(sql);
 	if (ret < 0)
@@ -1179,7 +1174,6 @@ int configdb_del_ana_group(unsigned int portid, int grpid)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
-
 	return ret;
 }
 

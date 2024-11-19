@@ -126,6 +126,7 @@ int add_namespace(const char *subsysnqn, int nsid)
 	}
 	INIT_LINKED_LIST(&ns->node);
 	list_add_tail(&ns->node, &device_linked_list);
+	printf("%s: subsys %s nsid %d\n", __func__, subsysnqn, nsid);
 	return 0;
 }
 
@@ -245,6 +246,8 @@ int del_namespace(const char *subsysnqn, int nsid)
 	}
 	if (!ns)
 		return ret;
+	printf("%s: subsys %s nsid %d\n",
+	       __func__, subsysnqn, nsid);
 	ret = configdb_del_namespace(subsysnqn, ns->nsid);
 	if (ret < 0)
 		return ret;
@@ -319,6 +322,7 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 	INIT_LINKED_LIST(&iface->ep_list);
 	INIT_LINKED_LIST(&iface->node);
 	list_add_tail(&iface->node, &iface_linked_list);
+	iface_info(iface, "created");
 
 	return 0;
 }
@@ -343,6 +347,7 @@ int start_iface(struct interface *iface)
 	if (iface->pthread)
 		return 0;
 
+	iface_info(iface, "starting");
 	pthread_attr_init(&pthread_attr);
 	ret = pthread_create(&iface->pthread, &pthread_attr,
 			     run_interface, iface);
@@ -378,6 +383,7 @@ int del_iface(struct interface *iface)
 {
 	int ret;
 
+	iface_info(iface, "deleting");
 	if (iface->pthread) {
 		iface_err(iface, "interface still running");
 		return -EBUSY;
