@@ -18,8 +18,8 @@ xdp_drop_port.o: xdp_drop_port.c
 tcp.o: tcp.c common.h utils.h tcp.h tls.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-firmware.h:
-	git show --no-abbrev-commit | head -1 | cksum | cut -f 1 -d ' ' | base32 | sed -n 's/\(.\{8\}\).*/static char firmware_rev[] = "\1";/p' > $@
+firmware.h: gen_firmware_rev.sh
+	bash ./$< $@
 
 clean:
 	rm -f firmware.h *.o nofuse
