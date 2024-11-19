@@ -330,7 +330,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 
 	ret = add_port(1, ctx->traddr, 8009);
 	if (ret < 0) {
-		fprintf(stderr, "failed to add interface for %s\n",
+		fprintf(stderr, "failed to add port for %s\n",
 			ctx->traddr);
 		return 1;
 	}
@@ -346,7 +346,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		return 1;
 
 	if (list_empty(&port_linked_list)) {
-		fprintf(stderr, "invalid host interface configuration");
+		fprintf(stderr, "invalid host port configuration");
 		return 1;
 	} else if (tls_keyring) {
 		struct nofuse_port *port;
@@ -375,7 +375,7 @@ void free_devices(void)
 	}
 }
 
-void free_interfaces(void)
+void free_ports(void)
 {
 	struct nofuse_port *port, *_port;
 
@@ -428,7 +428,7 @@ int main(int argc, char *argv[])
 	list_for_each_entry(port, &port_linked_list, node)
 		stop_port(port);
 
-	free_interfaces();
+	free_ports();
 
 	free_devices();
 

@@ -656,7 +656,7 @@ static int port_rmdir(const char *port)
 		int ret;
 
 		if (!port) {
-			fuse_err("%s: no interface for port %d",
+			fuse_err("%s: port %d not found",
 			       __func__, portid);
 			return -ENOENT;
 		}
@@ -893,7 +893,7 @@ static int nofuse_symlink(const char *from, const char *to)
 			struct nofuse_port *port = find_port(portid);
 
 			if (!port) {
-				fuse_err("%s: no interface for port %d",
+				fuse_err("%s: port %d not founde",
 				       __func__, portid);
 				configdb_del_subsys_port(subsys, portid);
 				ret = -EINVAL;
@@ -950,7 +950,7 @@ static int nofuse_unlink(const char *path)
 			goto out_free;
 		port = find_port(portid);
 		if (!port) {
-			fuse_err("%s: no interface for port %d",
+			fuse_err("%s: port %d not found",
 			       __func__, portid);
 			goto out_free;
 		}

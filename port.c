@@ -16,6 +16,8 @@
 
 LINKED_LIST(port_linked_list);
 
+static void *run_port(void *arg);
+
 int add_port(unsigned int id, const char *ifaddr, int portnum)
 {
 	struct nofuse_port *port;
@@ -84,7 +86,7 @@ int start_port(struct nofuse_port *port)
 	port_info(port, "starting");
 	pthread_attr_init(&pthread_attr);
 	ret = pthread_create(&port->pthread, &pthread_attr,
-			     run_interface, port);
+			     run_port, port);
 	if (ret) {
 		port->pthread = 0;
 		port_err(port, "failed to start port thread");
@@ -119,7 +121,7 @@ int del_port(struct nofuse_port *port)
 
 	port_info(port, "deleting");
 	if (port->pthread) {
-		port_err(port, "interface still running");
+		port_err(port, "port still running");
 		return -EBUSY;
 	}
 	ret = configdb_del_ana_group(port->portid, 1);
@@ -139,7 +141,7 @@ int del_port(struct nofuse_port *port)
 	return 0;
 }
 
-static int start_interface(struct nofuse_port *port)
+static int start_listener(struct nofuse_port *port)
 {
 	int ret;
 
@@ -163,7 +165,7 @@ static void pop_listener(void *arg)
 	port->ops->destroy_listener(port);
 }
 
-void *run_interface(void *arg)
+static void *run_port(void *arg)
 {
 	struct nofuse_port *port = arg;
 	struct endpoint *ep;
@@ -177,9 +179,9 @@ void *run_interface(void *arg)
 	sigaddset(&set, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
-	ret = start_interface(port);
+	ret = start_listener(port);
 	if (ret) {
-		port_err(port, "failed to start, error %d", ret);
+		port_err(port, "failed to start listener, error %d", ret);
 		pthread_exit(NULL);
 		return NULL;
 	}

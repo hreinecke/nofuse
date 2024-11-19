@@ -244,7 +244,6 @@ static inline void set_response(struct nvme_completion *resp,
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
-void *run_interface(void *arg);
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
