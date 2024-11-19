@@ -127,7 +127,6 @@ static int sql_exec_int(const char *sql, const char *col, int *value)
 			*value = parm.val;
 		parm.done = 0;
 	} else {
-		fprintf(stderr, "no value for '%s'\n", col);
 		*value = 0;
 		parm.done = -ENOENT;
 	}
@@ -190,10 +189,8 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 			strerror(-parm.done));
 	else if (parm.done > 0)
 		parm.done = 0;
-	else {
-		fprintf(stderr, "no value for '%s'\n", col);
+	else
 		parm.done = -ENOENT;
-	}
 	return parm.done;
 }
 
@@ -1876,11 +1873,9 @@ static int ana_grp_log_entry_cb(void *argp, int argc, char **argv, char **col)
 			char *eptr = NULL;
 			unsigned int nsid, _nsid = 0;
 
-			if (!arg_len) {
-				printf("%s: no value for 'nsid'\n",
-				       __func__);
+			if (!arg_len)
 				continue;
-			}
+
 			_nsid = strtoul(argv[i], &eptr, 10);
 			if (argv[i] == eptr) {
 				printf("%s: parsing error on 'nsid'\n",
