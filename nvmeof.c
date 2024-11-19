@@ -10,6 +10,7 @@
 #include "nvme.h"
 #include "tcp.h"
 #include "configdb.h"
+#include "firmware.h"
 
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
@@ -207,7 +208,7 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 
 	memset(&id, 0, sizeof(id));
 
-	memset(id.fr, ' ', sizeof(id.fr));
+	memcpy(id.fr, firmware_rev, sizeof(id.fr));
 	memset(id.mn, ' ', sizeof(id.mn));
 
 	id.mdts = 0;

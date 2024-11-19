@@ -27,6 +27,7 @@
 
 #include "common.h"
 #include "configdb.h"
+#include "firmware.h"
 
 static sqlite3 *configdb_db;
 
@@ -411,8 +412,8 @@ int configdb_del_host(const char *nqn)
 
 static char add_subsys_sql[] =
 	"INSERT INTO subsystems "
-	"(nqn, attr_model, attr_version, attr_ieee_oui, attr_allow_any_host, attr_type, ctime) "
-	"VALUES ('%s', 'nofuse', '2.0', '851255', '%d', '%d', CURRENT_TIMESTAMP);";
+	"(nqn, attr_model, attr_version, attr_ieee_oui, attr_firmware, attr_allow_any_host, attr_type, ctime) "
+	"VALUES ('%s', 'nofuse', '2.0', '851255', '%s', '%d', '%d', CURRENT_TIMESTAMP);";
 
 int configdb_add_subsys(struct nofuse_subsys *subsys)
 {
@@ -420,7 +421,7 @@ int configdb_add_subsys(struct nofuse_subsys *subsys)
 	int ret;
 
 	ret = asprintf(&sql, add_subsys_sql, subsys->nqn,
-		       subsys->allow_any, subsys->type);
+		       firmware_rev, subsys->allow_any, subsys->type);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
