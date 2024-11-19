@@ -1802,21 +1802,18 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 {
 	int i;
 	struct nvme_ana_group_desc *grp_desc = argp;
-	unsigned int ana_state = NVME_ANA_OPTIMIZED, chgcnt = 0, num;
+	unsigned int ana_state = 0xff, chgcnt = 0, num;
 
 	if (!argp) {
 		fprintf(stderr, "%s: Invalid parameter\n", __func__);
 		return 0;
 	}
 
-	memset(grp_desc, 0, sizeof(*grp_desc));
 	for (i = 0; i < argc; i++) {
 		size_t arg_len = argv[i] ? strlen(argv[i]) : 0;
 		char *eptr = NULL;
 
 		if (!arg_len) {
-			printf("%s: no value for '%s'\n",
-			       __func__, col[i]);
 			continue;
 		}
 		if (!strcmp(col[i], "ana_state")) {
@@ -1846,9 +1843,11 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 			}
 		}
 	}
-	grp_desc->chgcnt = htole64(chgcnt);
-	grp_desc->state = ana_state;
-	grp_desc->nnsids = htole32(num);
+	if (ana_state != 0xff && num != 0) {
+		grp_desc->chgcnt = htole64(chgcnt);
+		grp_desc->state = ana_state;
+		grp_desc->nnsids = htole32(num);
+	}
 	return 0;
 }
 
@@ -1926,11 +1925,9 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			return -EINVAL;
 		}
 		nnsids = le32toh(grp_desc->nnsids);
-		if (!nnsids) {
-			printf("%s: no records for grpid %d\n",
-			       __func__, grpid);
+		if (!nnsids)
 			continue;
-		}
+
 		grp_desc->grpid = htole16(grpid);
 
 		parm.len -= sizeof(struct nvme_ana_group_desc);
