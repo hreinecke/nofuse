@@ -29,11 +29,10 @@
 #include "nvme.h"
 #include "tcp.h"
 
-extern int debug;
-extern int tcp_debug;
-extern int cmd_debug;
-extern int ep_debug;
-extern int iface_debug;
+extern bool tcp_debug;
+extern bool cmd_debug;
+extern bool ep_debug;
+extern bool iface_debug;
 
 extern struct linked_list device_linked_list;
 extern struct linked_list subsys_linked_list;

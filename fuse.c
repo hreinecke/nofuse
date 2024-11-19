@@ -290,7 +290,8 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	if (!p) {
 		int nlinks = 0;
 
-		if (!strcmp(root, "discovery_nqn")) {
+		if (!strcmp(root, "discovery_nqn") ||
+		    !strcmp(root, "debug")) {
 			stbuf->st_mode = S_IFREG | 0644;
 			stbuf->st_nlink = 1;
 			stbuf->st_size = 256;
@@ -492,6 +493,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		filler(buf, ports_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, subsys_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "discovery_nqn", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "debug", NULL, 0, FUSE_FILL_DIR_PLUS);
 		ret = 0;
 		goto out_free;
 	}
@@ -1007,7 +1009,8 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		if (!strcmp(root, "discovery_nqn"))
+		if (!strcmp(root, "discovery_nqn") ||
+		    !strcmp(root, "debug"))
 			ret = 0;
 		goto out_free;
 	}
@@ -1127,10 +1130,17 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		if (strcmp(root, "discovery_nqn"))
-			goto out_free;
-		ret = configdb_get_discovery_nqn(buf);
-		if (ret < 0)
+		if (!strcmp(root, "discovery_nqn")) {
+			ret = configdb_get_discovery_nqn(buf);
+			if (ret < 0)
+				goto out_free;
+		} else if (!strcmp(root, "debug")) {
+			sprintf(buf, "%ctcp,%ccmd,%cep,%ciface",
+				tcp_debug ? '+' : '-',
+				cmd_debug ? '+' : '-',
+				ep_debug ? '+' : '-',
+				iface_debug ? '+' : '-');
+		} else
 			goto out_free;
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
@@ -1344,10 +1354,35 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		if (strcmp(root, "discovery_nqn"))
-			goto out_free;
-		ret = configdb_set_discovery_nqn(value);
-		if (ret < 0)
+		if (!strcmp(root, "discovery_nqn")) {
+			ret = configdb_set_discovery_nqn(value);
+			if (ret < 0)
+				goto out_free;
+		} else if (!strcmp(root, "debug")) {
+			char level[17], onoff;
+			bool enable;
+
+			if (sscanf(value, "%c%16s", &onoff, level) != 2) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			if (onoff == '+')
+				enable = true;
+			else
+				enable = false;
+			if (!strcmp(level, "tcp")) {
+				tcp_debug = enable;
+			} else if (!strcmp(level, "cmd")) {
+				cmd_debug = enable;
+			} else if (!strcmp(level, "ep")) {
+				ep_debug = enable;
+			} else if (!strcmp(level, "iface")) {
+				iface_debug = enable;
+			} else {
+				ret = -EINVAL;
+				goto out_free;
+			}
+		} else
 			goto out_free;
 		ret = len;
 	} else if (!strcmp(root, ports_dir)) {

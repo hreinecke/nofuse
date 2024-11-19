@@ -23,11 +23,10 @@ LINKED_LIST(iface_linked_list);
 LINKED_LIST(device_linked_list);
 
 int stopped;
-int debug;
-int tcp_debug;
-int cmd_debug;
-int ep_debug;
-int iface_debug;
+bool tcp_debug;
+bool cmd_debug;
+bool ep_debug;
+bool iface_debug;
 
 struct nofuse_context {
 	const char *hostnqn;
@@ -432,12 +431,11 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	int tls_keyring;
 	int num_ifaces = 0, ret;
 
-	debug = ctx->debug;
-	if (debug) {
-		tcp_debug = 1;
-		cmd_debug = 1;
-		ep_debug = 1;
-		iface_debug = 1;
+	if (ctx->debug) {
+		tcp_debug = true;
+		cmd_debug = true;
+		ep_debug = true;
+		iface_debug = true;
 	}
 
 	if (!ctx->subsysnqn)
