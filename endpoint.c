@@ -19,8 +19,8 @@
 
 static int nvmf_ctrl_id = 1;
 
-int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
-		     u16 cntlid, const char *hostnqn, const char *subsysnqn)
+int connect_queue(struct endpoint *ep, struct nofuse_subsys *subsys,
+		  u16 cntlid, const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl;
 	int ret = 0;
@@ -76,7 +76,7 @@ out_unlock:
 	return ret;
 }
 
-static void disconnect_endpoint(struct endpoint *ep, int shutdown)
+static void disconnect_queue(struct endpoint *ep, int shutdown)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
 	int ep_num = ep->sockfd;
@@ -101,7 +101,7 @@ static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 	}
 }
 
-int start_endpoint(struct endpoint *ep, int id)
+static int start_queue(struct endpoint *ep, int id)
 {
 	int			 ret;
 
@@ -199,7 +199,7 @@ static void pop_disconnect(void *arg)
 	struct endpoint *ep = arg;
 
 	ep_info(ep, "qid %d disconnect", ep->qid);
-	disconnect_endpoint(ep, !stopped);
+	disconnect_queue(ep, !stopped);
 }
 
 static void pop_uring_exit(void *arg)
@@ -319,7 +319,7 @@ out_disconnect:
 	return NULL;
 }
 
-struct endpoint *enqueue_endpoint(int id, struct nofuse_port *port)
+struct endpoint *create_queue(int id, struct nofuse_port *port)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -342,7 +342,7 @@ struct endpoint *enqueue_endpoint(int id, struct nofuse_port *port)
 	ep->io_ops = tcp_register_io_ops();
 	INIT_LINKED_LIST(&ep->node);
 
-	ret = start_endpoint(ep, id);
+	ret = start_queue(ep, id);
 	if (ret) {
 		fprintf(stderr, "ep %d: failed to start endpoint", id);
 		goto out;
@@ -359,14 +359,14 @@ out:
 	return NULL;
 }
 
-void dequeue_endpoint(struct endpoint *ep)
+void destroy_queue(struct endpoint *ep)
 {
 	if (ep->state == CONNECTED) {
 		ep->state = STOPPED;
 		endpoint_submit_cancel(ep);
 	}
 	if (ep->pthread) {
-		ep_info(ep, "dequeue endpoint");
+		ep_info(ep, "destroy queue");
 		pthread_cancel(ep->pthread);
 		pthread_join(ep->pthread, NULL);
 		ep->pthread = 0;
@@ -375,7 +375,7 @@ void dequeue_endpoint(struct endpoint *ep)
 	free(ep);
 }
 
-void terminate_endpoints(struct nofuse_port *port, const char *subsysnqn)
+void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 {
 	struct endpoint *ep = NULL, *_ep;
 
@@ -391,7 +391,7 @@ void terminate_endpoints(struct nofuse_port *port, const char *subsysnqn)
 			continue;
 		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
 			continue;
-		dequeue_endpoint(ep);
+		destroy_queue(ep);
 	}
 	pthread_mutex_unlock(&port->ep_mutex);
 }

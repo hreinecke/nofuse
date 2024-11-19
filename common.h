@@ -244,13 +244,13 @@ static inline void set_response(struct nvme_completion *resp,
 
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
-int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
+int connect_queue(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
-struct endpoint *enqueue_endpoint(int id, struct nofuse_port *port);
-void dequeue_endpoint(struct endpoint *ep);
+struct endpoint *create_queue(int id, struct nofuse_port *port);
+void destroy_queue(struct endpoint *ep);
 void *endpoint_thread(void *arg);
-void terminate_endpoints(struct nofuse_port *port, const char *subsysnqn);
+void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl);
 
 struct nofuse_subsys *find_subsys(const char *nqn);

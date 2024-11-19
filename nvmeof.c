@@ -187,8 +187,8 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
-	ret = connect_endpoint(ep, subsys, cntlid,
-			       connect->hostnqn, connect->subsysnqn);
+	ret = connect_queue(ep, subsys, cntlid,
+			    connect->hostnqn, connect->subsysnqn);
 	if (!ret) {
 		ctrl_info(ep, "connected");
 		if (qid == 0) {

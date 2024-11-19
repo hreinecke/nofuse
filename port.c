@@ -110,7 +110,7 @@ int stop_port(struct nofuse_port *port)
 
 	pthread_mutex_lock(&port->ep_mutex);
 	list_for_each_entry_safe(ep, _ep, &port->ep_list, node)
-		dequeue_endpoint(ep);
+		destroy_queue(ep);
 	pthread_mutex_unlock(&port->ep_mutex);
 	return 0;
 }
@@ -203,7 +203,7 @@ static void *run_port(void *arg)
 
 			continue;
 		}
-		ep = enqueue_endpoint(id, port);
+		ep = create_queue(id, port);
 		if (!ep)
 			continue;
 

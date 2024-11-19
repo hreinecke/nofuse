@@ -957,7 +957,7 @@ static int nofuse_unlink(const char *path)
 		ret = configdb_del_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
-		terminate_endpoints(port, subsys);
+		terminate_queues(port, subsys);
 		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0)
 			goto out_free;
