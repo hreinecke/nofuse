@@ -42,7 +42,7 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 	}
 
 	if (configdb_check_allowed_host(hostnqn, subsys->nqn,
-				     ep->iface->portid) <= 0) {
+				     ep->port->portid) <= 0) {
 		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
 		       hostnqn, subsys->nqn);
 		ret = -EPERM;
@@ -319,7 +319,7 @@ out_disconnect:
 	return NULL;
 }
 
-struct endpoint *enqueue_endpoint(int id, struct nofuse_port *iface)
+struct endpoint *enqueue_endpoint(int id, struct nofuse_port *port)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -332,8 +332,8 @@ struct endpoint *enqueue_endpoint(int id, struct nofuse_port *iface)
 
 	memset(ep, 0, sizeof(struct endpoint));
 
-	ep->ops = iface->ops;
-	ep->iface = iface;
+	ep->ops = port->ops;
+	ep->port = port;
 	ep->kato_countdown = RETRY_COUNT;
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
@@ -349,9 +349,9 @@ struct endpoint *enqueue_endpoint(int id, struct nofuse_port *iface)
 	}
 
 	ep_info(ep, "start endpoint");
-	pthread_mutex_lock(&iface->ep_mutex);
-	list_add(&ep->node, &iface->ep_list);
-	pthread_mutex_unlock(&iface->ep_mutex);
+	pthread_mutex_lock(&port->ep_mutex);
+	list_add(&ep->node, &port->ep_list);
+	pthread_mutex_unlock(&port->ep_mutex);
 	return ep;
 out:
 	free(ep);
@@ -375,12 +375,12 @@ void dequeue_endpoint(struct endpoint *ep)
 	free(ep);
 }
 
-void terminate_endpoints(struct nofuse_port *iface, const char *subsysnqn)
+void terminate_endpoints(struct nofuse_port *port, const char *subsysnqn)
 {
 	struct endpoint *ep = NULL, *_ep;
 
-	pthread_mutex_lock(&iface->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
+	pthread_mutex_lock(&port->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
 		printf("%s: ctrl %d qid %d subsys %s\n",
 		       __func__,
 		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
@@ -393,18 +393,18 @@ void terminate_endpoints(struct nofuse_port *iface, const char *subsysnqn)
 			continue;
 		dequeue_endpoint(ep);
 	}
-	pthread_mutex_unlock(&iface->ep_mutex);
+	pthread_mutex_unlock(&port->ep_mutex);
 }
 
-void kato_reset_counter(struct nofuse_port *iface, struct nofuse_ctrl *ctrl)
+void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl)
 {
 	struct endpoint *ep = NULL, *_ep;
 
-	pthread_mutex_lock(&iface->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
+	pthread_mutex_lock(&port->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
 		if (ep->ctrl != ctrl)
 			continue;
 		ep->kato_countdown = ep->ctrl->kato;
 	}
-	pthread_mutex_unlock(&iface->ep_mutex);
+	pthread_mutex_unlock(&port->ep_mutex);
 }

@@ -13,9 +13,9 @@
 struct xp_ops {
 	int (*create_endpoint)(struct endpoint *ep, int id);
 	void (*destroy_endpoint)(struct endpoint *ep);
-	int (*init_listener)(struct nofuse_port *iface);
-	void (*destroy_listener)(struct nofuse_port *iface);
-	int (*wait_for_connection)(struct nofuse_port *iface);
+	int (*init_listener)(struct nofuse_port *port);
+	void (*destroy_listener)(struct nofuse_port *port);
+	int (*wait_for_connection)(struct nofuse_port *port);
 	int (*accept_connection)(struct endpoint *ep);
 	struct ep_qe *(*acquire_tag)(struct endpoint *ep,
 				     union nvme_tcp_pdu *pdu,

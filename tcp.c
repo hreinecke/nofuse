@@ -188,7 +188,7 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 	tcp_info(ep, "release tag %#x", qe->tag);
 }
 
-static int tcp_init_listener(struct nofuse_port *iface)
+static int tcp_init_listener(struct nofuse_port *port)
 {
 	int listenfd;
 	int ret, reuse = 1;
@@ -198,19 +198,19 @@ static int tcp_init_listener(struct nofuse_port *iface)
 	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
-	ret = configdb_get_port_attr(iface->portid, "addr_traddr", traddr);
+	ret = configdb_get_port_attr(port->portid, "addr_traddr", traddr);
 	if (ret < 0) {
-		iface_err(iface, "failed to get traddr, error %d", ret);
+		port_err(port, "failed to get traddr, error %d", ret);
 		return ret;
 	}
-	ret = configdb_get_port_attr(iface->portid, "addr_trsvcid", trsvcid);
+	ret = configdb_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
 	if (ret < 0) {
-		iface_err(iface, "failed to get trsvcid, errot %d", ret);
+		port_err(port, "failed to get trsvcid, errot %d", ret);
 		return ret;
 	}
-	ret = configdb_get_port_attr(iface->portid, "addr_adrfam", adrfam_str);
+	ret = configdb_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
 	if (ret < 0) {
-		iface_err(iface, "failed to get adrfam, error %d", ret);
+		port_err(port, "failed to get adrfam, error %d", ret);
 		return ret;
 	}
 	if (!strcmp(adrfam_str, "ipv6"))
@@ -224,49 +224,49 @@ static int tcp_init_listener(struct nofuse_port *iface)
 
 	ret = getaddrinfo(traddr, trsvcid, &hints, &ai);
 	if (ret != 0) {
-		iface_err(iface, "getaddrinfo() failed: %s",
+		port_err(port, "getaddrinfo() failed: %s",
 			  gai_strerror(ret));
 		return -EINVAL;
 	}
 	if (!ai) {
-		iface_err(iface, "no results from getaddrinfo()");
+		port_err(port, "no results from getaddrinfo()");
 		return -EHOSTUNREACH;
 	}
 
 	listenfd = socket(ai->ai_family, ai->ai_socktype,
 			  ai->ai_protocol);
 	if (listenfd < 0) {
-		iface_err(iface, "socket error %d", errno);
+		port_err(port, "socket error %d", errno);
 		ret = -errno;
 		goto err_free;
 	}
 
 	if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR,
 		       &reuse, sizeof(int)) < 0) {
-		iface_err(iface, "setsockopt SO_REUSEADDR error %d", errno);
+		port_err(port, "setsockopt SO_REUSEADDR error %d", errno);
 		ret = -errno;
 		goto err_close;
 	}
 
 	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
 	if (ret < 0) {
-		iface_err(iface, "socket %s:%s bind error %d",
+		port_err(port, "socket %s:%s bind error %d",
 			  traddr, trsvcid, errno);
 		ret = -errno;
 		goto err_close;
 	}
 	if (ai->ai_next)
-		iface_err(iface, "duplicate addresses");
+		port_err(port, "duplicate addresses");
 	freeaddrinfo(ai);
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		iface_err(iface, "socket listen error %d", errno);
+		port_err(port, "socket listen error %d", errno);
 		ret = -errno;
 		goto err_close;
 	}
-	iface_info(iface, "listening on %s:%s", traddr, trsvcid);
-	iface->listenfd = listenfd;
+	port_info(port, "listening on %s:%s", traddr, trsvcid);
+	port->listenfd = listenfd;
 	return 0;
 err_close:
 	close(listenfd);
@@ -275,12 +275,12 @@ err_free:
 	return ret;
 }
 
-static void tcp_destroy_listener(struct nofuse_port *iface)
+static void tcp_destroy_listener(struct nofuse_port *port)
 {
-	if (iface->listenfd < 0)
+	if (port->listenfd < 0)
 		return;
-	close(iface->listenfd);
-	iface->listenfd = -1;
+	close(port->listenfd);
+	port->listenfd = -1;
 }
 
 static int tcp_accept_connection(struct endpoint *ep)
@@ -388,22 +388,22 @@ out_free:
 	return ret;
 }
 
-static int tcp_wait_for_connection(struct nofuse_port *iface)
+static int tcp_wait_for_connection(struct nofuse_port *port)
 {
 	int sockfd;
 	int ret = -ESHUTDOWN;
 
-	while (iface->listenfd > 0) {
+	while (port->listenfd > 0) {
 		fd_set rfd;
 		struct timeval tmo;
 
 		FD_ZERO(&rfd);
-		FD_SET(iface->listenfd, &rfd);
+		FD_SET(port->listenfd, &rfd);
 		tmo.tv_sec = 1;
 		tmo.tv_usec = 0;
-		ret = select(iface->listenfd + 1, &rfd, NULL, NULL, &tmo);
+		ret = select(port->listenfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
-			iface_err(iface, "select error %d", errno);
+			port_err(port, "select error %d", errno);
 			ret = -errno;
 			break;
 		}
@@ -411,17 +411,17 @@ static int tcp_wait_for_connection(struct nofuse_port *iface)
 			break;
 	}
 
-	if (iface->listenfd < 0)
+	if (port->listenfd < 0)
 		return -ESHUTDOWN;
 
 	if (ret <= 0)
 		return ret ? ret : -ETIMEDOUT;
 
-	sockfd = accept(iface->listenfd, (struct sockaddr *) NULL,
+	sockfd = accept(port->listenfd, (struct sockaddr *) NULL,
 			NULL);
 	if (sockfd < 0) {
 		if (errno != EAGAIN)
-			iface_err(iface, "accept error %d", errno);
+			port_err(port, "accept error %d", errno);
 		ret = -EAGAIN;
 	} else
 		ret = sockfd;

@@ -548,7 +548,7 @@ static int port_mkdir(const char *port)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		ret = add_iface(portid, NULL, 0);
+		ret = add_port(portid, NULL, 0);
 		if (ret < 0)
 			fuse_err("%s: cannot add port %d, error %d",
 				 __func__, portid, ret);
@@ -652,15 +652,15 @@ static int port_rmdir(const char *port)
 		return -EINVAL;
 	p = strtok(NULL, "/");
 	if (!p) {
-		struct nofuse_port *iface = find_iface(portid);
+		struct nofuse_port *port = find_port(portid);
 		int ret;
 
-		if (!iface) {
+		if (!port) {
 			fuse_err("%s: no interface for port %d",
 			       __func__, portid);
 			return -ENOENT;
 		}
-		ret = del_iface(iface);
+		ret = del_port(port);
 		if (ret < 0) {
 			fuse_err("%s: cannot remove port %d, error %d",
 			       __func__, portid, ret);
@@ -890,16 +890,16 @@ static int nofuse_symlink(const char *from, const char *to)
 			goto out_free;
 		}
 		if (subsysnum == 1) {
-			struct nofuse_port *iface = find_iface(portid);
+			struct nofuse_port *port = find_port(portid);
 
-			if (!iface) {
+			if (!port) {
 				fuse_err("%s: no interface for port %d",
 				       __func__, portid);
 				configdb_del_subsys_port(subsys, portid);
 				ret = -EINVAL;
 				goto out_free;
 			}
-			ret = start_iface(iface);
+			ret = start_port(port);
 			if (ret) {
 				configdb_del_subsys_port(subsys, portid);
 				goto out_free;
@@ -943,13 +943,13 @@ static int nofuse_unlink(const char *path)
 		const char *subsys;
 		unsigned int portid;
 		int subsysnum = 0;
-		struct nofuse_port *iface;
+		struct nofuse_port *port;
 
 		ret = parse_port_link(s, &portid, &subsys);
 		if (ret < 0)
 			goto out_free;
-		iface = find_iface(portid);
-		if (!iface) {
+		port = find_port(portid);
+		if (!port) {
 			fuse_err("%s: no interface for port %d",
 			       __func__, portid);
 			goto out_free;
@@ -957,16 +957,16 @@ static int nofuse_unlink(const char *path)
 		ret = configdb_del_subsys_port(subsys, portid);
 		if (ret < 0)
 			goto out_free;
-		terminate_endpoints(iface, subsys);
+		terminate_endpoints(port, subsys);
 		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0)
 			goto out_free;
 		fuse_info("%s: subsys %s portid %d num %d",
 		       __func__, subsys, portid, subsysnum);
 		if (subsysnum == 0) {
-			ret = stop_iface(iface);
+			ret = stop_port(port);
 			if (ret) {
-				fuse_err("%s: failed to stop iface %d",
+				fuse_err("%s: failed to stop port %d",
 				   __func__, portid);
 				configdb_add_subsys_port(subsys, portid);
 				goto out_free;
@@ -1164,11 +1164,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
-			sprintf(buf, "%ctcp,%ccmd,%cep,%ciface,%cfuse",
+			sprintf(buf, "%ctcp,%ccmd,%cep,%cport,%cfuse",
 				tcp_debug ? '+' : '-',
 				cmd_debug ? '+' : '-',
 				ep_debug ? '+' : '-',
-				iface_debug ? '+' : '-',
+				port_debug ? '+' : '-',
 				fuse_debug ? '+' : '-');
 		} else
 			goto out_free;
@@ -1406,8 +1406,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				cmd_debug = enable;
 			} else if (!strcmp(level, "ep")) {
 				ep_debug = enable;
-			} else if (!strcmp(level, "iface")) {
-				iface_debug = enable;
+			} else if (!strcmp(level, "port")) {
+				port_debug = enable;
 			} else if (!strcmp(level, "fuse")) {
 				fuse_debug = enable;
 			} else {

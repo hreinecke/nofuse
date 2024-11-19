@@ -34,7 +34,7 @@ int stopped;
 bool tcp_debug;
 bool cmd_debug;
 bool ep_debug;
-bool iface_debug;
+bool port_debug;
 
 struct nofuse_context {
 	const char *subsysnqn;
@@ -267,7 +267,7 @@ int del_namespace(const char *subsysnqn, int nsid)
 static int init_subsys(struct nofuse_context *ctx)
 {
 	struct nofuse_subsys *subsys;
-	struct nofuse_port *iface;
+	struct nofuse_port *port;
 	int ret;
 
 	ret = add_subsys(ctx->subsysnqn);
@@ -278,8 +278,8 @@ static int init_subsys(struct nofuse_context *ctx)
 	if (!subsys)
 		return -ENOENT;
 
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		configdb_add_subsys_port(subsys->nqn, iface->portid);
+	list_for_each_entry(port, &port_linked_list, node) {
+		configdb_add_subsys_port(subsys->nqn, port->portid);
 	}
 
 	return 0;
@@ -317,7 +317,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		tcp_debug = true;
 		cmd_debug = true;
 		ep_debug = true;
-		iface_debug = true;
+		port_debug = true;
 	}
 
 	if (!ctx->subsysnqn)
@@ -328,7 +328,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = add_iface(1, ctx->traddr, 8009);
+	ret = add_port(1, ctx->traddr, 8009);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add interface for %s\n",
 			ctx->traddr);
@@ -345,14 +345,14 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (init_subsys(ctx))
 		return 1;
 
-	if (list_empty(&iface_linked_list)) {
+	if (list_empty(&port_linked_list)) {
 		fprintf(stderr, "invalid host interface configuration");
 		return 1;
 	} else if (tls_keyring) {
-		struct nofuse_port *iface;
+		struct nofuse_port *port;
 
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			iface->tls = true;
+		list_for_each_entry(port, &port_linked_list, node) {
+			port->tls = true;
 		}
 	}
 
@@ -377,10 +377,10 @@ void free_devices(void)
 
 void free_interfaces(void)
 {
-	struct nofuse_port *iface, *_iface;
+	struct nofuse_port *port, *_port;
 
-	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node)
-		del_iface(iface);
+	list_for_each_entry_safe(port, _port, &port_linked_list, node)
+		del_port(port);
 }
 
 void free_subsys(void)
@@ -396,7 +396,7 @@ int main(int argc, char *argv[])
 {
 	int ret = 1;
 	struct nofuse_context *ctx;
-	struct nofuse_port *iface;
+	struct nofuse_port *port;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	ctx = malloc(sizeof(struct nofuse_context));
@@ -418,15 +418,15 @@ int main(int argc, char *argv[])
 
 	stopped = 0;
 
-	list_for_each_entry(iface, &iface_linked_list, node)
-		start_iface(iface);
+	list_for_each_entry(port, &port_linked_list, node)
+		start_port(port);
 
 	run_fuse(&args);
 
 	stopped = 1;
 
-	list_for_each_entry(iface, &iface_linked_list, node)
-		stop_iface(iface);
+	list_for_each_entry(port, &port_linked_list, node)
+		stop_port(port);
 
 	free_interfaces();
 

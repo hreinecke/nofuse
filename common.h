@@ -39,12 +39,12 @@
 extern bool tcp_debug;
 extern bool cmd_debug;
 extern bool ep_debug;
-extern bool iface_debug;
+extern bool port_debug;
 extern bool fuse_debug;
 
 extern struct linked_list device_linked_list;
 extern struct linked_list subsys_linked_list;
-extern struct linked_list iface_linked_list;
+extern struct linked_list port_linked_list;
 
 #define NVMF_UUID_FMT		"nqn.2014-08.org.nvmexpress:uuid:%s"
 
@@ -105,7 +105,7 @@ struct endpoint {
 	struct io_uring uring;
 	struct io_ops *io_ops;
 	struct xp_ops *ops;
-	struct nofuse_port *iface;
+	struct nofuse_port *port;
 	struct nofuse_ctrl *ctrl;
 	struct ep_qe *qes;
 	union nvme_tcp_pdu *recv_pdu;
@@ -219,16 +219,16 @@ struct nofuse_subsys {
 		fflush(stderr);					\
 	} while (0)
 
-#define iface_info(i, f, x...)			\
-	if (iface_debug) {			\
-		printf("iface %d: " f "\n",	\
+#define port_info(i, f, x...)			\
+	if (port_debug) {			\
+		printf("port %d: " f "\n",	\
 		       (i)->portid, ##x);	\
 		fflush(stdout);			\
 	}
 
-#define iface_err(i, f, x...)				\
+#define port_err(i, f, x...)				\
 	do {						\
-		fprintf(stderr, "iface %d: " f "\n",	\
+		fprintf(stderr, "port %d: " f "\n",	\
 			(i)->portid, ##x);		\
 		fflush(stderr);				\
 	} while (0)
@@ -248,21 +248,21 @@ void *run_interface(void *arg);
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
-struct endpoint *enqueue_endpoint(int id, struct nofuse_port *iface);
+struct endpoint *enqueue_endpoint(int id, struct nofuse_port *port);
 void dequeue_endpoint(struct endpoint *ep);
 void *endpoint_thread(void *arg);
-void terminate_endpoints(struct nofuse_port *iface, const char *subsysnqn);
-void kato_reset_counter(struct nofuse_port *iface, struct nofuse_ctrl *ctrl);
+void terminate_endpoints(struct nofuse_port *port, const char *subsysnqn);
+void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl);
 
 struct nofuse_subsys *find_subsys(const char *nqn);
 int add_subsys(const char *nqn);
 int del_subsys(struct nofuse_subsys *subsys);
 
-int add_iface(unsigned int id, const char *ifaddr, int portnum);
-struct nofuse_port *find_iface(unsigned int id);
-int del_iface(struct nofuse_port *iface);
-int start_iface(struct nofuse_port *iface);
-int stop_iface(struct nofuse_port *iface);
+int add_port(unsigned int id, const char *ifaddr, int portnum);
+struct nofuse_port *find_port(unsigned int id);
+int del_port(struct nofuse_port *port);
+int start_port(struct nofuse_port *port);
+int stop_port(struct nofuse_port *port);
 
 int add_namespace(const char *subsys, int nsid);
 int del_namespace(const char *subsysnqn, int nsid);

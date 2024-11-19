@@ -14,80 +14,80 @@
 #include "ops.h"
 #include "configdb.h"
 
-LINKED_LIST(iface_linked_list);
+LINKED_LIST(port_linked_list);
 
-int add_iface(unsigned int id, const char *ifaddr, int portnum)
+int add_port(unsigned int id, const char *ifaddr, int portnum)
 {
-	struct nofuse_port *iface;
+	struct nofuse_port *port;
 	int ret;
 
-	iface = malloc(sizeof(*iface));
-	if (!iface)
+	port = malloc(sizeof(*port));
+	if (!port)
 		return -ENOMEM;
-	memset(iface, 0, sizeof(*iface));
-	iface->listenfd = -1;
-	iface->portid = id;
+	memset(port, 0, sizeof(*port));
+	port->listenfd = -1;
+	port->portid = id;
 	ret = configdb_add_port(id);
 	if (ret < 0) {
-		iface_err(iface, "cannot register port, error %d", ret);
-		free(iface);
+		port_err(port, "cannot register port, error %d", ret);
+		free(port);
 		return ret;
 	}
 	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
 		if (!strchr(ifaddr, ','))
-			configdb_set_port_attr(iface->portid, "addr_adrfam",
+			configdb_set_port_attr(port->portid, "addr_adrfam",
 					    "ipv6");
-		configdb_set_port_attr(iface->portid, "addr_traddr", ifaddr);
+		configdb_set_port_attr(port->portid, "addr_traddr", ifaddr);
 	}
 	if (portnum) {
 		char trsvcid[5];
 
 		sprintf(trsvcid, "%d", portnum);
-		configdb_set_port_attr(iface->portid, "addr_trsvcid", trsvcid);
+		configdb_set_port_attr(port->portid, "addr_trsvcid", trsvcid);
 	}
-	ret = configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
+	ret = configdb_add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
-		iface_err(iface, "cannot add ana group to port, error %d", ret);
-		configdb_del_port(iface->portid);
-		free(iface);
+		port_err(port, "cannot add ana group to port, error %d", ret);
+		configdb_del_port(port->portid);
+		free(port);
 		return ret;
 	}
-	pthread_mutex_init(&iface->ep_mutex, NULL);
-	INIT_LINKED_LIST(&iface->ep_list);
-	INIT_LINKED_LIST(&iface->node);
-	list_add_tail(&iface->node, &iface_linked_list);
-	iface_info(iface, "created");
+	pthread_mutex_init(&port->ep_mutex, NULL);
+	INIT_LINKED_LIST(&port->ep_list);
+	INIT_LINKED_LIST(&port->node);
+	list_add_tail(&port->node, &port_linked_list);
+	port_info(port, "created");
 
 	return 0;
 }
 
-struct nofuse_port *find_iface(unsigned int id)
+struct nofuse_port *find_port(unsigned int id)
 {
-	struct nofuse_port *iface;
+	struct nofuse_port *port;
 
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		if (iface->portid == id) {
-			return iface;
+	list_for_each_entry(port, &port_linked_list, node) {
+		if (port->portid == id) {
+			return port;
 		}
 	}
 	return NULL;
 }
 
-int start_iface(struct nofuse_port *iface)
+int start_port(struct nofuse_port *port)
 {
 	pthread_attr_t pthread_attr;
 	int ret;
 
-	if (iface->pthread)
+	if (port->pthread)
 		return 0;
 
-	iface_info(iface, "starting");
+	port_info(port, "starting");
 	pthread_attr_init(&pthread_attr);
-	ret = pthread_create(&iface->pthread, &pthread_attr,
-			     run_interface, iface);
+	ret = pthread_create(&port->pthread, &pthread_attr,
+			     run_interface, port);
 	if (ret) {
-		iface->pthread = 0;
-		iface_err(iface, "failed to start iface thread");
+		port->pthread = 0;
+		port_err(port, "failed to start port thread");
 		ret = -ret;
 	}
 	pthread_attr_destroy(&pthread_attr);
@@ -95,61 +95,61 @@ int start_iface(struct nofuse_port *iface)
 	return ret;
 }
 
-int stop_iface(struct nofuse_port *iface)
+int stop_port(struct nofuse_port *port)
 {
 	struct endpoint *ep, *_ep;
 
-	iface_info(iface, "stop pthread %ld", iface->pthread);
-	if (iface->pthread) {
-		pthread_cancel(iface->pthread);
-		pthread_join(iface->pthread, NULL);
-		iface->pthread = 0;
+	port_info(port, "stop pthread %ld", port->pthread);
+	if (port->pthread) {
+		pthread_cancel(port->pthread);
+		pthread_join(port->pthread, NULL);
+		port->pthread = 0;
 	}
 
-	pthread_mutex_lock(&iface->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node)
+	pthread_mutex_lock(&port->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &port->ep_list, node)
 		dequeue_endpoint(ep);
-	pthread_mutex_unlock(&iface->ep_mutex);
+	pthread_mutex_unlock(&port->ep_mutex);
 	return 0;
 }
 
-int del_iface(struct nofuse_port *iface)
+int del_port(struct nofuse_port *port)
 {
 	int ret;
 
-	iface_info(iface, "deleting");
-	if (iface->pthread) {
-		iface_err(iface, "interface still running");
+	port_info(port, "deleting");
+	if (port->pthread) {
+		port_err(port, "interface still running");
 		return -EBUSY;
 	}
-	ret = configdb_del_ana_group(iface->portid, 1);
+	ret = configdb_del_ana_group(port->portid, 1);
 	if (ret < 0) {
-		iface_err(iface, "cannot delete ana group from port, error %d",
+		port_err(port, "cannot delete ana group from port, error %d",
 			  ret);
 		return ret;
 	}
-	ret = configdb_del_port(iface->portid);
+	ret = configdb_del_port(port->portid);
 	if (ret < 0) {
-		configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
+		configdb_add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
 		return ret;
 	}
-	pthread_mutex_destroy(&iface->ep_mutex);
-	list_del(&iface->node);
-	free(iface);
+	pthread_mutex_destroy(&port->ep_mutex);
+	list_del(&port->node);
+	free(port);
 	return 0;
 }
 
-static int start_interface(struct nofuse_port *iface)
+static int start_interface(struct nofuse_port *port)
 {
 	int ret;
 
-	iface->ops = tcp_register_ops();
-	if (!iface->ops)
+	port->ops = tcp_register_ops();
+	if (!port->ops)
 		return -EINVAL;
 
-	ret = iface->ops->init_listener(iface);
+	ret = port->ops->init_listener(port);
 	if (ret < 0) {
-		iface_err(iface, "init_listener failed with %d", ret);
+		port_err(port, "init_listener failed with %d", ret);
 		return ret;
 	}
 	return 0;
@@ -157,15 +157,15 @@ static int start_interface(struct nofuse_port *iface)
 
 static void pop_listener(void *arg)
 {
-	struct nofuse_port *iface = arg;
+	struct nofuse_port *port = arg;
 
-	iface_info(iface, "destroy_listener");
-	iface->ops->destroy_listener(iface);
+	port_info(port, "destroy_listener");
+	port->ops->destroy_listener(port);
 }
 
 void *run_interface(void *arg)
 {
-	struct nofuse_port *iface = arg;
+	struct nofuse_port *port = arg;
 	struct endpoint *ep;
 	sigset_t set;
 	int id;
@@ -177,17 +177,17 @@ void *run_interface(void *arg)
 	sigaddset(&set, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
-	ret = start_interface(iface);
+	ret = start_interface(port);
 	if (ret) {
-		iface_err(iface, "failed to start, error %d", ret);
+		port_err(port, "failed to start, error %d", ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
 
-	pthread_cleanup_push(pop_listener, iface);
+	pthread_cleanup_push(pop_listener, port);
 
 	while (!stopped) {
-		id = iface->ops->wait_for_connection(iface);
+		id = port->ops->wait_for_connection(port);
 
 		if (stopped)
 			break;
@@ -196,12 +196,12 @@ void *run_interface(void *arg)
 			if (id == -ESHUTDOWN)
 				break;
 			if (id != -EAGAIN)
-				iface_err(iface,
+				port_err(port,
 					  "wait for connection failed, error %d", id);
 
 			continue;
 		}
-		ep = enqueue_endpoint(id, iface);
+		ep = enqueue_endpoint(id, port);
 		if (!ep)
 			continue;
 
@@ -211,7 +211,7 @@ void *run_interface(void *arg)
 				     endpoint_thread, ep);
 		if (ret) {
 			ep->pthread = 0;
-			iface_err(iface, "pthread_create failed with %d", ret);
+			port_err(port, "pthread_create failed with %d", ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
