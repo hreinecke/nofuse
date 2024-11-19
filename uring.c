@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * uring.c
+ * io_uring backend for NVMe-oF userspace emulation.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <pthread.h>

@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * configdb.h
+ * SQLite3 configfs emulation header file
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #ifndef _CONFIGDB_H
 #define _CONFIGDB_H
 

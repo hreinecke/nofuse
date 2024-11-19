@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * tls.c
+ * TLS support for NVMe-oF userspace emulation.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>

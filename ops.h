@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * ops.h
+ * Callback function definitions
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #ifndef __OPS_H__
 #define __OPS_H__
 

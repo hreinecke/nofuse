@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * tcp.c
+ * NVMe-over-fabrics TCP transport protocol handling.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #define _GNU_SOURCE
 #include <fcntl.h>
 #include <sys/socket.h>

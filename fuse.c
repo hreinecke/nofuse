@@ -1,4 +1,10 @@
-
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * fuse.c
+ * configfs fuse emulation for NVMe-over-TCP userspace daemon.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #define FUSE_USE_VERSION 31
 
 #include <fuse.h>

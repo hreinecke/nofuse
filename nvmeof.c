@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * nvmeof.c
+ * NVMe-over-fabrics command handling.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

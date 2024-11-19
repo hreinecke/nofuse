@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * null.c
+ * null backend for NVMe-oF userspace emulation.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>

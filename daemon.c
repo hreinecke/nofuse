@@ -1,4 +1,13 @@
-
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * daemon.c
+ * NVME-over-TCP userspace daemon
+ *
+ * Copyright (c) 2024 Hannes Reinecke <hare@suse.de>. All rights reserved.
+ *
+ * Based on nvme-dem (https://github.com/linux-nvme/nvme-dem/src/endpoint)
+ * Copyright (c) 2017-2019 Intel Corporation, Inc. All rights reserved.
+ */
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <stdbool.h>

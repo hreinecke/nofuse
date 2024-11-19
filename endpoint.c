@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * endpoint.c
+ * connection handling for NVMe-over-TCP userspace daemon.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <stdbool.h>

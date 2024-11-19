@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * common.h
+ * Common definitions for NVMe-over-TCP userspace daemon
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>. All rights reserved.
+ */
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
