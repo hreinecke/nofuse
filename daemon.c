@@ -29,7 +29,6 @@ bool ep_debug;
 bool iface_debug;
 
 struct nofuse_context {
-	const char *hostnqn;
 	const char *subsysnqn;
 	const char *traddr;
 	const char *dbname;
@@ -276,9 +275,6 @@ static int init_subsys(struct nofuse_context *ctx)
 		configdb_add_subsys_port(subsys->nqn, iface->portid);
 	}
 
-	if (ctx->hostnqn)
-		configdb_add_host_subsys(ctx->hostnqn, ctx->subsysnqn);
-
 	return 0;
 }
 
@@ -410,7 +406,6 @@ int del_iface(struct interface *iface)
 
 static const struct fuse_opt nofuse_options[] = {
 	OPTION("--subsysnqn=%s", subsysnqn),
-	OPTION("--hostnqn=%s", hostnqn),
 	OPTION("--help", help),
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
@@ -426,8 +421,7 @@ static void show_help(void)
 	printf("  --debug - enable debug prints in log files");
 	printf("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
 	printf("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
-	printf("  --hostnqn=<NQN> - Host NQN of the configured host");
-	printf("  --subsysnqn=<NQN> - Subsystem NQN to use");
+	printf("  --subsysnqn=<NQN> - Discovery subsystem NQN to use");
 	printf("  --dbname=<filename> - Database filename");
 }
 
@@ -469,9 +463,6 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		}
 		num_ifaces++;
 	}
-
-	if (ctx->hostnqn)
-		configdb_add_host(ctx->hostnqn);
 
 	if (ctx->help) {
 		show_help();
