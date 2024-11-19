@@ -32,7 +32,6 @@ struct nofuse_context {
 	const char *subsysnqn;
 	const char *traddr;
 	const char *dbname;
-	int portnum;
 	int debug;
 	int help;
 };
@@ -409,7 +408,6 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--help", help),
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
-	OPTION("--port=%d", portnum),
 	OPTION("--dbname=%s", dbname),
 	FUSE_OPT_END,
 };
@@ -420,7 +418,6 @@ static void show_help(void)
 	printf("Possible values for <args>");
 	printf("  --debug - enable debug prints in log files");
 	printf("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
-	printf("  --port=<portnum> - port number (transport service id) (e.g. 4420)");
 	printf("  --subsysnqn=<NQN> - Discovery subsystem NQN to use");
 	printf("  --dbname=<filename> - Database filename");
 }
@@ -429,7 +426,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 {
 	const char *traddr = "127.0.0.1";
 	int tls_keyring;
-	int num_ifaces = 0, ret;
+	int ret;
 
 	if (ctx->debug) {
 		tcp_debug = true;
@@ -446,22 +443,11 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = add_iface(num_ifaces + 1, ctx->traddr, 8009);
+	ret = add_iface(1, ctx->traddr, 8009);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add interface for %s\n",
 			ctx->traddr);
 		return 1;
-	}
-	num_ifaces++;
-
-	if (ctx->portnum) {
-		ret = add_iface(num_ifaces + 1, ctx->traddr,
-				ctx->portnum);
-		if (ret < 0) {
-			fprintf(stderr, "Invalid port %d\n", ctx->portnum);
-			return 1;
-		}
-		num_ifaces++;
 	}
 
 	if (ctx->help) {
