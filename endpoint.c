@@ -101,22 +101,6 @@ static void disconnect_endpoint(struct endpoint *ep, int shutdown)
 	}
 }
 
-static int start_interface(struct interface *iface)
-{
-	int ret;
-
-	iface->ops = tcp_register_ops();
-	if (!iface->ops)
-		return -EINVAL;
-
-	ret = iface->ops->init_listener(iface);
-	if (ret < 0) {
-		iface_err(iface, "init_listener failed with %d", ret);
-		return ret;
-	}
-	return 0;
-}
-
 int start_endpoint(struct endpoint *ep, int id)
 {
 	int			 ret;
@@ -225,7 +209,7 @@ static void pop_uring_exit(void *arg)
 	io_uring_queue_exit(&ep->uring);
 }
 
-static void *endpoint_thread(void *arg)
+void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
@@ -335,7 +319,7 @@ out_disconnect:
 	return NULL;
 }
 
-static struct endpoint *enqueue_endpoint(int id, struct interface *iface)
+struct endpoint *enqueue_endpoint(int id, struct interface *iface)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -423,70 +407,4 @@ void kato_reset_counter(struct interface *iface, struct nofuse_ctrl *ctrl)
 		ep->kato_countdown = ep->ctrl->kato;
 	}
 	pthread_mutex_unlock(&iface->ep_mutex);
-}
-
-static void pop_listener(void *arg)
-{
-	struct interface *iface = arg;
-
-	iface_info(iface, "destroy_listener");
-	iface->ops->destroy_listener(iface);
-}
-
-void *run_interface(void *arg)
-{
-	struct interface *iface = arg;
-	struct endpoint *ep;
-	sigset_t set;
-	int id;
-	pthread_attr_t pthread_attr;
-	int ret;
-
-	sigemptyset(&set);
-	sigaddset(&set, SIGPIPE);
-	sigaddset(&set, SIGTERM);
-	pthread_sigmask(SIG_BLOCK, &set, NULL);
-
-	ret = start_interface(iface);
-	if (ret) {
-		iface_err(iface, "failed to start, error %d", ret);
-		pthread_exit(NULL);
-		return NULL;
-	}
-
-	pthread_cleanup_push(pop_listener, iface);
-
-	while (!stopped) {
-		id = iface->ops->wait_for_connection(iface);
-
-		if (stopped)
-			break;
-
-		if (id < 0) {
-			if (id == -ESHUTDOWN)
-				break;
-			if (id != -EAGAIN)
-				iface_err(iface,
-					  "wait for connection failed, error %d", id);
-
-			continue;
-		}
-		ep = enqueue_endpoint(id, iface);
-		if (!ep)
-			continue;
-
-		pthread_attr_init(&pthread_attr);
-
-		ret = pthread_create(&ep->pthread, &pthread_attr,
-				     endpoint_thread, ep);
-		if (ret) {
-			ep->pthread = 0;
-			iface_err(iface, "pthread_create failed with %d", ret);
-		}
-		pthread_attr_destroy(&pthread_attr);
-	}
-
-	pthread_cleanup_pop(1);
-	pthread_exit(NULL);
-	return NULL;
 }

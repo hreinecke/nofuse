@@ -1,7 +1,7 @@
 
 CFLAGS = -Wall -g -I/usr/include/fuse3
-OBJS := daemon.o nvmeof.o endpoint.o tcp.o null.o uring.o base64.o tls.o \
-	fuse.o configdb.o
+OBJS := daemon.o nvmeof.o interface.o endpoint.o tcp.o null.o uring.o \
+	base64.o tls.o fuse.o configdb.o
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3 -lsqlite3
 
 all: nofuse xdp_drop_port.o

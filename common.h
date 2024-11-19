@@ -248,7 +248,9 @@ void *run_interface(void *arg);
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
+struct endpoint *enqueue_endpoint(int id, struct interface *iface);
 void dequeue_endpoint(struct endpoint *ep);
+void *endpoint_thread(void *arg);
 void terminate_endpoints(struct interface *iface, const char *subsysnqn);
 void kato_reset_counter(struct interface *iface, struct nofuse_ctrl *ctrl);
 
