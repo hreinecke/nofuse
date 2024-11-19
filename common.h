@@ -48,6 +48,9 @@ extern struct linked_list iface_linked_list;
 #define MAX_NQN_SIZE		256
 #define MAX_ALIAS_SIZE		64
 
+#define MAX_NSID		256
+#define MAX_ANAGRPID		64
+
 #define PAGE_SIZE		4096
 
 #define KATO_INTERVAL	500	/* in ms as per spec */

@@ -222,8 +222,8 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.iorcsz = NVME_NVM_IOCQES;
 	id.acl = 3;
 	id.aerl = 3;
-	id.nn = htole32(256);
-	id.mnan = htole32(256);
+	id.nn = htole32(MAX_NSID);
+	id.mnan = htole32(MAX_NSID);
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
 
@@ -239,8 +239,8 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 
 	id.anacap = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
 	id.anatt = 10;
-	id.anagrpmax = htole32(256);
-	id.nanagrpid = htole32(256);
+	id.anagrpmax = htole32(MAX_ANAGRPID);
+	id.nanagrpid = htole32(MAX_ANAGRPID);
 	if (len > sizeof(id))
 		len = sizeof(id);
 
@@ -442,19 +442,14 @@ static int format_disc_log(void *data, u64 data_offset,
 static int format_ana_log(void *data, u64 data_offset,
 			  u64 data_len, struct endpoint *ep)
 {
-	unsigned int len, log_len, num_recs;
+	unsigned int len, log_len;
 	u8 *log_buf;
 	struct nvme_ana_rsp_hdr *log_hdr;
-	struct nvme_ana_group_desc *log_entries;
+	int grp;
 
-	len = configdb_ana_log_entries(ep->ctrl->subsys->nqn,
-				       ep->iface->portid, NULL, 0);
-	if (len < 0) {
-		ctrl_err(ep, "error formatting ana log page");
-		return len;
-	}
-	num_recs = len / sizeof(struct nvme_ana_group_desc);
-	log_len = len + sizeof(struct nvme_ana_rsp_hdr);
+	log_len = sizeof(*log_hdr) +
+		MAX_ANAGRPID * sizeof(struct nvme_ana_group_desc) +
+		MAX_NSID * sizeof(u32);
 	log_buf = malloc(log_len);
 	if (!log_buf) {
 		ctrl_err(ep, "error allocating ana log");
@@ -462,21 +457,22 @@ static int format_ana_log(void *data, u64 data_offset,
 		return -1;
 	}
 	memset(log_buf, 0, log_len);
-	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
-	log_entries = log_hdr->entries;
-
-	if (num_recs) {
-		len = configdb_ana_log_entries(ep->ctrl->subsys->nqn,
-					       ep->iface->portid,
-					      (u8 *)log_entries, len);
-		if (len < 0) {
-			ctrl_err(ep, "error fetching ana log entries");
-			num_recs = 0;
-		}
+	len = configdb_ana_log_entries(ep->ctrl->subsys->nqn,
+				       ep->iface->portid,
+				       log_buf, log_len);
+	if (len < 0) {
+		ctrl_err(ep, "error fetching ana log entries");
+		log_hdr->ngrps = 0;
 	}
 
-	log_hdr->ngrps = htole16(num_recs);
+	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 	log_hdr->chgcnt = htole64(ep->ctrl->ana_chgcnt);
+
+	for (grp = 0; grp < le32toh(log_hdr->ngrps); grp++) {
+		struct nvme_ana_group_desc *desc = &log_hdr->entries[grp];
+		ctrl_info(ep, "ANA grp %d (state %d, chgcnt %lu)",
+			  desc->grpid, desc->state, le64toh(desc->chgcnt));
+	}
 	if (log_len < data_offset) {
 		ctrl_err(ep, "offset %llu beyond log page size %d",
 			 data_offset, log_len);
@@ -488,7 +484,7 @@ static int format_ana_log(void *data, u64 data_offset,
 		memcpy(data, log_buf + data_offset, log_len);
 	}
 	ctrl_info(ep, "ana log page entries %d offset %llu len %d",
-		  num_recs, data_offset, log_len);
+		  le32toh(log_hdr->ngrps), data_offset, log_len);
 	free(log_buf);
 	return log_len;
 }

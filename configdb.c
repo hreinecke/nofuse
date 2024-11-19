@@ -227,7 +227,7 @@ static const char *init_sql[NUM_TABLES] = {
 "CREATE UNIQUE INDEX port_addr_idx ON "
 "ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 "CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"grpid INT, ana_state INT DEFAULT 1, port_id INTEGER, "
+"grpid INT, ana_state INT DEFAULT '1', port_id INTEGER, "
 "chgcnt INT DEFAULT '0', ctime TIME, atime TIME, mtime TIME, "
 "UNIQUE(port_id, grpid), "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
@@ -1029,8 +1029,8 @@ int configdb_del_port(unsigned int portid)
 }
 
 static char add_ana_group_sql[] =
-	"INSERT INTO ana_groups (grpid, port_id, ctime) "
-	"SELECT '%d', p.id, CURRENT_TIMESTAMP "
+	"INSERT INTO ana_groups (grpid, port_id, ana_state, ctime) "
+	"SELECT '%d', p.id, '%d', CURRENT_TIMESTAMP "
 	"FROM ports AS p WHERE p.id = '%d';";
 
 int configdb_add_ana_group(int port, int grpid, int ana_state)
@@ -1038,7 +1038,7 @@ int configdb_add_ana_group(int port, int grpid, int ana_state)
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, add_ana_group_sql, grpid, port, ana_state);
+	ret = asprintf(&sql, add_ana_group_sql, grpid, ana_state, port);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -1790,11 +1790,19 @@ int configdb_subsys_identify_ctrl(const char *subsysnqn,
 	return ret;
 }
 
+static char count_ana_grps_sql[] =
+	"SELECT ag.ana_state, ag.chgcnt, count(ns.nsid) AS num "
+	"FROM ana_groups AS ag "
+	"INNER JOIN subsys_port AS sp ON sp.port_id = ag.port_id "
+	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
+	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
+	"WHERE s.nqn = '%s' AND ag.port_id = '%d' AND ag.grpid = '%d';";
+
 static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 {
 	int i;
 	struct nvme_ana_group_desc *grp_desc = argp;
-	unsigned int ana_state, chgcnt, num;
+	unsigned int ana_state = NVME_ANA_OPTIMIZED, chgcnt = 0, num;
 
 	if (!argp) {
 		fprintf(stderr, "%s: Invalid parameter\n", __func__);
@@ -1814,7 +1822,7 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 		if (!strcmp(col[i], "ana_state")) {
 			ana_state = strtoul(argv[i], &eptr, 10);
 			if (argv[i] == eptr) {
-				printf("%s: parsing error on 'ana_state'\n",
+				printf("%s: parsing error on 'state'\n",
 				       __func__);
 				ana_state = 0xff;
 				continue;
@@ -1844,9 +1852,8 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 	return 0;
 }
 
-static char count_ana_grps_sql[] =
-	"SELECT ag.ana_state AS state, count(ns.nsid) AS num "
-	"FROM ana_groups AS ag "
+static char ana_grp_log_entry_sql[] =
+	"SELECT ns.nsid FROM ana_groups AS ag "
 	"INNER JOIN subsys_port AS sp ON sp.port_id = ag.port_id "
 	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
 	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
@@ -1890,13 +1897,6 @@ static int ana_grp_log_entry_cb(void *argp, int argc, char **argv, char **col)
 	return 0;
 }
 
-static char ana_grp_log_entry_sql[] =
-	"SELECT ns.nsid FROM ana_groups AS ag "
-	"INNER JOIN subsys_port AS sp ON sp.port_id = ag.port_id "
-	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
-	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
-	"WHERE s.nqn = '%s' AND ag.port_id = '%d' AND ag.grpid = '%d';";
-
 int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			     u8 *log, int log_len)
 {
@@ -1906,14 +1906,12 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 	char *sql, *errmsg;
 	int ret, ngrps = 0, grpid;
 
-	parm.buffer = log;
-	parm.len = log_len;
-	for (grpid = 0; grpid < 256; grpid++) {
-		grp_desc = (struct nvme_ana_group_desc *)parm.buffer;
+	memset(grp_desc, 0, 32);
+	parm.buffer = (u8 *)grp_desc;
+	parm.len = log_len - sizeof(struct nvme_ana_rsp_hdr);
+	for (grpid = 1; grpid <= MAX_ANAGRPID; grpid++) {
+		u32 nnsids;
 
-		printf("Display ana log entries for %s port %d grp %d\n",
-		       subsysnqn, portid, grpid);
-		memset(grp_desc, 0, 32);
 		ret = asprintf(&sql, count_ana_grps_sql,
 			       subsysnqn, portid, grpid);
 		if (ret < 0)
@@ -1927,17 +1925,23 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			sqlite3_free(errmsg);
 			return -EINVAL;
 		}
-		if (!le32toh(grp_desc->nnsids)) {
+		nnsids = le32toh(grp_desc->nnsids);
+		if (!nnsids) {
 			printf("%s: no records for grpid %d\n",
 			       __func__, grpid);
 			continue;
 		}
+		grp_desc->grpid = htole16(grpid);
+
+		parm.len -= sizeof(struct nvme_ana_group_desc);
+		parm.buffer = (u8 *)grp_desc->nsids;
+		parm.cur = 0;
+		printf("%s: %d nsids state %d\n",
+		       __func__, nnsids, grp_desc->state);
 		ret = asprintf(&sql, ana_grp_log_entry_sql,
 			       subsysnqn, portid, grpid);
 		if (ret < 0)
 			return ret;
-		parm.buffer = (u8 *)grp_desc;
-		parm.cur = 32;
 		ret = sqlite3_exec(configdb_db, sql, ana_grp_log_entry_cb,
 				   &parm, &errmsg);
 		free(sql);
@@ -1945,12 +1949,15 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			return ret;
 		parm.buffer += parm.cur;
 		parm.len -= parm.cur;
+		grp_desc = (struct nvme_ana_group_desc *)parm.buffer;
+		memset(grp_desc, 0, sizeof(*grp_desc));
 		ngrps++;
 		if (parm.len < 32)
 			break;
 	}
 	hdr->ngrps = htole16(ngrps);
-	return parm.buffer - log;
+	printf("%s: %d ana groups\n", __func__, ngrps);
+	return parm.len;
 }
 
 int configdb_open(const char *filename)
