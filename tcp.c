@@ -188,7 +188,7 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
 	tcp_info(ep, "release tag %#x", qe->tag);
 }
 
-static int tcp_init_listener(struct interface *iface)
+static int tcp_init_listener(struct nofuse_port *iface)
 {
 	int listenfd;
 	int ret, reuse = 1;
@@ -275,7 +275,7 @@ err_free:
 	return ret;
 }
 
-static void tcp_destroy_listener(struct interface *iface)
+static void tcp_destroy_listener(struct nofuse_port *iface)
 {
 	if (iface->listenfd < 0)
 		return;
@@ -388,7 +388,7 @@ out_free:
 	return ret;
 }
 
-static int tcp_wait_for_connection(struct interface *iface)
+static int tcp_wait_for_connection(struct nofuse_port *iface)
 {
 	int sockfd;
 	int ret = -ESHUTDOWN;

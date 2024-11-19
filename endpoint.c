@@ -319,7 +319,7 @@ out_disconnect:
 	return NULL;
 }
 
-struct endpoint *enqueue_endpoint(int id, struct interface *iface)
+struct endpoint *enqueue_endpoint(int id, struct nofuse_port *iface)
 {
 	struct endpoint		*ep;
 	int			 ret;
@@ -375,7 +375,7 @@ void dequeue_endpoint(struct endpoint *ep)
 	free(ep);
 }
 
-void terminate_endpoints(struct interface *iface, const char *subsysnqn)
+void terminate_endpoints(struct nofuse_port *iface, const char *subsysnqn)
 {
 	struct endpoint *ep = NULL, *_ep;
 
@@ -396,7 +396,7 @@ void terminate_endpoints(struct interface *iface, const char *subsysnqn)
 	pthread_mutex_unlock(&iface->ep_mutex);
 }
 
-void kato_reset_counter(struct interface *iface, struct nofuse_ctrl *ctrl)
+void kato_reset_counter(struct nofuse_port *iface, struct nofuse_ctrl *ctrl)
 {
 	struct endpoint *ep = NULL, *_ep;
 

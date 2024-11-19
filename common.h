@@ -105,7 +105,7 @@ struct endpoint {
 	struct io_uring uring;
 	struct io_ops *io_ops;
 	struct xp_ops *ops;
-	struct interface *iface;
+	struct nofuse_port *iface;
 	struct nofuse_ctrl *ctrl;
 	struct ep_qe *qes;
 	union nvme_tcp_pdu *recv_pdu;
@@ -156,7 +156,7 @@ struct nofuse_namespace {
 	bool readonly;
 };
 
-struct interface {
+struct nofuse_port {
 	struct linked_list node;
 	pthread_t pthread;
 	struct xp_ops *ops;
@@ -248,21 +248,21 @@ void *run_interface(void *arg);
 int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
-struct endpoint *enqueue_endpoint(int id, struct interface *iface);
+struct endpoint *enqueue_endpoint(int id, struct nofuse_port *iface);
 void dequeue_endpoint(struct endpoint *ep);
 void *endpoint_thread(void *arg);
-void terminate_endpoints(struct interface *iface, const char *subsysnqn);
-void kato_reset_counter(struct interface *iface, struct nofuse_ctrl *ctrl);
+void terminate_endpoints(struct nofuse_port *iface, const char *subsysnqn);
+void kato_reset_counter(struct nofuse_port *iface, struct nofuse_ctrl *ctrl);
 
 struct nofuse_subsys *find_subsys(const char *nqn);
 int add_subsys(const char *nqn);
 int del_subsys(struct nofuse_subsys *subsys);
 
 int add_iface(unsigned int id, const char *ifaddr, int portnum);
-struct interface *find_iface(unsigned int id);
-int del_iface(struct interface *iface);
-int start_iface(struct interface *iface);
-int stop_iface(struct interface *iface);
+struct nofuse_port *find_iface(unsigned int id);
+int del_iface(struct nofuse_port *iface);
+int start_iface(struct nofuse_port *iface);
+int stop_iface(struct nofuse_port *iface);
 
 int add_namespace(const char *subsys, int nsid);
 int del_namespace(const char *subsysnqn, int nsid);

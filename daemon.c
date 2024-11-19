@@ -267,7 +267,7 @@ int del_namespace(const char *subsysnqn, int nsid)
 static int init_subsys(struct nofuse_context *ctx)
 {
 	struct nofuse_subsys *subsys;
-	struct interface *iface;
+	struct nofuse_port *iface;
 	int ret;
 
 	ret = add_subsys(ctx->subsysnqn);
@@ -349,7 +349,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		fprintf(stderr, "invalid host interface configuration");
 		return 1;
 	} else if (tls_keyring) {
-		struct interface *iface;
+		struct nofuse_port *iface;
 
 		list_for_each_entry(iface, &iface_linked_list, node) {
 			iface->tls = true;
@@ -377,7 +377,7 @@ void free_devices(void)
 
 void free_interfaces(void)
 {
-	struct interface *iface, *_iface;
+	struct nofuse_port *iface, *_iface;
 
 	list_for_each_entry_safe(iface, _iface, &iface_linked_list, node)
 		del_iface(iface);
@@ -396,7 +396,7 @@ int main(int argc, char *argv[])
 {
 	int ret = 1;
 	struct nofuse_context *ctx;
-	struct interface *iface;
+	struct nofuse_port *iface;
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	ctx = malloc(sizeof(struct nofuse_context));

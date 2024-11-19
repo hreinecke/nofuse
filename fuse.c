@@ -652,7 +652,7 @@ static int port_rmdir(const char *port)
 		return -EINVAL;
 	p = strtok(NULL, "/");
 	if (!p) {
-		struct interface *iface = find_iface(portid);
+		struct nofuse_port *iface = find_iface(portid);
 		int ret;
 
 		if (!iface) {
@@ -890,7 +890,7 @@ static int nofuse_symlink(const char *from, const char *to)
 			goto out_free;
 		}
 		if (subsysnum == 1) {
-			struct interface *iface = find_iface(portid);
+			struct nofuse_port *iface = find_iface(portid);
 
 			if (!iface) {
 				fuse_err("%s: no interface for port %d",
@@ -943,7 +943,7 @@ static int nofuse_unlink(const char *path)
 		const char *subsys;
 		unsigned int portid;
 		int subsysnum = 0;
-		struct interface *iface;
+		struct nofuse_port *iface;
 
 		ret = parse_port_link(s, &portid, &subsys);
 		if (ret < 0)

@@ -18,7 +18,7 @@ LINKED_LIST(iface_linked_list);
 
 int add_iface(unsigned int id, const char *ifaddr, int portnum)
 {
-	struct interface *iface;
+	struct nofuse_port *iface;
 	int ret;
 
 	iface = malloc(sizeof(*iface));
@@ -61,9 +61,9 @@ int add_iface(unsigned int id, const char *ifaddr, int portnum)
 	return 0;
 }
 
-struct interface *find_iface(unsigned int id)
+struct nofuse_port *find_iface(unsigned int id)
 {
-	struct interface *iface;
+	struct nofuse_port *iface;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		if (iface->portid == id) {
@@ -73,7 +73,7 @@ struct interface *find_iface(unsigned int id)
 	return NULL;
 }
 
-int start_iface(struct interface *iface)
+int start_iface(struct nofuse_port *iface)
 {
 	pthread_attr_t pthread_attr;
 	int ret;
@@ -95,7 +95,7 @@ int start_iface(struct interface *iface)
 	return ret;
 }
 
-int stop_iface(struct interface *iface)
+int stop_iface(struct nofuse_port *iface)
 {
 	struct endpoint *ep, *_ep;
 
@@ -113,7 +113,7 @@ int stop_iface(struct interface *iface)
 	return 0;
 }
 
-int del_iface(struct interface *iface)
+int del_iface(struct nofuse_port *iface)
 {
 	int ret;
 
@@ -139,7 +139,7 @@ int del_iface(struct interface *iface)
 	return 0;
 }
 
-static int start_interface(struct interface *iface)
+static int start_interface(struct nofuse_port *iface)
 {
 	int ret;
 
@@ -157,7 +157,7 @@ static int start_interface(struct interface *iface)
 
 static void pop_listener(void *arg)
 {
-	struct interface *iface = arg;
+	struct nofuse_port *iface = arg;
 
 	iface_info(iface, "destroy_listener");
 	iface->ops->destroy_listener(iface);
@@ -165,7 +165,7 @@ static void pop_listener(void *arg)
 
 void *run_interface(void *arg)
 {
-	struct interface *iface = arg;
+	struct nofuse_port *iface = arg;
 	struct endpoint *ep;
 	sigset_t set;
 	int id;
