@@ -258,7 +258,7 @@ struct nofuse_subsys *find_subsys(const char *nqn);
 int add_subsys(const char *nqn);
 int del_subsys(struct nofuse_subsys *subsys);
 
-int add_iface(unsigned int id, const char *ifaddr, int port);
+int add_iface(unsigned int id, const char *ifaddr, int portnum);
 struct interface *find_iface(unsigned int id);
 int del_iface(struct interface *iface);
 int start_iface(struct interface *iface);

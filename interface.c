@@ -16,7 +16,7 @@
 
 LINKED_LIST(iface_linked_list);
 
-int add_iface(unsigned int id, const char *ifaddr, int port)
+int add_iface(unsigned int id, const char *ifaddr, int portnum)
 {
 	struct interface *iface;
 	int ret;
@@ -39,10 +39,10 @@ int add_iface(unsigned int id, const char *ifaddr, int port)
 					    "ipv6");
 		configdb_set_port_attr(iface->portid, "addr_traddr", ifaddr);
 	}
-	if (port) {
+	if (portnum) {
 		char trsvcid[5];
 
-		sprintf(trsvcid, "%d", port);
+		sprintf(trsvcid, "%d", portnum);
 		configdb_set_port_attr(iface->portid, "addr_trsvcid", trsvcid);
 	}
 	ret = configdb_add_ana_group(iface->portid, 1, NVME_ANA_OPTIMIZED);
