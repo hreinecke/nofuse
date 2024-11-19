@@ -160,17 +160,22 @@ int enable_namespace(const char *subsysnqn, int nsid)
 		ns->ops = null_register_ops();
 	} else {
 		struct stat st;
+		mode_t mode = O_RDWR | O_EXCL;
 
-		ns->fd = open(path, O_RDWR | O_EXCL);
-		if (ns->fd < 0) {
+		if (stat(path, &st) < 0) {
 			fprintf(stderr, "subsys %s nsid %d invalid path '%s'\n",
 				subsysnqn, nsid, path);
 			fflush(stderr);
 			return -errno;
 		}
-		if (fstat(ns->fd, &st) < 0) {
-			fprintf(stderr, "subsys %s nsid %d stat error %d\n",
-				subsysnqn, nsid, errno);
+		if (!(st.st_mode & S_IWUSR)) {
+			mode = O_RDONLY;
+			ns->readonly = true;
+		}
+		ns->fd = open(path, mode);
+		if (ns->fd < 0) {
+			fprintf(stderr, "subsys %s nsid %d invalid path '%s'\n",
+				subsysnqn, nsid, path);
 			fflush(stderr);
 			return -errno;
 		}

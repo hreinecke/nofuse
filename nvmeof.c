@@ -183,7 +183,9 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			       connect->hostnqn, connect->subsysnqn);
 	if (!ret) {
 		ctrl_info(ep, "connected");
-		ep->ctrl->kato = kato / ep->kato_interval;
+		if (qid == 0) {
+			ep->ctrl->kato = kato / ep->kato_interval;
+		}
 		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 	} else {
 		if (ret == -ENOENT) {
@@ -285,6 +287,8 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 		id.anagrpid = anagrp;
 	}
 	id.lbaf[0].ds = 12;
+	if (ns->readonly)
+		id.nsattr = 1;
 
 	if (len > sizeof(id))
 		len = sizeof(id);

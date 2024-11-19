@@ -146,6 +146,7 @@ struct nofuse_namespace {
 	int fd;
 	size_t size;
 	unsigned int blksize;
+	bool readonly;
 };
 
 struct interface {
