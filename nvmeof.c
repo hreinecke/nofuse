@@ -253,6 +253,7 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 {
 	struct nofuse_namespace *ns = NULL, *_ns;
 	struct nvme_id_ns id;
+	int ret, anagrp;
 
 	list_for_each_entry(_ns, &device_linked_list, node) {
 		if (strcmp(_ns->subsysnqn, ep->ctrl->subsys->nqn))
@@ -265,13 +266,24 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 	if (!ns || !ns->size)
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
+	ret = configdb_get_namespace_anagrp(ep->ctrl->subsys->nqn, nsid,
+					    &anagrp);
+	if (ret < 0) {
+		ctrl_info(ep, "nsid %u error %d retrieving ana grp",
+			  nsid, ret);
+		anagrp = 0;
+	}
+
 	memset(&id, 0, sizeof(id));
 
 	id.nsze = (u64)ns->size / ns->blksize;
 	id.ncap = id.nsze;
 	id.nlbaf = 1;
 	id.flbas = 0;
-	id.nmic = 1;
+	if (anagrp > 0) {
+		id.nmic = 1;
+		id.anagrpid = anagrp;
+	}
 	id.lbaf[0].ds = 12;
 
 	if (len > sizeof(id))
