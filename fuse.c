@@ -14,9 +14,23 @@
 #include "common.h"
 #include "configdb.h"
 
+bool fuse_debug;
+
 const char hosts_dir[] = "hosts";
 const char ports_dir[] = "ports";
 const char subsys_dir[] = "subsystems";
+
+#define fuse_info(f, x...)			\
+	if (fuse_debug) {			\
+		printf(f "\n", ##x);		\
+		fflush(stdout);			\
+	}
+
+#define fuse_err(f, x...) \
+	do { \
+		fprintf(stderr, f "\n", ##x);	\
+		fflush(stderr); \
+	} while(0)
 
 static void *nofuse_init(struct fuse_conn_info *conn,
 			 struct fuse_config *cfg)
@@ -50,8 +64,8 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	int ret;
 	const char *p;
 
-	printf("%s: port %d subsys %s\n", __func__,
-	       portid, subsys);
+	fuse_info("%s: port %d subsys %s", __func__,
+		  portid, subsys);
 	if (!subsys) {
 		int num_subsys = 0;
 
@@ -68,7 +82,8 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 		return -ENOENT;
 	ret = configdb_stat_subsys_port(subsys, portid, stbuf);
 	if (ret < 0)
-		printf("%s: stat error %d\n", __func__, ret);
+		fuse_err("%s: subsys %s portid %d stat error %d",
+			 __func__, subsys, portid, ret);
 
 	return ret;
 }
@@ -91,8 +106,8 @@ static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 		return 0;
 	}
 
-	printf("%s: port %s ana group %s\n",
-	       __func__, port, ana_grp);
+	fuse_info("%s: port %s ana group %s",
+		  __func__, port, ana_grp);
 
 	p = strtok(NULL, "/");
 	if (!p) {
@@ -179,7 +194,7 @@ static int subsys_allowed_hosts_getattr(const char *subsysnqn,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	printf("%s: subsys %s host %s\n", __func__, subsysnqn, hostnqn);
+	fuse_info("%s: subsys %s host %s", __func__, subsysnqn, hostnqn);
 	return configdb_stat_host_subsys(hostnqn, subsysnqn, stbuf);
 }
 
@@ -208,7 +223,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	ret = configdb_stat_namespace(subsysnqn, nsid, stbuf);
 	if (ret)
 		return -ENOENT;
-	printf("%s: subsys %s ns %d\n", __func__, subsysnqn, nsid);
+	fuse_info("%s: subsys %s ns %d", __func__, subsysnqn, nsid);
 	attr = strtok(NULL, "/");
 	if (!attr) {
 		stbuf->st_mode = S_IFDIR | 0755;
@@ -218,8 +233,8 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	printf("%s: subsys %s ns %d attr %s\n", __func__,
-	       subsysnqn, nsid, attr);
+	fuse_info("%s: subsys %s ns %d attr %s", __func__,
+		  subsysnqn, nsid, attr);
 	ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
@@ -245,7 +260,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 		stbuf->st_nlink = 4;
 		return 0;
 	}
-	printf("%s: subsys %s attr %s\n", __func__, subsysnqn, p);
+	fuse_info("%s: subsys %s attr %s", __func__, subsysnqn, p);
 
 	attr = p;
 	p = strtok(NULL, "/");
@@ -278,7 +293,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n", __func__, pathbuf);
+	fuse_info("%s: path %s", __func__, pathbuf);
 	root = strtok(pathbuf, "/");
 	if (!root) {
 		stbuf->st_mode = S_IFDIR | 0755;
@@ -325,7 +340,8 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 out_free:
 	free(pathbuf);
 	if (res != 0)
-		printf("%s: error %d\n", __func__, res);
+		fuse_err("%s: path %s error %d",
+			 __func__, path, res);
 	return res;
 }
 
@@ -424,7 +440,7 @@ static int fill_subsys(const char *subsys,
 	p = strtok(NULL, "/");
 	if (!p) {
 		/* list contents of /subsystems/<subsys> */
-		printf("%s: subsys %s\n", __func__, subsys);
+		fuse_info("%s: subsys %s", __func__, subsys);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return configdb_fill_subsys(subsys, buf, filler);
@@ -448,7 +464,7 @@ static int fill_subsys(const char *subsys,
 		if (p)
 			return -ENOENT;
 
-		printf("%s: subsys %s ns %d\n", __func__, subsys, nsid);
+		fuse_info("%s: subsys %s ns %d", __func__, subsys, nsid);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return configdb_fill_namespace(subsys, nsid, buf, filler);
@@ -484,7 +500,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n", __func__, pathbuf);
+	fuse_info("%s: path %s", __func__, pathbuf);
 	root = strtok(pathbuf, "/");
 	if (!root) {
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -509,7 +525,8 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 out_free:
 	free(pathbuf);
 	if (ret != 0)
-		printf("%s: error %d\n", __func__, ret);
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -527,8 +544,8 @@ static int port_mkdir(const char *port)
 	if (!p) {
 		ret = add_iface(portid, NULL, 0);
 		if (ret < 0)
-			printf("%s: cannot add port %d, error %d\n",
-			       __func__, portid, ret);
+			fuse_err("%s: cannot add port %d, error %d",
+				 __func__, portid, ret);
 		return ret;
 	}
 	if (strcmp(p, "ana_groups"))
@@ -541,14 +558,14 @@ static int port_mkdir(const char *port)
 	ana_grpid = strtoul(p, &eptr, 10);
 	if (p == eptr)
 		return -ENOENT;
-	printf("%s: port %d ana group %d\n", __func__,
-	       portid, ana_grpid);
+	fuse_info("%s: port %d ana group %d", __func__,
+		  portid, ana_grpid);
 	ret = configdb_add_ana_group(portid, ana_grpid,
 				     NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
-		printf("%s: cannot add ana group %d to "
-		       "port %d, error %d\n", __func__,
-		       portid, ana_grpid, ret);
+		fuse_err("%s: cannot add ana group %d to "
+			 "port %d, error %d", __func__,
+			 portid, ana_grpid, ret);
 		return ret;
 	}
 	return 0;
@@ -589,7 +606,7 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n", __func__, pathbuf);
+	fuse_info("%s: path %s", __func__, pathbuf);
 	root = strtok(pathbuf, "/");
 	if (!root)
 		goto out_free;
@@ -613,7 +630,8 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 out_free:
 	free(pathbuf);
 	if (ret != 0)
-		printf("%s: error %d\n", __func__, ret);
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -632,13 +650,13 @@ static int port_rmdir(const char *port)
 		int ret;
 
 		if (!iface) {
-			printf("%s: no interface for port %d\n",
+			fuse_err("%s: no interface for port %d",
 			       __func__, portid);
 			return -ENOENT;
 		}
 		ret = del_iface(iface);
 		if (ret < 0) {
-			printf("%s: cannot remove port %d, error %d\n",
+			fuse_err("%s: cannot remove port %d, error %d",
 			       __func__, portid, ret);
 		}
 		return ret;;
@@ -655,7 +673,7 @@ static int port_rmdir(const char *port)
 	ana_grpid = strtoul(ana_grp, &eptr, 10);
 	if (ana_grp == eptr)
 		return -EINVAL;
-	printf("%s: port %d ana group %d\n", __func__,
+	fuse_info("%s: port %d ana group %d", __func__,
 	       portid, ana_grpid);
 	if (ana_grpid == 1)
 		return -EACCES;
@@ -699,7 +717,7 @@ static int nofuse_rmdir(const char *path)
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n", __func__, pathbuf);
+	fuse_info("%s: path %s", __func__, pathbuf);
 	root = strtok(pathbuf, "/");
 	if (!root)
 		goto out_free;
@@ -723,7 +741,8 @@ static int nofuse_rmdir(const char *path)
 out_free:
 	free(pathbuf);
 	if (ret != 0)
-		printf("%s: error %d\n", __func__, ret);
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -793,7 +812,7 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n", __func__, pathbuf);
+	fuse_info("%s: path %s", __func__, pathbuf);
 	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
@@ -824,7 +843,8 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 out_free:
 	free(pathbuf);
 	if (ret != 0)
-		printf("%s: error %d\n", __func__, ret);
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -837,7 +857,7 @@ static int nofuse_symlink(const char *from, const char *to)
 	pathbuf = strdup(to);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s from %s\n",
+	fuse_info("%s: path %s from %s",
 	       __func__, pathbuf, from);
 	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
@@ -850,11 +870,11 @@ static int nofuse_symlink(const char *from, const char *to)
 		ret = parse_port_link(s, &portid, &subsys);
 		if (ret < 0)
 			goto out_free;
-		printf("%s: subsys %s portid %d\n",
+		fuse_info("%s: subsys %s portid %d",
 		       __func__, subsys, portid);
 		ret = configdb_add_subsys_port(subsys, portid);
 		if (ret < 0) {
-			printf("%s: failed to add subsys, error %d\n",
+			fuse_err("%s: failed to add subsys, error %d",
 			       __func__, ret);
 			goto out_free;
 		}
@@ -867,7 +887,7 @@ static int nofuse_symlink(const char *from, const char *to)
 			struct interface *iface = find_iface(portid);
 
 			if (!iface) {
-				printf("%s: no interface for port %d",
+				fuse_err("%s: no interface for port %d",
 				       __func__, portid);
 				configdb_del_subsys_port(subsys, portid);
 				ret = -EINVAL;
@@ -894,7 +914,8 @@ static int nofuse_symlink(const char *from, const char *to)
 out_free:
 	free(pathbuf);
 	if (ret != 0)
-		printf("%s: error %d\n", __func__, ret);
+		fuse_err("%s: from %s to %s error %d",
+			 __func__, from, to, ret);
 	return ret;
 }
 
@@ -907,7 +928,7 @@ static int nofuse_unlink(const char *path)
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n",
+	fuse_info("%s: path %s",
 	       __func__, pathbuf);
 	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
@@ -923,7 +944,7 @@ static int nofuse_unlink(const char *path)
 			goto out_free;
 		iface = find_iface(portid);
 		if (!iface) {
-			printf("%s: no interface for port %d\n",
+			fuse_err("%s: no interface for port %d",
 			       __func__, portid);
 			goto out_free;
 		}
@@ -934,12 +955,12 @@ static int nofuse_unlink(const char *path)
 		ret = configdb_count_subsys_port(portid, &subsysnum);
 		if (ret < 0)
 			goto out_free;
-		printf("%s: subsys %s portid %d num %d\n",
+		fuse_info("%s: subsys %s portid %d num %d",
 		       __func__, subsys, portid, subsysnum);
 		if (subsysnum == 0) {
 			ret = stop_iface(iface);
 			if (ret) {
-				printf("%s: failed to stop iface %d\n",
+				fuse_err("%s: failed to stop iface %d",
 				   __func__, portid);
 				configdb_add_subsys_port(subsys, portid);
 				goto out_free;
@@ -960,7 +981,8 @@ static int nofuse_unlink(const char *path)
 out_free:
 	free(pathbuf);
 	if (ret != 0)
-		printf("%s: error %d\n", __func__, ret);
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -999,7 +1021,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	printf("%s: path %s\n", __func__, path);
+	fuse_info("%s: path %s", __func__, path);
 	root = strtok(pathbuf, "/");
 	if (!root)
 		goto out_free;
@@ -1028,7 +1050,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 
 		attr = p;
 		p = strtok(NULL, "/");
-		printf("%s: port %d attr %s p %s\n", __func__,
+		fuse_info("%s: port %d attr %s p %s", __func__,
 		       portid, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
@@ -1036,11 +1058,12 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
-			printf("%s: port %d ana_grp %s attr %s\n", __func__,
+			fuse_info("%s: port %d ana_grp %s attr %s", __func__,
 			       portid, ana_grp, p);
 			ret = configdb_get_ana_group(port, ana_grp, NULL);
 			if (ret < 0) {
-				printf("%s: error %d\n", __func__, ret);
+				fuse_err("%s: port %d ana_grp %s error %d",
+					 __func__, portid, ana_grp, ret);
 				ret = -ENOENT;
 			} else
 				ret = 0;
@@ -1061,7 +1084,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 
 		attr = p;
 		p = strtok(NULL, "/");
-		printf("%s: subsys %s attr %s p %s\n", __func__,
+		fuse_info("%s: subsys %s attr %s p %s", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
 			ret = configdb_get_subsys_attr(subsysnqn, attr, NULL);
@@ -1135,11 +1158,12 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
-			sprintf(buf, "%ctcp,%ccmd,%cep,%ciface",
+			sprintf(buf, "%ctcp,%ccmd,%cep,%ciface,%cfuse",
 				tcp_debug ? '+' : '-',
 				cmd_debug ? '+' : '-',
 				ep_debug ? '+' : '-',
-				iface_debug ? '+' : '-');
+				iface_debug ? '+' : '-',
+				fuse_debug ? '+' : '-');
 		} else
 			goto out_free;
 	} else if (!strcmp(root, ports_dir)) {
@@ -1156,7 +1180,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			goto out_free;
 
 		p = strtok(NULL, "/");
-		printf("%s: port %d attr %s p %s\n", __func__,
+		fuse_info("%s: port %d attr %s p %s", __func__,
 		       portid, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
@@ -1167,7 +1191,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
-			printf("%s: port %s ana_grp %s\n", __func__,
+			fuse_info("%s: port %s ana_grp %s", __func__,
 			       port, ana_grp);
 			ret = configdb_get_ana_group(port, ana_grp, &ana_state);
 			if (ret < 0) {
@@ -1198,7 +1222,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 
 		attr = p;
 		p = strtok(NULL, "/");
-		printf("%s: subsys %s attr %s p %s\n", __func__,
+		fuse_info("%s: subsys %s attr %s p %s", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
 			ret = configdb_get_subsys_attr(subsysnqn, attr, buf);
@@ -1265,7 +1289,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 	if (ret < 0)
 		return -ENOENT;
 
-	printf("%s: subsys %s nsid %d attr %s value %s\n", __func__,
+	fuse_info("%s: subsys %s nsid %d attr %s value %s", __func__,
 	       subsysnqn, nsid, attr, buf);
 
 	if (!strcmp(attr, "ana_grpid")) {
@@ -1295,7 +1319,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 		if (buf == eptr)
 			return -EINVAL;
 
-		printf("%s: enable %d\n", __func__, enable);
+		fuse_info("%s: enable %d", __func__, enable);
 		if (enable == 1) {
 			ret = enable_namespace(subsysnqn, nsid);
 		} else if (enable == 0) {
@@ -1307,7 +1331,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 			return ret;
 		ret = len;
 	} else {
-		printf("%s: attr %s\n", __func__, attr);
+		fuse_info("%s: attr %s", __func__, attr);
 		ret = configdb_set_namespace_attr(subsysnqn, nsid,
 					       attr, buf);
 		if (ret < 0)
@@ -1343,7 +1367,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		}
 		ptr++;
 	}
-	printf("%s: path %s buf %s len %ld off %ld\n", __func__,
+	fuse_info("%s: path %s buf %s len %ld off %ld", __func__,
 	       pathbuf, value, len, offset);
 	root = strtok(pathbuf, "/");
 	if (!root)
@@ -1378,6 +1402,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				ep_debug = enable;
 			} else if (!strcmp(level, "iface")) {
 				iface_debug = enable;
+			} else if (!strcmp(level, "fuse")) {
+				fuse_debug = enable;
 			} else {
 				ret = -EINVAL;
 				goto out_free;
@@ -1398,7 +1424,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			goto out_free;
 
 		p = strtok(NULL, "/");
-		printf("%s: port %d attr %s p %s\n", __func__,
+		fuse_info("%s: port %d attr %s p %s", __func__,
 		       portid, attr, p);
 
 		if (!strcmp(attr, "ana_groups")) {
@@ -1422,7 +1448,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				ret = -EINVAL;
 				goto out_free;
 			}
-			printf("%s: port %s ana_grp %s state %d\n", __func__,
+			fuse_info("%s: port %s ana_grp %s state %d", __func__,
 			       port, ana_grp, ana_state);
 			ret = configdb_set_ana_group(port, ana_grp, ana_state);
 			if (ret < 0) {
@@ -1489,7 +1515,7 @@ int run_fuse(struct fuse_args *args)
 
 	ret = fuse_main(args->argc, args->argv, &nofuse_oper, NULL);
 	if (ret)
-		fprintf(stderr, "fuse terminated with %d\n", ret);
+		fuse_err("fuse terminated with %d", ret);
 	fuse_opt_free_args(args);
 	return ret;
 }
