@@ -289,7 +289,7 @@ int tls_global_init(void)
 	return serial;
 }
 
-void tls_free_endpoint(struct nofuse_queue *ep)
+void tls_free_queue(struct nofuse_queue *ep)
 {
 	if (ep->ssl)
 		SSL_free(ep->ssl);

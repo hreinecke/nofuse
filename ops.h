@@ -11,8 +11,8 @@
 #include <sys/socket.h>
 
 struct xp_ops {
-	int (*create_endpoint)(struct nofuse_queue *ep, int id);
-	void (*destroy_endpoint)(struct nofuse_queue *ep);
+	int (*create_queue)(struct nofuse_queue *ep, int id);
+	void (*destroy_queue)(struct nofuse_queue *ep);
 	int (*init_listener)(struct nofuse_port *port);
 	void (*destroy_listener)(struct nofuse_port *port);
 	int (*wait_for_connection)(struct nofuse_port *port);

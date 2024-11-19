@@ -97,14 +97,14 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 	case NVME_FEAT_NUM_QUEUES:
 		ncqr = (cdw11 >> 16) & 0xffff;
 		nsqr = cdw11 & 0xffff;
-		if (ncqr < ep->ctrl->max_endpoints) {
-			ep->ctrl->max_endpoints = ncqr;
+		if (ncqr < ep->ctrl->max_queues) {
+			ep->ctrl->max_queues = ncqr;
 		}
-		if (nsqr < ep->ctrl->max_endpoints) {
-			ep->ctrl->max_endpoints = nsqr;
+		if (nsqr < ep->ctrl->max_queues) {
+			ep->ctrl->max_queues = nsqr;
 		}
-		qe->resp.result.u32 = htole32(ep->ctrl->max_endpoints << 16 |
-					      ep->ctrl->max_endpoints);
+		qe->resp.result.u32 = htole32(ep->ctrl->max_queues << 16 |
+					      ep->ctrl->max_queues);
 		break;
 	case NVME_FEAT_ASYNC_EVENT:
 		ep->ctrl->aen_mask = cdw11;
@@ -162,7 +162,7 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 	}
 	if (qid == 0) {
 		ep->qsize = NVMF_SQ_DEPTH;
-	} else if (endpoint_update_qdepth(ep, sqsize) < 0) {
+	} else if (queue_update_qdepth(ep, sqsize) < 0) {
 		ctrl_err(ep, "ctrl %d qid %d failed to increase sqsize %d",
 			  cntlid, qid, sqsize);
 		return NVME_SC_INTERNAL;

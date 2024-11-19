@@ -64,7 +64,7 @@ struct io_ops *tcp_register_io_ops(void)
 	return &tcp_io_ops;
 }
 
-static int tcp_create_endpoint(struct nofuse_queue *ep, int id)
+static int tcp_create_queue(struct nofuse_queue *ep, int id)
 {
 	int flags, i;
 
@@ -105,7 +105,7 @@ static int tcp_create_endpoint(struct nofuse_queue *ep, int id)
 	return 0;
 }
 
-static void tcp_destroy_endpoint(struct nofuse_queue *ep)
+static void tcp_destroy_queue(struct nofuse_queue *ep)
 {
 	if (ep->qes) {
 		free(ep->qes);
@@ -119,7 +119,7 @@ static void tcp_destroy_endpoint(struct nofuse_queue *ep)
 		free(ep->send_pdu);
 		ep->send_pdu = NULL;
 	}
-	tls_free_endpoint(ep);
+	tls_free_queue(ep);
 	if (ep->sockfd >= 0) {
 		close(ep->sockfd);
 		ep->sockfd = -1;
@@ -831,8 +831,8 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len
 }
 
 static struct xp_ops tcp_ops = {
-	.create_endpoint	= tcp_create_endpoint,
-	.destroy_endpoint	= tcp_destroy_endpoint,
+	.create_queue		= tcp_create_queue,
+	.destroy_queue		= tcp_destroy_queue,
 	.init_listener		= tcp_init_listener,
 	.destroy_listener	= tcp_destroy_listener,
 	.wait_for_connection	= tcp_wait_for_connection,

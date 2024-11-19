@@ -210,7 +210,7 @@ static void *run_port(void *arg)
 		pthread_attr_init(&pthread_attr);
 
 		ret = pthread_create(&ep->pthread, &pthread_attr,
-				     endpoint_thread, ep);
+				     queue_thread, ep);
 		if (ret) {
 			ep->pthread = 0;
 			port_err(port, "pthread_create failed with %d", ret);

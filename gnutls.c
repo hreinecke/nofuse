@@ -181,7 +181,7 @@ out_free:
 	return ret;
 }
 
-void tls_free_endpoint(struct nofuse_queue *ep)
+void tls_free_queue(struct nofuse_queue *ep)
 {
 	if (ep->io_ops != &tls_io_ops)
 		return;

@@ -137,8 +137,8 @@ struct nofuse_ctrl {
 	int cntlid;
 	int ctrl_type;
 	int kato;
-	int num_endpoints;
-	int max_endpoints;
+	int num_queues;
+	int max_queues;
 	int aen_mask;
 	u64 ana_chgcnt;
 	u64 csts;
@@ -246,10 +246,10 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
-int endpoint_update_qdepth(struct nofuse_queue *ep, int qsize);
+int queue_update_qdepth(struct nofuse_queue *ep, int qsize);
 struct nofuse_queue *create_queue(int id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
-void *endpoint_thread(void *arg);
+void *queue_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl);
 

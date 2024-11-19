@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
- * endpoint.c
+ * queue.c
  * connection handling for NVMe-over-TCP userspace daemon.
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
@@ -32,7 +32,7 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 				if (ctrl->cntlid != cntlid)
 					continue;
 				ep->ctrl = ctrl;
-				ctrl->num_endpoints++;
+				ctrl->num_queues++;
 				break;
 			}
 		}
@@ -58,9 +58,9 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
 	strcpy(ctrl->nqn, hostnqn);
-	ctrl->max_endpoints = NVMF_NUM_QUEUES;
+	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
-	ctrl->num_endpoints = 1;
+	ctrl->num_queues = 1;
 	ctrl->subsys = subsys;
 	ctrl->cntlid = nvmf_ctrl_id++;
 	if (subsys->type == NVME_NQN_CUR) {
@@ -81,7 +81,7 @@ static void disconnect_queue(struct nofuse_queue *ep, int shutdown)
 	struct nofuse_ctrl *ctrl = ep->ctrl;
 	int ep_num = ep->sockfd;
 
-	ep->ops->destroy_endpoint(ep);
+	ep->ops->destroy_queue(ep);
 
 	ep->state = DISCONNECTED;
 
@@ -89,9 +89,9 @@ static void disconnect_queue(struct nofuse_queue *ep, int shutdown)
 		struct nofuse_subsys *subsys = ctrl->subsys;
 
 		pthread_mutex_lock(&subsys->ctrl_mutex);
-		ctrl->num_endpoints--;
+		ctrl->num_queues--;
 		ep->ctrl = NULL;
-		if (!ctrl->num_endpoints) {
+		if (!ctrl->num_queues) {
 			printf("ep %d: deleting controller %u\n",
 			       ep_num, ctrl->cntlid);
 			list_del(&ctrl->node);
@@ -105,9 +105,10 @@ static int start_queue(struct nofuse_queue *ep, int id)
 {
 	int ret;
 
-	ret = ep->ops->create_endpoint(ep, id);
+	ret = ep->ops->create_queue(ep, id);
 	if (ret) {
-		fprintf(stderr, "ep %d: Failed to create endpoint", ret);
+		fprintf(stderr, "ep %d: Failed to create queue, error %d",
+			id, ret);
 		return ret;
 	}
 
@@ -125,7 +126,7 @@ retry:
 	return 0;
 }
 
-int endpoint_update_qdepth(struct nofuse_queue *ep, int qsize)
+int queue_update_qdepth(struct nofuse_queue *ep, int qsize)
 {
 	struct ep_qe *qes;
 	int i;
@@ -147,8 +148,8 @@ int endpoint_update_qdepth(struct nofuse_queue *ep, int qsize)
 	return 0;
 }
 
-static struct io_uring_sqe *endpoint_submit_poll(struct nofuse_queue *ep,
-						 int poll_flags)
+static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
+					      int poll_flags)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -171,7 +172,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct nofuse_queue *ep,
 	return sqe;
 }
 
-static int endpoint_submit_cancel(struct nofuse_queue *ep)
+static int queue_submit_cancel(struct nofuse_queue *ep)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -209,7 +210,7 @@ static void pop_uring_exit(void *arg)
 	io_uring_queue_exit(&ep->uring);
 }
 
-void *endpoint_thread(void *arg)
+void *queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
@@ -240,7 +241,7 @@ void *endpoint_thread(void *arg)
 		void *cqe_data;
 
 		if (!pollin_sqe) {
-			pollin_sqe = endpoint_submit_poll(ep, POLLIN);
+			pollin_sqe = queue_submit_poll(ep, POLLIN);
 			if (!pollin_sqe)
 				break;
 		}
@@ -344,11 +345,11 @@ struct nofuse_queue *create_queue(int id, struct nofuse_port *port)
 
 	ret = start_queue(ep, id);
 	if (ret) {
-		fprintf(stderr, "ep %d: failed to start endpoint", id);
+		fprintf(stderr, "ep %d: failed to start queue", id);
 		goto out;
 	}
 
-	ep_info(ep, "start endpoint");
+	ep_info(ep, "start queue");
 	pthread_mutex_lock(&port->ep_mutex);
 	list_add(&ep->node, &port->ep_list);
 	pthread_mutex_unlock(&port->ep_mutex);
@@ -363,7 +364,7 @@ void destroy_queue(struct nofuse_queue *ep)
 {
 	if (ep->state == CONNECTED) {
 		ep->state = STOPPED;
-		endpoint_submit_cancel(ep);
+		queue_submit_cancel(ep);
 	}
 	if (ep->pthread) {
 		ep_info(ep, "destroy queue");
