@@ -242,7 +242,7 @@ static void *endpoint_thread(void *arg)
 
 	while (ep->state == CONNECTED) {
 		struct io_uring_cqe *cqe;
-		struct __kernel_timespec *ts, real_ts = {
+		struct __kernel_timespec ts = {
 			.tv_sec = (ep->kato_interval / 1000),
 			.tv_nsec = (ep->kato_interval % 1000) * 1000 * 1000,
 		};
@@ -252,15 +252,13 @@ static void *endpoint_thread(void *arg)
 			pollin_sqe = endpoint_submit_poll(ep, POLLIN);
 			if (!pollin_sqe)
 				break;
-			ts = &real_ts;
-		} else
-			ts = NULL;
+		}
 
-		ret = io_uring_wait_cqe_timeout(&ep->uring, &cqe, ts);
+		ret = io_uring_wait_cqe_timeout(&ep->uring, &cqe, &ts);
 		if (ret < 0) {
-			if (ret == -ETIME) {
-				ep_err(ep, "qid %d wait cqe timeout",
-				       ep->qid);
+			if (ret == -ETIME && --ep->kato_countdown) {
+				ep_err(ep, "qid %d wait cqe retry %d",
+				       ep->qid, ep->kato_countdown);
 				continue;
 			}
 			ep_err(ep, "qid %d wait cqe error %d",
@@ -403,6 +401,19 @@ void terminate_endpoints(struct interface *iface, const char *subsysnqn)
 		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
 			continue;
 		dequeue_endpoint(ep);
+	}
+	pthread_mutex_unlock(&iface->ep_mutex);
+}
+
+void kato_reset_counter(struct interface *iface, struct nofuse_ctrl *ctrl)
+{
+	struct endpoint *ep = NULL, *_ep;
+
+	pthread_mutex_lock(&iface->ep_mutex);
+	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
+		if (ep->ctrl != ctrl)
+			continue;
+		ep->kato_countdown = ep->ctrl->kato;
 	}
 	pthread_mutex_unlock(&iface->ep_mutex);
 }

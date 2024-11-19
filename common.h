@@ -243,6 +243,7 @@ int connect_endpoint(struct endpoint *ep, struct nofuse_subsys *subsys,
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 void dequeue_endpoint(struct endpoint *ep);
 void terminate_endpoints(struct interface *iface, const char *subsysnqn);
+void kato_reset_counter(struct interface *iface, struct nofuse_ctrl *ctrl);
 
 struct nofuse_subsys *find_subsys(const char *nqn);
 int add_subsys(const char *nqn);
