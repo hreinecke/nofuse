@@ -82,7 +82,7 @@ extern int stopped;
 struct ep_qe {
 	struct linked_list node;
 	int tag;
-	struct endpoint *ep;
+	struct nofuse_queue *ep;
 	struct nofuse_namespace *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
@@ -99,7 +99,7 @@ struct ep_qe {
 
 enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
 
-struct endpoint {
+struct nofuse_queue {
 	struct linked_list node;
 	pthread_t pthread;
 	struct io_uring uring;
@@ -242,13 +242,13 @@ static inline void set_response(struct nvme_completion *resp,
 	resp->status = ((dnr ? NVME_SC_DNR : 0) | status) << 1;
 }
 
-int handle_request(struct endpoint *ep, struct nvme_command *cmd);
-int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
-int connect_queue(struct endpoint *ep, struct nofuse_subsys *subsys,
+int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
+int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
+int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
-int endpoint_update_qdepth(struct endpoint *ep, int qsize);
-struct endpoint *create_queue(int id, struct nofuse_port *port);
-void destroy_queue(struct endpoint *ep);
+int endpoint_update_qdepth(struct nofuse_queue *ep, int qsize);
+struct nofuse_queue *create_queue(int id, struct nofuse_port *port);
+void destroy_queue(struct nofuse_queue *ep);
 void *endpoint_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl);

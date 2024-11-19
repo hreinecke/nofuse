@@ -99,7 +99,7 @@ int start_port(struct nofuse_port *port)
 
 int stop_port(struct nofuse_port *port)
 {
-	struct endpoint *ep, *_ep;
+	struct nofuse_queue *ep, *_ep;
 
 	port_info(port, "stop pthread %ld", port->pthread);
 	if (port->pthread) {
@@ -168,7 +168,7 @@ static void pop_listener(void *arg)
 static void *run_port(void *arg)
 {
 	struct nofuse_port *port = arg;
-	struct endpoint *ep;
+	struct nofuse_queue *ep;
 	sigset_t set;
 	int id;
 	pthread_attr_t pthread_attr;

@@ -14,7 +14,7 @@
 #include "ops.h"
 
 
-static int tls_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
+static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	int ret;
 
@@ -41,7 +41,7 @@ static int tls_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
 	return 0;
 }
 
-static int tls_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
+static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	int ret;
 
@@ -141,7 +141,7 @@ void tls_global_init(void)
 	}
 }
 
-int tls_handshake(struct endpoint *ep)
+int tls_handshake(struct nofuse_queue *ep)
 {
 	const char *tls_priority = "SECURE256:+SECURE128:-COMP-ALL:-VERS-ALL:+VERS-TLS1.3:%NO_TICKETS:+PSK:+DHE-PSK:+ECDHE-PSK";
 	int ret;
@@ -181,7 +181,7 @@ out_free:
 	return ret;
 }
 
-void tls_free_endpoint(struct endpoint *ep)
+void tls_free_endpoint(struct nofuse_queue *ep)
 {
 	if (ep->io_ops != &tls_io_ops)
 		return;

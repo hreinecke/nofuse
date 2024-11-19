@@ -19,17 +19,17 @@
 #include "nvme.h"
 #include "ops.h"
 
-int null_ns_write(struct endpoint *ep, struct ep_qe *qe)
+int null_ns_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	return 0;
 }
 
-int null_ns_read(struct endpoint *ep, struct ep_qe *qe)
+int null_ns_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	return ep->ops->rma_write(ep, qe, qe->data_len);
 }
 
-int null_ns_prep_read(struct endpoint *ep, struct ep_qe *qe)
+int null_ns_prep_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	return ep->ops->prep_rma_read(ep, qe->tag);
 }

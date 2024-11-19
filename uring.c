@@ -15,7 +15,7 @@
 #include "nvme.h"
 #include "ops.h"
 
-int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
+int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -40,7 +40,7 @@ int uring_submit_write(struct endpoint *ep, struct ep_qe *qe)
 	return 0;
 }
 
-int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
+int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -64,7 +64,7 @@ int uring_submit_read(struct endpoint *ep, struct ep_qe *qe)
 	return 0;
 }
 
-static int uring_handle_qe(struct endpoint *ep, struct ep_qe *qe, int res)
+static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 {
 	int status = 0, ret;
 

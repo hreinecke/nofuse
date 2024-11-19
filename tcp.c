@@ -44,12 +44,12 @@
 		fflush(stderr);					\
 	} while (0)
 
-static int tcp_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
+static int tcp_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	return read(ep->sockfd, buf, buf_len);
 }
 
-static int tcp_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
+static int tcp_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	return write(ep->sockfd, buf, buf_len);
 }
@@ -64,7 +64,7 @@ struct io_ops *tcp_register_io_ops(void)
 	return &tcp_io_ops;
 }
 
-static int tcp_create_endpoint(struct endpoint *ep, int id)
+static int tcp_create_endpoint(struct nofuse_queue *ep, int id)
 {
 	int flags, i;
 
@@ -105,7 +105,7 @@ static int tcp_create_endpoint(struct endpoint *ep, int id)
 	return 0;
 }
 
-static void tcp_destroy_endpoint(struct endpoint *ep)
+static void tcp_destroy_endpoint(struct nofuse_queue *ep)
 {
 	if (ep->qes) {
 		free(ep->qes);
@@ -126,7 +126,7 @@ static void tcp_destroy_endpoint(struct endpoint *ep)
 	}
 }
 
-struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
+struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu,
 			      u16 ccid, u64 pos, u64 len)
 {
 	int i;
@@ -163,14 +163,14 @@ struct ep_qe *tcp_acquire_tag(struct endpoint *ep, union nvme_tcp_pdu *pdu,
 	return NULL;
 }
 
-struct ep_qe *tcp_get_tag(struct endpoint *ep, u16 tag)
+struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
 {
 	if (tag >= ep->qsize || !ep->qes[tag].busy)
 		return NULL;
 	return &ep->qes[tag];
 }
 
-void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe)
+void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	if (!qe)
 		return;
@@ -283,7 +283,7 @@ static void tcp_destroy_listener(struct nofuse_port *port)
 	port->listenfd = -1;
 }
 
-static int tcp_accept_connection(struct endpoint *ep)
+static int tcp_accept_connection(struct nofuse_queue *ep)
 {
 	struct nvme_tcp_icreq_pdu *icreq = NULL;
 	struct nvme_tcp_icresp_pdu *icrep;
@@ -429,7 +429,7 @@ static int tcp_wait_for_connection(struct nofuse_port *port)
 	return ret;
 }
 
-static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
+static int tcp_rma_read(struct nofuse_queue *ep, void *buf, u64 _len)
 {
 	int len = 0, offset = 0;
 #if 0
@@ -473,7 +473,7 @@ static int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
 	return 0;
 }
 
-static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
+static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	int len, send_pdu_len = 0;
 	bool last = qe->data_remaining == qe->iovec.iov_len;
@@ -540,7 +540,7 @@ static int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	return 0;
 }
 
-static int tcp_send_r2t(struct endpoint *ep, u16 tag)
+static int tcp_send_r2t(struct nofuse_queue *ep, u16 tag)
 {
 	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
 	struct ep_qe *qe;
@@ -582,7 +582,7 @@ static int tcp_send_r2t(struct endpoint *ep, u16 tag)
 	return 0;
 }
 
-static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
+static int tcp_send_c2h_term(struct nofuse_queue *ep, u16 fes, u8 pdu_offset,
 			     u8 parm_offset, bool hdr_digest,
 			     union nvme_tcp_pdu *pdu, int pdu_len)
 {
@@ -635,7 +635,7 @@ static int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
 	return -EPROTO;
 }
 
-static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
+static int tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 {
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
@@ -661,7 +661,7 @@ static int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp)
 	return 0;
 }
 
-static int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
+static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 {
 	u16 ttag = le16toh(pdu->data.ttag);
 	u32 data_offset = le32toh(pdu->data.data_offset);
@@ -718,7 +718,7 @@ out_rsp:
 	return tcp_send_rsp(ep, &qe->resp);
 }
 
-static int tcp_read_msg(struct endpoint *ep)
+static int tcp_read_msg(struct nofuse_queue *ep)
 {
 	u8 *msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
 	int len, msg_len;
@@ -781,7 +781,7 @@ static int tcp_read_msg(struct endpoint *ep)
 	return 0;
 }
 
-int tcp_handle_msg(struct endpoint *ep)
+int tcp_handle_msg(struct nofuse_queue *ep)
 {
 	union nvme_tcp_pdu *pdu = ep->recv_pdu;
 	struct nvme_tcp_hdr *hdr = &pdu->common;
@@ -806,7 +806,7 @@ int tcp_handle_msg(struct endpoint *ep)
 	return handle_request(ep, &pdu->cmd.cmd);
 }
 
-static int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len)
+static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len)
 {
 	tcp_info(ep, "write cid %x offset %llu len %llu",
 		  qe->ccid, qe->data_pos, data_len);

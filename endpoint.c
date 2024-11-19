@@ -19,7 +19,7 @@
 
 static int nvmf_ctrl_id = 1;
 
-int connect_queue(struct endpoint *ep, struct nofuse_subsys *subsys,
+int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		  u16 cntlid, const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl;
@@ -76,7 +76,7 @@ out_unlock:
 	return ret;
 }
 
-static void disconnect_queue(struct endpoint *ep, int shutdown)
+static void disconnect_queue(struct nofuse_queue *ep, int shutdown)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
 	int ep_num = ep->sockfd;
@@ -101,9 +101,9 @@ static void disconnect_queue(struct endpoint *ep, int shutdown)
 	}
 }
 
-static int start_queue(struct endpoint *ep, int id)
+static int start_queue(struct nofuse_queue *ep, int id)
 {
-	int			 ret;
+	int ret;
 
 	ret = ep->ops->create_endpoint(ep, id);
 	if (ret) {
@@ -125,7 +125,7 @@ retry:
 	return 0;
 }
 
-int endpoint_update_qdepth(struct endpoint *ep, int qsize)
+int endpoint_update_qdepth(struct nofuse_queue *ep, int qsize)
 {
 	struct ep_qe *qes;
 	int i;
@@ -147,7 +147,7 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize)
 	return 0;
 }
 
-static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
+static struct io_uring_sqe *endpoint_submit_poll(struct nofuse_queue *ep,
 						 int poll_flags)
 {
 	struct io_uring_sqe *sqe;
@@ -171,7 +171,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 	return sqe;
 }
 
-static int endpoint_submit_cancel(struct endpoint *ep)
+static int endpoint_submit_cancel(struct nofuse_queue *ep)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -196,7 +196,7 @@ static int endpoint_submit_cancel(struct endpoint *ep)
 
 static void pop_disconnect(void *arg)
 {
-	struct endpoint *ep = arg;
+	struct nofuse_queue *ep = arg;
 
 	ep_info(ep, "qid %d disconnect", ep->qid);
 	disconnect_queue(ep, !stopped);
@@ -204,14 +204,14 @@ static void pop_disconnect(void *arg)
 
 static void pop_uring_exit(void *arg)
 {
-	struct endpoint *ep = arg;
+	struct nofuse_queue *ep = arg;
 
 	io_uring_queue_exit(&ep->uring);
 }
 
 void *endpoint_thread(void *arg)
 {
-	struct endpoint *ep = arg;
+	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
 	sigset_t set;
 	int ret;
@@ -319,18 +319,18 @@ out_disconnect:
 	return NULL;
 }
 
-struct endpoint *create_queue(int id, struct nofuse_port *port)
+struct nofuse_queue *create_queue(int id, struct nofuse_port *port)
 {
-	struct endpoint		*ep;
-	int			 ret;
+	struct nofuse_queue *ep;
+	int ret;
 
-	ep = malloc(sizeof(struct endpoint));
+	ep = malloc(sizeof(struct nofuse_queue));
 	if (!ep) {
 		close(id);
 		return NULL;
 	}
 
-	memset(ep, 0, sizeof(struct endpoint));
+	memset(ep, 0, sizeof(struct nofuse_queue));
 
 	ep->ops = port->ops;
 	ep->port = port;
@@ -359,7 +359,7 @@ out:
 	return NULL;
 }
 
-void destroy_queue(struct endpoint *ep)
+void destroy_queue(struct nofuse_queue *ep)
 {
 	if (ep->state == CONNECTED) {
 		ep->state = STOPPED;
@@ -377,7 +377,7 @@ void destroy_queue(struct endpoint *ep)
 
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 {
-	struct endpoint *ep = NULL, *_ep;
+	struct nofuse_queue *ep = NULL, *_ep;
 
 	pthread_mutex_lock(&port->ep_mutex);
 	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
@@ -398,7 +398,7 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 
 void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl)
 {
-	struct endpoint *ep = NULL, *_ep;
+	struct nofuse_queue *ep = NULL, *_ep;
 
 	pthread_mutex_lock(&port->ep_mutex);
 	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {

@@ -25,12 +25,12 @@
 
 static unsigned char psk_cipher[2] = { 0x00, 0xaa };
 
-static int tls_ep_read(struct endpoint *ep, void *buf, size_t buf_len)
+static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	return tls_io(ep, false, buf, buf_len);
 }
 
-static int tls_ep_write(struct endpoint *ep, void *buf, size_t buf_len)
+static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	return tls_io(ep, true, buf, buf_len);
 }
@@ -109,7 +109,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	return 1;
 }
 
-int tls_handshake(struct endpoint *ep)
+int tls_handshake(struct nofuse_queue *ep)
 {
 	long ssl_opts;
 	int ret, ssl_err;
@@ -201,7 +201,7 @@ out_bio_free:
 	return ret;
 }
 
-ssize_t tls_io(struct endpoint *ep, bool is_write, void *buf, size_t buf_len)
+ssize_t tls_io(struct nofuse_queue *ep, bool is_write, void *buf, size_t buf_len)
 {
 	int ret, err;
 
@@ -289,7 +289,7 @@ int tls_global_init(void)
 	return serial;
 }
 
-void tls_free_endpoint(struct endpoint *ep)
+void tls_free_endpoint(struct nofuse_queue *ep)
 {
 	if (ep->ssl)
 		SSL_free(ep->ssl);

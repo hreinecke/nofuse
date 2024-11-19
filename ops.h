@@ -11,37 +11,37 @@
 #include <sys/socket.h>
 
 struct xp_ops {
-	int (*create_endpoint)(struct endpoint *ep, int id);
-	void (*destroy_endpoint)(struct endpoint *ep);
+	int (*create_endpoint)(struct nofuse_queue *ep, int id);
+	void (*destroy_endpoint)(struct nofuse_queue *ep);
 	int (*init_listener)(struct nofuse_port *port);
 	void (*destroy_listener)(struct nofuse_port *port);
 	int (*wait_for_connection)(struct nofuse_port *port);
-	int (*accept_connection)(struct endpoint *ep);
-	struct ep_qe *(*acquire_tag)(struct endpoint *ep,
+	int (*accept_connection)(struct nofuse_queue *ep);
+	struct ep_qe *(*acquire_tag)(struct nofuse_queue *ep,
 				     union nvme_tcp_pdu *pdu,
 				     u16 ccid, u64 pos, u64 len);
-	struct ep_qe *(*get_tag)(struct endpoint *ep, u16 tag);
-	void (*release_tag)(struct endpoint *ep, struct ep_qe *qe);
-	int (*rma_read)(struct endpoint *ep, void *buf, u64 len);
-	int (*rma_write)(struct endpoint *ep, struct ep_qe *qe, u64 len);
-	int (*prep_rma_read)(struct endpoint *ep, u16 ttag);
-	int (*send_rsp)(struct endpoint *ep, struct nvme_completion *comp);
-	int (*read_msg)(struct endpoint *ep);
-	int (*handle_msg)(struct endpoint *ep);
+	struct ep_qe *(*get_tag)(struct nofuse_queue *ep, u16 tag);
+	void (*release_tag)(struct nofuse_queue *ep, struct ep_qe *qe);
+	int (*rma_read)(struct nofuse_queue *ep, void *buf, u64 len);
+	int (*rma_write)(struct nofuse_queue *ep, struct ep_qe *qe, u64 len);
+	int (*prep_rma_read)(struct nofuse_queue *ep, u16 ttag);
+	int (*send_rsp)(struct nofuse_queue *ep, struct nvme_completion *comp);
+	int (*read_msg)(struct nofuse_queue *ep);
+	int (*handle_msg)(struct nofuse_queue *ep);
 };
 
 struct xp_ops *tcp_register_ops(void);
 
 struct ns_ops {
-	int (*ns_read)(struct endpoint *ep, struct ep_qe *qe);
-	int (*ns_write)(struct endpoint *ep, struct ep_qe *qe);
-	int (*ns_prep_read)(struct endpoint *ep, struct ep_qe *qe);
-	int (*ns_handle_qe)(struct endpoint *ep, struct ep_qe *qe, int res);
+	int (*ns_read)(struct nofuse_queue *ep, struct ep_qe *qe);
+	int (*ns_write)(struct nofuse_queue *ep, struct ep_qe *qe);
+	int (*ns_prep_read)(struct nofuse_queue *ep, struct ep_qe *qe);
+	int (*ns_handle_qe)(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 };
 
 struct io_ops {
-	int (*io_read)(struct endpoint *ep, void *buf, size_t buf_len);
-	int (*io_write)(struct endpoint *ep, void *buf, size_t buf_len);
+	int (*io_read)(struct nofuse_queue *ep, void *buf, size_t buf_len);
+	int (*io_write)(struct nofuse_queue *ep, void *buf, size_t buf_len);
 };
 
 struct ns_ops *null_register_ops(void);

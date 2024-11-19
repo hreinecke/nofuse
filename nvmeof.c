@@ -21,7 +21,7 @@
 
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
 
-static int send_response(struct endpoint *ep, struct ep_qe *qe,
+static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
 			 u16 status)
 {
 	int ret;
@@ -32,7 +32,7 @@ static int send_response(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int handle_property_set(struct endpoint *ep, struct ep_qe *qe,
+static int handle_property_set(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	int ret = 0;
@@ -56,7 +56,7 @@ static int handle_property_set(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int handle_property_get(struct endpoint *ep, struct ep_qe *qe,
+static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	u64 value;
@@ -82,7 +82,7 @@ static int handle_property_get(struct endpoint *ep, struct ep_qe *qe,
 	return 0;
 }
 
-static int handle_set_features(struct endpoint *ep, struct ep_qe *qe,
+static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	u32 cdw10 = le32toh(cmd->common.cdw10);
@@ -119,7 +119,7 @@ static int handle_set_features(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
+static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			  struct nvme_command *cmd)
 {
 	struct nofuse_subsys *subsys = NULL, *_subsys;
@@ -208,7 +208,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
+static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 {
 	struct nvme_id_ctrl id;
 	int ret;
@@ -259,7 +259,8 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	return len;
 }
 
-static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len)
+static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
+			      u8 *id_buf, u64 len)
 {
 	struct nofuse_namespace *ns = NULL, *_ns;
 	struct nvme_id_ns id;
@@ -306,7 +307,8 @@ static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len
 	return len;
 }
 
-static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
+static int handle_identify_active_ns(struct nofuse_queue *ep,
+				     u8 *id_buf, u64 len)
 {
 	struct nofuse_namespace *ns;
 	u8 *ns_list = id_buf;
@@ -328,7 +330,8 @@ static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
 	return id_len;
 }
 
-static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_list, u64 len)
+static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
+					u8 *desc_list, u64 len)
 {
 	int desc_len = len, ret;
 	char uuid_str[37];
@@ -356,7 +359,7 @@ static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_
 	return desc_len;
 }
 
-static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
+static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
 {
 	u8 cns = cmd->identify.cns;
@@ -405,8 +408,8 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int format_disc_log(void *data, u64 data_offset,
-			   u64 data_len, struct endpoint *ep)
+static int format_disc_log(struct nofuse_queue *ep,
+			   void *data, u64 data_offset, u64 data_len)
 {
 	int len, log_len, genctr, num_recs = 0, ret;
 	u8 *log_buf;
@@ -463,8 +466,8 @@ static int format_disc_log(void *data, u64 data_offset,
 	return log_len;
 }
 
-static int format_ana_log(void *data, u64 data_offset,
-			  u64 data_len, struct endpoint *ep)
+static int format_ana_log(struct nofuse_queue *ep,
+			  void *data, u64 data_offset, u64 data_len)
 {
 	unsigned int len, log_len;
 	u8 *log_buf;
@@ -513,7 +516,7 @@ static int format_ana_log(void *data, u64 data_offset,
 	return log_len;
 }
 
-static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
+static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	int ret = 0, log_len;
@@ -532,8 +535,8 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		break;
 	case 0x0c:
 		/* ANA Log */
-		log_len = format_ana_log(qe->data, qe->data_pos,
-					 qe->data_len, ep);
+		log_len = format_ana_log(ep, qe->data, qe->data_pos,
+					 qe->data_len);
 		if (!log_len) {
 			ctrl_err(ep, "get_log_page: ana log failed");
 			return NVME_SC_INTERNAL;
@@ -541,8 +544,8 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		break;
 	case 0x70:
 		/* Discovery log */
-		log_len = format_disc_log(qe->data, qe->data_pos,
-					  qe->data_len, ep);
+		log_len = format_disc_log(ep, qe->data, qe->data_pos,
+					  qe->data_len);
 		if (!log_len) {
 			ctrl_err(ep, "get_log_page: discovery log failed");
 			return NVME_SC_INTERNAL;
@@ -560,7 +563,7 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int handle_read(struct endpoint *ep, struct ep_qe *qe,
+static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		       struct nvme_command *cmd)
 {
 	struct nofuse_namespace *ns;
@@ -595,7 +598,7 @@ static int handle_read(struct endpoint *ep, struct ep_qe *qe,
 	return ns->ops->ns_read(ep, qe);
 }
 
-static int handle_write(struct endpoint *ep, struct ep_qe *qe,
+static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_command *cmd)
 {
 	struct nofuse_namespace *ns;
@@ -648,7 +651,7 @@ static int handle_write(struct endpoint *ep, struct ep_qe *qe,
 	return ret;
 }
 
-int handle_request(struct endpoint *ep, struct nvme_command *cmd)
+int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 {
 	struct ep_qe *qe;
 	u32 len;
@@ -728,7 +731,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	return send_response(ep, qe, ret);
 }
 
-int handle_data(struct endpoint *ep, struct ep_qe *qe, int res)
+int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 {
 	return qe->ns->ops->ns_handle_qe(ep, qe, res);
 }
