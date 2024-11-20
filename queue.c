@@ -80,7 +80,6 @@ out_unlock:
 static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
-	int ep_num = ep->sockfd;
 	struct nofuse_subsys *subsys;
 
 	ep->ops->destroy_queue(ep);
@@ -95,8 +94,8 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	ctrl->num_queues--;
 	ep->ctrl = NULL;
 	if (!ctrl->num_queues) {
-		printf("ep %d: deleting controller %u\n",
-		       ep_num, ctrl->cntlid);
+		printf("ctrl %u qid %d: deleting controller\n",
+		       ctrl->cntlid, ep->qid);
 		list_del(&ctrl->node);
 		free(ctrl);
 	}
@@ -201,7 +200,6 @@ static void pop_disconnect(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 
-	ep_info(ep, "qid %d disconnect", ep->qid);
 	disconnect_queue(ep);
 }
 
