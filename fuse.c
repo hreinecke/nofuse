@@ -86,12 +86,7 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	ret = configdb_stat_subsys_port(subsys, portid, stbuf);
-	if (ret < 0)
-		fuse_err("%s: subsys %s portid %d stat error %d",
-			 __func__, subsys, portid, ret);
-
-	return ret;
+	return configdb_stat_subsys_port(subsys, portid, stbuf);
 }
 
 static int port_ana_groups_getattr(const char *port, const char *ana_grp,
