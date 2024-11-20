@@ -130,6 +130,12 @@ int add_namespace(const char *subsysnqn, int nsid)
 		free(ns);
 		return ret;
 	}
+	ret = configdb_set_namespace_anagrp(subsysnqn, ns->nsid, 1);
+	if (ret < 0) {
+		configdb_del_namespace(subsysnqn, ns->nsid);
+		free(ns);
+		return ret;
+	}
 	INIT_LINKED_LIST(&ns->node);
 	list_add_tail(&ns->node, &device_linked_list);
 	printf("%s: subsys %s nsid %d\n", __func__, subsysnqn, nsid);

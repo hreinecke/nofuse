@@ -399,8 +399,8 @@ static int tcp_wait_for_connection(struct nofuse_port *port)
 
 		FD_ZERO(&rfd);
 		FD_SET(port->listenfd, &rfd);
-		tmo.tv_sec = 1;
-		tmo.tv_usec = 0;
+		tmo.tv_sec = (KATO_INTERVAL / 1000);
+		tmo.tv_usec = (KATO_INTERVAL % 1000) * 1000;
 		ret = select(port->listenfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
 			port_err(port, "select error %d", errno);
