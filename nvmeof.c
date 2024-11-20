@@ -707,7 +707,7 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 			return 0;
 	} else if (cmd->common.opcode == nvme_admin_keep_alive) {
 		ctrl_info(ep, "nvme_keep_alive");
-		kato_reset_counter(ep->port, ep->ctrl);
+		kato_reset_counter(ep->ctrl);
 		ret = 0;
 	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
 		ret = handle_get_log_page(ep, qe, cmd);

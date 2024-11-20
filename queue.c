@@ -63,6 +63,7 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 	ctrl->num_queues = 1;
 	ctrl->subsys = subsys;
 	ctrl->cntlid = nvmf_ctrl_id++;
+	ctrl->kato_countdown = RETRY_COUNT;
 	if (subsys->type == NVME_NQN_CUR) {
 		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
 		ep->qsize = NVMF_DQ_DEPTH;
@@ -247,16 +248,9 @@ void *queue_thread(void *arg)
 		}
 
 		ret = io_uring_wait_cqe_timeout(&ep->uring, &cqe, &ts);
-		if (ret < 0) {
-			if (ret == -ETIME && --ep->kato_countdown) {
-				ep_err(ep, "qid %d wait cqe retry %d",
-				       ep->qid, ep->kato_countdown);
-				continue;
-			}
-			ep_err(ep, "qid %d wait cqe error %d",
-			       ep->qid, ret);
-			break;
-		}
+		if (ret < 0)
+			goto skip_cqe;
+
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
 		if (cqe_data == ep) {
@@ -273,6 +267,8 @@ void *queue_thread(void *arg)
 			pollin_sqe = NULL;
 			if (ep->recv_state == RECV_PDU) {
 				ret = ep->ops->read_msg(ep);
+				if (!ret && ep->ctrl)
+					kato_reset_counter(ep->ctrl);
 			}
 			if (!ret && ep->recv_state == HANDLE_PDU) {
 				ret = ep->ops->handle_msg(ep);
@@ -281,21 +277,28 @@ void *queue_thread(void *arg)
 					ep->recv_state = RECV_PDU;
 				}
 			}
-			if (!ret || ret == -EAGAIN) {
-				if (ep->ctrl)
-					ep->kato_countdown = ep->ctrl->kato;
-				else
-					ep->kato_countdown = RETRY_COUNT;
-			}
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
 			ret = handle_data(ep, qe, cqe->res);
 		} else {
 			ctrl_err(ep, "cancel cqe");
 		}
-		if (ret == -EAGAIN)
-			if (--ep->kato_countdown > 0)
-				continue;
+	skip_cqe:
+		if (ret == -EAGAIN || ret == -ETIME) {
+			if (!ep->ctrl) {
+				ep_err(ep, "qid %d no controller timeout",
+				       ep->qid);
+			} else {
+				if (ep->qid != 0) {
+					if (ep->ctrl->kato_countdown)
+						continue;
+				} else {
+					if (--ep->ctrl->kato_countdown > 0)
+						continue;
+					ctrl_err(ep, "kato timeout");
+				}
+			}
+		}
 		/*
 		 * ->read_msg returns -ENODATA when the connection
 		 * is closed; that shouldn't count as an error.
@@ -305,8 +308,9 @@ void *queue_thread(void *arg)
 			break;
 		}
 		if (ret < 0) {
-			ctrl_err(ep, "error %d retry %d",
-				 ret, ep->kato_countdown);
+			int retry = ep->ctrl ?
+				ep->ctrl->kato_countdown : RETRY_COUNT;
+			ctrl_err(ep, "error %d retry %d", ret, retry);
 			break;
 		}
 	}
@@ -335,7 +339,6 @@ struct nofuse_queue *create_queue(int id, struct nofuse_port *port)
 
 	ep->ops = port->ops;
 	ep->port = port;
-	ep->kato_countdown = RETRY_COUNT;
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
@@ -393,19 +396,6 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
 			continue;
 		destroy_queue(ep);
-	}
-	pthread_mutex_unlock(&port->ep_mutex);
-}
-
-void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl)
-{
-	struct nofuse_queue *ep = NULL, *_ep;
-
-	pthread_mutex_lock(&port->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
-		if (ep->ctrl != ctrl)
-			continue;
-		ep->kato_countdown = ep->ctrl->kato;
 	}
 	pthread_mutex_unlock(&port->ep_mutex);
 }

@@ -115,7 +115,6 @@ struct nofuse_queue {
 	int qsize;
 	int state;
 	int qid;
-	int kato_countdown;
 	int kato_interval;
 	int sockfd;
 	int maxr2t;
@@ -137,6 +136,7 @@ struct nofuse_ctrl {
 	int cntlid;
 	int ctrl_type;
 	int kato;
+	int kato_countdown;
 	int num_queues;
 	int max_queues;
 	int aen_mask;
@@ -242,6 +242,11 @@ static inline void set_response(struct nvme_completion *resp,
 	resp->status = ((dnr ? NVME_SC_DNR : 0) | status) << 1;
 }
 
+static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)
+{
+	ctrl->kato_countdown = ctrl->kato;
+}
+
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
@@ -251,7 +256,6 @@ struct nofuse_queue *create_queue(int id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
 void *queue_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
-void kato_reset_counter(struct nofuse_port *port, struct nofuse_ctrl *ctrl);
 
 struct nofuse_subsys *find_subsys(const char *nqn);
 int add_subsys(const char *nqn);
