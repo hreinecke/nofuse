@@ -76,7 +76,7 @@ out_unlock:
 	return ret;
 }
 
-static void disconnect_queue(struct nofuse_queue *ep, int shutdown)
+static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
 	int ep_num = ep->sockfd;
@@ -200,7 +200,7 @@ static void pop_disconnect(void *arg)
 	struct nofuse_queue *ep = arg;
 
 	ep_info(ep, "qid %d disconnect", ep->qid);
-	disconnect_queue(ep, !stopped);
+	disconnect_queue(ep);
 }
 
 static void pop_uring_exit(void *arg)
