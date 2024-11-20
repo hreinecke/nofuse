@@ -345,9 +345,9 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 
 out_free:
 	free(pathbuf);
-	if (res != 0)
-		fuse_err("%s: path %s error %d",
-			 __func__, path, res);
+	if (res < 0)
+		fuse_info("%s: path %s error %d",
+			  __func__, path, res);
 	return res;
 }
 
