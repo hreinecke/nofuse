@@ -432,29 +432,8 @@ static int tcp_wait_for_connection(struct nofuse_port *port)
 static int tcp_rma_read(struct nofuse_queue *ep, void *buf, u64 _len)
 {
 	int len = 0, offset = 0;
-#if 0
-	struct pollfd fds;
 
-	fds.fd = ep->sockfd;
-	fds.events = POLLIN | POLLERR;
-#endif
 	while (offset < _len) {
-#if 0
-		int ret;
-		struct pollfd fds;
-
-		ret = poll(&fds, 1, ep->kato_interval);
-		if (ret <= 0) {
-			if (ret < 0) {
-				tcp_err(ep, "poll returned %d", errno);
-				return -errno;
-			}
-			if (--ep->kato_countdown > 0)
-				continue;
-			tcp_err(ep, "poll timeout");
-			return -ETIMEDOUT;
-		}
-#endif
 		tcp_info(ep, "recv %llu data bytes",
 			_len - offset);
 		len = ep->io_ops->io_read(ep, (u8 *)buf + offset,
