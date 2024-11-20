@@ -80,7 +80,6 @@ enum { CONNECTED, STOPPED, DISCONNECTED };
 extern int stopped;
 
 struct ep_qe {
-	struct linked_list node;
 	int tag;
 	struct nofuse_queue *ep;
 	struct nofuse_namespace *ns;

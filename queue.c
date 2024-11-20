@@ -143,7 +143,6 @@ int queue_update_qdepth(struct nofuse_queue *ep, int qsize)
 	for (i = 0; i <= qsize; i++) {
 		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
-		INIT_LINKED_LIST(&ep->qes[i].node);
 	}
 	ep->qsize = qsize + 1;
 	return 0;
