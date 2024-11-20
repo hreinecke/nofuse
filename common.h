@@ -252,7 +252,7 @@ int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
 int queue_update_qdepth(struct nofuse_queue *ep, int qsize);
-struct nofuse_queue *create_queue(int id, struct nofuse_port *port);
+struct nofuse_queue *create_queue(int conn, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
 void *queue_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);

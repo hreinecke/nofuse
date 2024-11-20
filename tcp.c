@@ -64,11 +64,11 @@ struct io_ops *tcp_register_io_ops(void)
 	return &tcp_io_ops;
 }
 
-static int tcp_create_queue(struct nofuse_queue *ep, int id)
+static int tcp_create_queue(struct nofuse_queue *ep, int conn)
 {
 	int flags, i;
 
-	ep->sockfd = id;
+	ep->sockfd = conn;
 
 	flags = fcntl(ep->sockfd, F_GETFL);
 	fcntl(ep->sockfd, F_SETFL, flags | O_NONBLOCK);

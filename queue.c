@@ -81,35 +81,36 @@ static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
 	int ep_num = ep->sockfd;
+	struct nofuse_subsys *subsys;
 
 	ep->ops->destroy_queue(ep);
 
 	ep->state = DISCONNECTED;
+	if (!ctrl)
+		return;
 
-	if (ctrl) {
-		struct nofuse_subsys *subsys = ctrl->subsys;
-
-		pthread_mutex_lock(&subsys->ctrl_mutex);
-		ctrl->num_queues--;
-		ep->ctrl = NULL;
-		if (!ctrl->num_queues) {
-			printf("ep %d: deleting controller %u\n",
-			       ep_num, ctrl->cntlid);
-			list_del(&ctrl->node);
-			free(ctrl);
-		}
-		pthread_mutex_unlock(&subsys->ctrl_mutex);
+	subsys = ctrl->subsys;
+	ctrl_info(ep, "disconnect queue");
+	pthread_mutex_lock(&subsys->ctrl_mutex);
+	ctrl->num_queues--;
+	ep->ctrl = NULL;
+	if (!ctrl->num_queues) {
+		printf("ep %d: deleting controller %u\n",
+		       ep_num, ctrl->cntlid);
+		list_del(&ctrl->node);
+		free(ctrl);
 	}
+	pthread_mutex_unlock(&subsys->ctrl_mutex);
 }
 
-static int start_queue(struct nofuse_queue *ep, int id)
+static int start_queue(struct nofuse_queue *ep, int conn)
 {
 	int ret;
 
-	ret = ep->ops->create_queue(ep, id);
+	ret = ep->ops->create_queue(ep, conn);
 	if (ret) {
 		fprintf(stderr, "ep %d: Failed to create queue, error %d",
-			id, ret);
+			conn, ret);
 		return ret;
 	}
 
@@ -211,12 +212,30 @@ static void pop_uring_exit(void *arg)
 	io_uring_queue_exit(&ep->uring);
 }
 
+static void pop_free(void *arg)
+{
+	struct nofuse_queue *ep = arg;
+	struct nofuse_port *port = ep->port;
+
+	if (!port) {
+		ep_err(ep, "no port set");
+		return;
+	}
+	ep_info(ep, "destroy queue");
+	pthread_mutex_lock(&port->ep_mutex);
+	list_del(&ep->node);
+	pthread_mutex_unlock(&port->ep_mutex);
+	free(ep);
+}
+
 void *queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
 	sigset_t set;
 	int ret;
+
+	pthread_cleanup_push(pop_free, ep);
 
 	sigemptyset(&set);
 	sigaddset(&set, SIGPIPE);
@@ -319,19 +338,21 @@ void *queue_thread(void *arg)
 out_disconnect:
 	pthread_cleanup_pop(1);
 
+	pthread_cleanup_pop(1);
+
 	pthread_exit(NULL);
 
 	return NULL;
 }
 
-struct nofuse_queue *create_queue(int id, struct nofuse_port *port)
+struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 {
 	struct nofuse_queue *ep;
 	int ret;
 
 	ep = malloc(sizeof(struct nofuse_queue));
 	if (!ep) {
-		close(id);
+		close(conn);
 		return NULL;
 	}
 
@@ -346,9 +367,9 @@ struct nofuse_queue *create_queue(int id, struct nofuse_port *port)
 	ep->io_ops = tcp_register_io_ops();
 	INIT_LINKED_LIST(&ep->node);
 
-	ret = start_queue(ep, id);
+	ret = start_queue(ep, conn);
 	if (ret) {
-		fprintf(stderr, "ep %d: failed to start queue", id);
+		fprintf(stderr, "ep %d: failed to start queue", conn);
 		goto out;
 	}
 
@@ -359,7 +380,7 @@ struct nofuse_queue *create_queue(int id, struct nofuse_port *port)
 	return ep;
 out:
 	free(ep);
-	close(id);
+	close(conn);
 	return NULL;
 }
 
@@ -369,10 +390,9 @@ void destroy_queue(struct nofuse_queue *ep)
 		ep->state = STOPPED;
 		queue_submit_cancel(ep);
 	}
+	ep_info(ep, "destroy queue");
 	if (ep->pthread) {
-		ep_info(ep, "destroy queue");
 		pthread_cancel(ep->pthread);
-		pthread_join(ep->pthread, NULL);
 		ep->pthread = 0;
 	}
 	list_del(&ep->node);
