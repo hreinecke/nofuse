@@ -27,7 +27,6 @@
 #include "tls.h"
 #include "configdb.h"
 
-LINKED_LIST(subsys_linked_list);
 LINKED_LIST(device_linked_list);
 
 int stopped;
@@ -48,66 +47,12 @@ char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
 extern int run_fuse(struct fuse_args *args);
 
-struct nofuse_subsys *find_subsys(const char *nqn)
+int default_subsys_type(const char *nqn)
 {
-	struct nofuse_subsys *subsys = NULL;
-
-	list_for_each_entry(subsys, &subsys_linked_list, node) {
-		if (!strcmp(nqn, NVME_DISC_SUBSYS_NAME) &&
-		    subsys->type == NVME_NQN_CUR)
-			return subsys;
-		if (!strcmp(nqn, subsys->nqn))
-			return subsys;
-	}
-	return NULL;
-}
-
-int add_subsys(const char *nqn)
-{
-	struct nofuse_subsys *subsys;
-	int ret;
-
-	subsys = find_subsys(nqn);
-	if (subsys)
-		return -EEXIST;
-	subsys = malloc(sizeof(*subsys));
-	if (!subsys)
-		return -ENOMEM;
-	memset(subsys, 0, sizeof(*subsys));
-	if (!strcmp(nqn, discovery_nqn)) {
-		subsys->type = NVME_NQN_CUR;
-		subsys->allow_any = 1;
-	} else {
-		subsys->type = NVME_NQN_NVM;
-		subsys->allow_any = 0;
-	}
-	strcpy(subsys->nqn, nqn);
-	ret = configdb_add_subsys(subsys);
-	if (ret < 0) {
-		free(subsys);
-		return ret;
-	}
-
-	printf("creating %s subsys %s\n",
-	       subsys->type == NVME_NQN_CUR ? "discovery" : "nvm",
-	       subsys->nqn);
-	INIT_LINKED_LIST(&subsys->node);
-	list_add(&subsys->node, &subsys_linked_list);
-
-	return ret;
-}
-
-int del_subsys(struct nofuse_subsys *subsys)
-{
-	int ret;
-
-	printf("deleting subsys %s\n", subsys->nqn);
-	ret = configdb_del_subsys(subsys);
-	if (ret < 0)
-		return ret;
-	list_del(&subsys->node);
-	free(subsys);
-	return ret;
+	if (!strcmp(nqn, discovery_nqn))
+		return NVME_NQN_CUR;
+	else
+		return NVME_NQN_NVM;
 }
 
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid)
@@ -264,20 +209,15 @@ int del_namespace(const char *subsysnqn, u32 nsid)
 
 static int init_subsys(struct nofuse_context *ctx)
 {
-	struct nofuse_subsys *subsys;
 	struct nofuse_port *port;
 	int ret;
 
-	ret = add_subsys(ctx->subsysnqn);
+	ret = configdb_add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
 	if (ret)
 		return ret;
 
-	subsys = find_subsys(ctx->subsysnqn);
-	if (!subsys)
-		return -ENOENT;
-
 	list_for_each_entry(port, &port_linked_list, node) {
-		configdb_add_subsys_port(subsys->nqn, port->portid);
+		configdb_add_subsys_port(ctx->subsysnqn, port->portid);
 	}
 
 	return 0;
@@ -381,15 +321,6 @@ void free_ports(void)
 		del_port(port);
 }
 
-void free_subsys(void)
-{
-	struct nofuse_subsys *subsys, *_subsys;
-
-	list_for_each_entry_safe(subsys, _subsys, &subsys_linked_list, node) {
-		del_subsys(subsys);
-	}
-}
-
 int main(int argc, char *argv[])
 {
 	int ret = 1;
@@ -429,8 +360,6 @@ int main(int argc, char *argv[])
 	free_ports();
 
 	free_devices();
-
-	free_subsys();
 out_close:
 	configdb_close(ctx->dbname);
 

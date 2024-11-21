@@ -22,7 +22,7 @@ int configdb_stat_host(const char *nqn, struct stat *stbuf);
 int configdb_fill_host_dir(void *buf, fuse_fill_dir_t filler);
 int configdb_del_host(const char *nqn);
 
-int configdb_add_subsys(struct nofuse_subsys *subsys);
+int configdb_add_subsys(const char *nqn, int type);
 int configdb_get_discovery_nqn(char *nqn);
 int configdb_set_discovery_nqn(const char *nqn);
 int configdb_stat_subsys(const char *nqn, struct stat *stbuf);
@@ -30,7 +30,7 @@ int configdb_fill_subsys_dir(void *buf, fuse_fill_dir_t filler);
 int configdb_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf);
 int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf);
-int configdb_del_subsys(struct nofuse_subsys *subsys);
+int configdb_del_subsys(const char *nqn);
 
 int configdb_add_namespace(const char *subsysnqn, u32 nsid);
 int configdb_count_namespaces(const char *subsysnqn, int *num);

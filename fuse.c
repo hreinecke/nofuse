@@ -578,8 +578,14 @@ static int subsys_mkdir(const char *subsysnqn)
 	u32 nsid;
 
 	p = strtok(NULL, "/");
-	if (!p)
-		return add_subsys(subsysnqn);
+	if (!p) {
+		int type = default_subsys_type(subsysnqn);
+
+		printf("creating %s subsys %s\n",
+		       type == NVME_NQN_NVM ? "nvm" : "cur",
+		       subsysnqn);
+		return configdb_add_subsys(subsysnqn, type);
+	}
 
 	if (strcmp(p, "namespaces"))
 		return -ENOENT;
@@ -688,11 +694,8 @@ static int subsys_rmdir(const char *subsysnqn)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		struct nofuse_subsys *subsys = find_subsys(subsysnqn);
-		if (!subsys)
-			return -ENOENT;
-
-		return del_subsys(subsys);
+		printf("deleting subsys %s\n", subsysnqn);
+		return configdb_del_subsys(subsysnqn);
 	}
 	if (strcmp(p, "namespaces"))
 		return -ENOENT;

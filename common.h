@@ -158,14 +158,6 @@ struct nofuse_port {
 	bool tls;
 };
 
-struct nofuse_subsys {
-	struct linked_list node;
-	char nqn[MAX_NQN_SIZE + 1];
-	int type;
-	int max_namespaces;
-	bool allow_any;
-};
-
 #define ep_info(e, f, x...)				\
 	if (ep_debug) {					\
 		printf("ep %d: " f "\n",		\
@@ -246,9 +238,7 @@ void destroy_queue(struct nofuse_queue *ep);
 void *queue_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
-struct nofuse_subsys *find_subsys(const char *nqn);
-int add_subsys(const char *nqn);
-int del_subsys(struct nofuse_subsys *subsys);
+int default_subsys_type(const char *nqn);
 
 int add_port(unsigned int id, const char *ifaddr, int portnum);
 struct nofuse_port *find_port(unsigned int id);

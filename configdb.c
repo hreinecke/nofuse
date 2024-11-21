@@ -402,13 +402,15 @@ static char add_subsys_sql[] =
 	"(nqn, attr_model, attr_version, attr_ieee_oui, attr_firmware, attr_allow_any_host, attr_type, ctime) "
 	"VALUES ('%s', 'nofuse', '2.0', '851255', '%s', '%d', '%d', CURRENT_TIMESTAMP);";
 
-int configdb_add_subsys(struct nofuse_subsys *subsys)
+int configdb_add_subsys(const char *subsysnqn, int type)
 {
 	char *sql;
-	int ret;
+	int ret, allow_any = 0;
 
-	ret = asprintf(&sql, add_subsys_sql, subsys->nqn,
-		       firmware_rev, subsys->allow_any, subsys->type);
+	if (type == NVME_NQN_CUR)
+		allow_any = 1;
+	ret = asprintf(&sql, add_subsys_sql, subsysnqn,
+		       firmware_rev, allow_any, type);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -565,12 +567,12 @@ int configdb_set_subsys_attr(const char *nqn, const char *attr,
 static char del_subsys_sql[] =
 	"DELETE FROM subsystems WHERE nqn = '%s';";
 
-int configdb_del_subsys(struct nofuse_subsys *subsys)
+int configdb_del_subsys(const char *nqn)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, del_subsys_sql, subsys->nqn);
+	ret = asprintf(&sql, del_subsys_sql, nqn);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
