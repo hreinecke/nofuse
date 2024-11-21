@@ -122,7 +122,6 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			  struct nvme_command *cmd)
 {
-	struct nofuse_subsys *subsys = NULL, *_subsys;
 	struct nvmf_connect_data *connect = qe->data;
 	u16 sqsize;
 	u16 cntlid, qid;
@@ -170,25 +169,7 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	ep->qid = qid;
 
-	list_for_each_entry(_subsys, &subsys_linked_list, node) {
-		if (!strcmp(connect->subsysnqn, _subsys->nqn)) {
-			subsys = _subsys;
-			break;
-		}
-		if (_subsys->type == NVME_NQN_CUR &&
-		    !strcmp(connect->subsysnqn, NVME_DISC_SUBSYS_NAME)) {
-			subsys = _subsys;
-			break;
-		}
-	}
-	if (!subsys) {
-		ctrl_err(ep, "subsystem '%s' not found",
-			  connect->subsysnqn);
-		return NVME_SC_CONNECT_INVALID_HOST;
-	}
-
-	ret = connect_queue(ep, subsys, cntlid,
-			    connect->hostnqn, connect->subsysnqn);
+	ret = connect_queue(ep, cntlid, connect->hostnqn, connect->subsysnqn);
 	if (!ret) {
 		ctrl_info(ep, "connected");
 		if (qid == 0) {
@@ -217,12 +198,12 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 
 	memcpy(id.fr, firmware_rev, sizeof(id.fr));
 	memset(id.mn, ' ', sizeof(id.mn));
+	memset(id.sn, ' ', sizeof(id.sn));
 
 	id.mdts = 0;
 	id.cmic = NVME_CTRL_CMIC_MULTI_PORT | NVME_CTRL_CMIC_MULTI_CTRL |
 		NVME_CTRL_CMIC_ANA;
 	id.cntlid = htole16(ep->ctrl->cntlid);
-	id.ver = htole32(NVME_VER);
 	id.lpa = (1 << 2);
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
 	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */

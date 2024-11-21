@@ -1721,7 +1721,9 @@ static int subsys_identify_ctrl_cb(void *p, int argc, char **argv, char **col)
 		} else if (!strcmp(col[i], "firmware")) {
 			strcpy(id->fr, argv[i]);
 		} else if (!strcmp(col[i], "model")) {
-			strcpy(id->mn, argv[i]);
+			memcpy(id->mn, argv[i], strlen(argv[i]));
+		} else if (!strcmp(col[i], "serial")) {
+			memcpy(id->sn, argv[i], strlen(argv[i]));
 		} else if (!strcmp(col[i], "ieee_oui")) {
 			u32 oui, oui_le;
 			char *eptr = NULL;

@@ -43,7 +43,6 @@ extern bool port_debug;
 extern bool fuse_debug;
 
 extern struct linked_list device_linked_list;
-extern struct linked_list subsys_linked_list;
 extern struct linked_list port_linked_list;
 
 #define NVMF_DQ_DEPTH		2
@@ -127,7 +126,6 @@ struct nofuse_ctrl {
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
 	int cntlid;
-	int ctrl_type;
 	int kato;
 	int kato_countdown;
 	int num_queues;
@@ -240,8 +238,8 @@ static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)
 
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
-int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
-		     u16 cntlid, const char *hostnqn, const char *subsysnqn);
+int connect_queue(struct nofuse_queue *ep, u16 cntlid,
+		  const char *hostnqn, const char *subsysnqn);
 int queue_update_qdepth(struct nofuse_queue *ep, int qsize);
 struct nofuse_queue *create_queue(int conn, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);

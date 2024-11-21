@@ -22,8 +22,8 @@ pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int nvmf_ctrl_id = 1;
 
-int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
-		  u16 cntlid, const char *hostnqn, const char *subsysnqn)
+int connect_queue(struct nofuse_queue *ep, u16 cntlid,
+		  const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl;
 	int ret = 0;
@@ -44,10 +44,10 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		goto out_unlock;
 	}
 
-	if (configdb_check_allowed_host(hostnqn, subsys->nqn,
+	if (configdb_check_allowed_host(hostnqn, subsysnqn,
 				     ep->port->portid) <= 0) {
 		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
-		       hostnqn, subsys->nqn);
+		       hostnqn, subsysnqn);
 		ret = -EPERM;
 		goto out_unlock;
 	}
@@ -66,12 +66,6 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 	ctrl->num_queues = 1;
 	ctrl->cntlid = nvmf_ctrl_id++;
 	ctrl->kato_countdown = RETRY_COUNT;
-	if (subsys->type == NVME_NQN_CUR) {
-		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_DISC;
-		ep->qsize = NVMF_DQ_DEPTH;
-	} else {
-		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
-	}
 	INIT_LINKED_LIST(&ctrl->node);
 	list_add(&ctrl->node, &ctrl_linked_list);
 out_unlock:
