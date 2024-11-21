@@ -28,7 +28,7 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 	pthread_mutex_lock(&subsys->ctrl_mutex);
 	if (cntlid < NVME_CNTLID_MAX) {
 		list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
-			if (!strcmp(hostnqn, ctrl->nqn)) {
+			if (!strcmp(hostnqn, ctrl->hostnqn)) {
 				if (ctrl->cntlid != cntlid)
 					continue;
 				ep->ctrl = ctrl;
@@ -57,7 +57,7 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		goto out_unlock;
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
-	strcpy(ctrl->nqn, hostnqn);
+	strcpy(ctrl->hostnqn, hostnqn);
 	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
 	ctrl->num_queues = 1;

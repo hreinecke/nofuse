@@ -409,7 +409,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 	struct nvmf_disc_rsp_page_hdr *log_hdr;
 	struct nvmf_disc_rsp_page_entry *log_ptr;
 
-	len = configdb_host_disc_entries(ep->ctrl->nqn, NULL, 0);
+	len = configdb_host_disc_entries(ep->ctrl->hostnqn, NULL, 0);
 	if (len < 0) {
 		ctrl_err(ep, "error formatting discovery log page");
 		return -1;
@@ -427,7 +427,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 	log_ptr = log_hdr->entries;
 
 	if (num_recs) {
-		len = configdb_host_disc_entries(ep->ctrl->nqn,
+		len = configdb_host_disc_entries(ep->ctrl->hostnqn,
 					      (u8 *)log_ptr, len);
 		if (len < 0) {
 			ctrl_err(ep, "error fetching discovery log entries");
@@ -435,7 +435,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 		}
 	}
 
-	ret = configdb_host_genctr(ep->ctrl->nqn, &genctr);
+	ret = configdb_host_genctr(ep->ctrl->hostnqn, &genctr);
 	if (ret < 0) {
 		ctrl_err(ep, "error retrieving genctr");
 		genctr = 0;
