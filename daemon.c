@@ -91,9 +91,7 @@ int add_subsys(const char *nqn)
 	printf("creating %s subsys %s\n",
 	       subsys->type == NVME_NQN_CUR ? "discovery" : "nvm",
 	       subsys->nqn);
-	pthread_mutex_init(&subsys->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&subsys->node);
-	INIT_LINKED_LIST(&subsys->ctrl_list);
 	list_add(&subsys->node, &subsys_linked_list);
 
 	return ret;
@@ -108,7 +106,6 @@ int del_subsys(struct nofuse_subsys *subsys)
 	if (ret < 0)
 		return ret;
 	list_del(&subsys->node);
-	pthread_mutex_destroy(&subsys->ctrl_mutex);
 	free(subsys);
 	return ret;
 }

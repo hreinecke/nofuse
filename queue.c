@@ -17,6 +17,9 @@
 #include "ops.h"
 #include "configdb.h"
 
+LINKED_LIST(ctrl_linked_list);
+pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static int nvmf_ctrl_id = 1;
 
 int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
@@ -25,9 +28,9 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 	struct nofuse_ctrl *ctrl;
 	int ret = 0;
 
-	pthread_mutex_lock(&subsys->ctrl_mutex);
+	pthread_mutex_lock(&ctrl_list_mutex);
 	if (cntlid < NVME_CNTLID_MAX) {
-		list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
+		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
 			if (!strcmp(hostnqn, ctrl->hostnqn)) {
 				if (ctrl->cntlid != cntlid)
 					continue;
@@ -71,16 +74,15 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 		ctrl->ctrl_type = NVME_CTRL_CNTRLTYPE_IO;
 	}
 	INIT_LINKED_LIST(&ctrl->node);
-	list_add(&ctrl->node, &subsys->ctrl_list);
+	list_add(&ctrl->node, &ctrl_linked_list);
 out_unlock:
-	pthread_mutex_unlock(&subsys->ctrl_mutex);
+	pthread_mutex_unlock(&ctrl_list_mutex);
 	return ret;
 }
 
 static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
-	struct nofuse_subsys *subsys;
 
 	ep->ops->destroy_queue(ep);
 
@@ -88,9 +90,8 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	if (!ctrl)
 		return;
 
-	subsys = ctrl->subsys;
 	ctrl_info(ep, "disconnect queue");
-	pthread_mutex_lock(&subsys->ctrl_mutex);
+	pthread_mutex_lock(&ctrl_list_mutex);
 	ctrl->num_queues--;
 	ep->ctrl = NULL;
 	if (!ctrl->num_queues) {
@@ -99,7 +100,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 		list_del(&ctrl->node);
 		free(ctrl);
 	}
-	pthread_mutex_unlock(&subsys->ctrl_mutex);
+	pthread_mutex_unlock(&ctrl_list_mutex);
 }
 
 static int start_queue(struct nofuse_queue *ep, int conn)
