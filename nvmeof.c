@@ -262,18 +262,11 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 			      u8 *id_buf, u64 len)
 {
-	struct nofuse_namespace *ns = NULL, *_ns;
+	struct nofuse_namespace *ns;
 	struct nvme_id_ns id;
 	int ret, anagrp;
 
-	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (strcmp(_ns->subsysnqn, ep->ctrl->subsys->nqn))
-			continue;
-		if (_ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
+	ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
 	if (!ns || !ns->size)
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
@@ -566,17 +559,9 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		       struct nvme_command *cmd)
 {
-	struct nofuse_namespace *ns;
 	int nsid = le32toh(cmd->rw.nsid);
 
-	list_for_each_entry(ns, &device_linked_list, node) {
-		if (strcmp(ns->subsysnqn, ep->ctrl->subsys->nqn))
-			continue;
-		if (ns->nsid == nsid) {
-			qe->ns = ns;
-			break;
-		}
-	}
+	qe->ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
 	if (!qe->ns) {
 		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
@@ -588,38 +573,30 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
 	ctrl_info(ep, "nsid %d tag %#x ccid %#x read pos %llu len %llu",
 		  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
-	return ns->ops->ns_read(ep, qe);
+	return qe->ns->ops->ns_read(ep, qe);
 }
 
 static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_command *cmd)
 {
-	struct nofuse_namespace *ns;
 	u8 sgl_type = cmd->rw.dptr.sgl.type;
 	int nsid = le32toh(cmd->rw.nsid);
 	int ret;
 
-	list_for_each_entry(ns, &device_linked_list, node) {
-		if (strcmp(ns->subsysnqn, ep->ctrl->subsys->nqn))
-			continue;
-		if (ns->nsid == nsid) {
-			qe->ns = ns;
-			break;
-		}
-	}
+	qe->ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
 	if (!qe->ns) {
 		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
-	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
@@ -634,14 +611,14 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 				 qe->tag, ret);
 			return ret;
 		}
-		return ns->ops->ns_write(ep, qe);
+		return qe->ns->ops->ns_write(ep, qe);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		ctrl_err(ep, "Invalid sgl type %x", sgl_type);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	ret = ns->ops->ns_prep_read(ep, qe);
+	ret = qe->ns->ops->ns_prep_read(ep, qe);
 	if (ret) {
 		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else

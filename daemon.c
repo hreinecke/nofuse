@@ -113,6 +113,18 @@ int del_subsys(struct nofuse_subsys *subsys)
 	return ret;
 }
 
+struct nofuse_namespace *find_namespace(const char *subsysnqn, int nsid)
+{
+	struct nofuse_namespace *ns;
+
+	list_for_each_entry(ns, &device_linked_list, node) {
+		if (!strcmp(ns->subsysnqn, subsysnqn) &&
+		    ns->nsid == nsid)
+			return ns;
+	}
+	return NULL;
+}
+
 int add_namespace(const char *subsysnqn, int nsid)
 {
 	struct nofuse_namespace *ns;
@@ -144,21 +156,16 @@ int add_namespace(const char *subsysnqn, int nsid)
 
 int enable_namespace(const char *subsysnqn, int nsid)
 {
-	struct nofuse_namespace *ns = NULL, *_ns;
+	struct nofuse_namespace *ns;
 	char path[PATH_MAX + 1], *eptr = NULL;
 	int ret = 0, size;
 
 	fprintf(stderr, "%s: subsys %s nsid %d\n",
 		__func__, subsysnqn, nsid);
-	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (!strcmp(_ns->subsysnqn, subsysnqn) &&
-		    _ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
+	ns = find_namespace(subsysnqn, nsid);
 	if (!ns)
 		return -ENOENT;
+
 	ret = configdb_get_namespace_attr(subsysnqn, nsid, "device_path", path);
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d no device path, error %d\n",
@@ -215,18 +222,12 @@ int enable_namespace(const char *subsysnqn, int nsid)
 
 int disable_namespace(const char *subsysnqn, int nsid)
 {
-	struct nofuse_namespace *ns = NULL, *_ns;
+	struct nofuse_namespace *ns;
 	int ret;
 
 	fprintf(stderr, "%s: subsys %s nsid %d\n",
 		__func__, subsysnqn, nsid);
-	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (!strcmp(_ns->subsysnqn, subsysnqn) &&
-		    _ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
+	ns = find_namespace(subsysnqn, nsid);
 	if (!ns)
 		return -ENOENT;
 	ret = configdb_set_namespace_attr(subsysnqn, nsid,
@@ -246,16 +247,10 @@ int disable_namespace(const char *subsysnqn, int nsid)
 
 int del_namespace(const char *subsysnqn, int nsid)
 {
-	struct nofuse_namespace *ns, *_ns;
+	struct nofuse_namespace *ns;
 	int ret = -ENOENT;
 
-	list_for_each_entry(_ns, &device_linked_list, node) {
-		if (!strcmp(_ns->subsysnqn, subsysnqn) &&
-		    _ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
+	ns = find_namespace(subsysnqn, nsid);
 	if (!ns)
 		return ret;
 	printf("%s: subsys %s nsid %d\n",

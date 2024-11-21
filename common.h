@@ -46,8 +46,6 @@ extern struct linked_list device_linked_list;
 extern struct linked_list subsys_linked_list;
 extern struct linked_list port_linked_list;
 
-#define NVMF_UUID_FMT		"nqn.2014-08.org.nvmexpress:uuid:%s"
-
 #define NVMF_DQ_DEPTH		2
 #define NVMF_SQ_DEPTH		128
 #define NVMF_NUM_QUEUES		8
@@ -66,14 +64,10 @@ extern struct linked_list port_linked_list;
 
 #define ADRFAM_STR_IPV4 "ipv4"
 #define ADRFAM_STR_IPV6 "ipv6"
-
-#define IPV4_LEN		4
-#define IPV4_OFFSET		4
-#define IPV4_DELIM		"."
-
-#define IPV6_LEN		8
-#define IPV6_OFFSET		8
-#define IPV6_DELIM		":"
+#define ADRFAM_STR_FC "fc"
+#define ADRFAM_STR_IB "ib"
+#define ADRFAM_STR_PCI "pci"
+#define ADRFAM_STR_LOOP "loop"
 
 enum { CONNECTED, STOPPED, DISCONNECTED };
 
@@ -266,7 +260,8 @@ int del_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
 
-int add_namespace(const char *subsys, int nsid);
+struct nofuse_namespace *find_namespace(const char *subsysnqn, int nsid);
+int add_namespace(const char *subsysnqn, int nsid);
 int del_namespace(const char *subsysnqn, int nsid);
 int enable_namespace(const char *subsysnqn, int nsid);
 int disable_namespace(const char *subsysnqn, int nsid);

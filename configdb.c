@@ -845,7 +845,7 @@ int configdb_del_namespace(const char *subsysnqn, int nsid)
 
 static char add_port_sql[] =
 	"INSERT INTO ports (id, addr_trtype, addr_traddr, addr_adrfam, ctime)"
-	" VALUES ('%d', 'tcp', '127.0.0.1', 'ipv4', CURRENT_TIMESTAMP);";
+	" VALUES ('%d', 'tcp', '127.0.0.1', '%s', CURRENT_TIMESTAMP);";
 
 int configdb_add_port(unsigned int portid)
 {
@@ -857,7 +857,7 @@ int configdb_add_port(unsigned int portid)
 		return -EINVAL;
 	}
 
-	ret = asprintf(&sql, add_port_sql, portid);
+	ret = asprintf(&sql, add_port_sql, portid, ADRFAM_STR_IPV4);
 	if (ret < 0)
 		return ret;
 
@@ -1541,15 +1541,15 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 				continue;
 			entry->subtype = val;
 		} else if (!strcmp(colname[i], "adrfam")) {
-			if (!strcmp(argv[i], "ipv4")) {
+			if (!strcmp(argv[i], ADRFAM_STR_IPV4)) {
 				entry->adrfam = NVMF_ADDR_FAMILY_IP4;
-			} else if (!strcmp(argv[i], "ipv6")) {
+			} else if (!strcmp(argv[i], ADRFAM_STR_IPV6)) {
 				entry->adrfam = NVMF_ADDR_FAMILY_IP6;
-			} else if (!strcmp(argv[i], "fc")) {
+			} else if (!strcmp(argv[i], ADRFAM_STR_FC)) {
 				entry->adrfam = NVMF_ADDR_FAMILY_FC;
-			} else if (!strcmp(argv[i], "ib")) {
+			} else if (!strcmp(argv[i], ADRFAM_STR_IB)) {
 				entry->adrfam = NVMF_ADDR_FAMILY_IB;
-			} else if (!strcmp(argv[i], "pci")) {
+			} else if (!strcmp(argv[i], ADRFAM_STR_PCI)) {
 				entry->adrfam = NVMF_ADDR_FAMILY_PCI;
 			} else {
 				entry->adrfam = NVMF_ADDR_FAMILY_LOOP;
