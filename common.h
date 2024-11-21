@@ -124,7 +124,7 @@ struct nofuse_queue {
 
 struct nofuse_ctrl {
 	struct linked_list node;
-	struct nofuse_subsys *subsys;
+	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
 	int cntlid;
 	int ctrl_type;

@@ -237,7 +237,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
 
-	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys->nqn, &id);
+	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
 	if (ret < 0)
 		return ret;
 
@@ -266,11 +266,11 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 	struct nvme_id_ns id;
 	int ret, anagrp;
 
-	ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
+	ns = find_namespace(ep->ctrl->subsysnqn, nsid);
 	if (!ns || !ns->size)
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
-	ret = configdb_get_namespace_anagrp(ep->ctrl->subsys->nqn, nsid,
+	ret = configdb_get_namespace_anagrp(ep->ctrl->subsysnqn, nsid,
 					    &anagrp);
 	if (ret < 0) {
 		ctrl_info(ep, "nsid %u error %d retrieving ana grp",
@@ -312,7 +312,7 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 		u32 nsid = htole32(ns->nsid);
 		if (len < 4)
 			break;
-		if (strcmp(ns->subsysnqn, ep->ctrl->subsys->nqn))
+		if (strcmp(ns->subsysnqn, ep->ctrl->subsysnqn))
 			continue;
 		if (!ns->size)
 			continue;
@@ -331,7 +331,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	uuid_t uuid;
 
 	memset(desc_list, 0, len);
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys->nqn, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
 					  "device_uuid", uuid_str);
 	if (ret < 0)
 		return ret;
@@ -477,7 +477,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 		return -1;
 	}
 	memset(log_buf, 0, log_len);
-	len = configdb_ana_log_entries(ep->ctrl->subsys->nqn,
+	len = configdb_ana_log_entries(ep->ctrl->subsysnqn,
 				       ep->port->portid,
 				       log_buf, log_len);
 	if (len < 0) {
@@ -561,7 +561,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	u32 nsid = le32toh(cmd->rw.nsid);
 
-	qe->ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
+	qe->ns = find_namespace(ep->ctrl->subsysnqn, nsid);
 	if (!qe->ns) {
 		ctrl_err(ep, "invalid nsid %u", nsid);
 		return NVME_SC_INVALID_NS;
@@ -590,7 +590,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	u32 nsid = le32toh(cmd->rw.nsid);
 	int ret;
 
-	qe->ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
+	qe->ns = find_namespace(ep->ctrl->subsysnqn, nsid);
 	if (!qe->ns) {
 		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;

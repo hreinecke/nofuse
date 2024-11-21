@@ -64,7 +64,6 @@ int connect_queue(struct nofuse_queue *ep, struct nofuse_subsys *subsys,
 	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
 	ctrl->num_queues = 1;
-	ctrl->subsys = subsys;
 	ctrl->cntlid = nvmf_ctrl_id++;
 	ctrl->kato_countdown = RETRY_COUNT;
 	if (subsys->type == NVME_NQN_CUR) {
@@ -406,12 +405,12 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 		printf("%s: ctrl %d qid %d subsys %s\n",
 		       __func__,
 		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		       ep->ctrl->subsys ? ep->ctrl->subsys->nqn : "<none>");
+		       ep->ctrl->subsysnqn ? ep->ctrl->subsysnqn : "<none>");
 		if (ep->state != CONNECTED)
 			continue;
 		if (!ep->ctrl)
 			continue;
-		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
+		if (strcmp(ep->ctrl->subsysnqn, subsysnqn))
 			continue;
 		destroy_queue(ep);
 	}
