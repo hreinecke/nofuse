@@ -29,18 +29,21 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	int ret = 0;
 
 	pthread_mutex_lock(&ctrl_list_mutex);
-	if (cntlid < NVME_CNTLID_MAX) {
+	if (ep->qid > 0) {
 		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
-			if (!strcmp(hostnqn, ctrl->hostnqn)) {
-				if (ctrl->cntlid != cntlid)
-					continue;
-				ep->ctrl = ctrl;
-				ctrl->num_queues++;
-				break;
-			}
+			if (strcmp(hostnqn, ctrl->hostnqn) ||
+			    strcmp(subsysnqn, ctrl->subsysnqn) ||
+			    ctrl->cntlid != cntlid)
+				continue;
+			ep->ctrl = ctrl;
+			ctrl->num_queues++;
+			break;
 		}
-		if (!ep->ctrl)
+		if (!ep->ctrl) {
+			ep_err(ep, "qid %d invalid cntlid %d",
+			       ep->qid, cntlid);
 			ret = -ENOENT;
+		}
 		goto out_unlock;
 	}
 
