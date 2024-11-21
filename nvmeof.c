@@ -332,7 +332,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 
 	memset(desc_list, 0, len);
 	ret = configdb_get_namespace_attr(ep->ctrl->subsys->nqn, nsid,
-				       "device_uuid", uuid_str);
+					  "device_uuid", uuid_str);
 	if (ret < 0)
 		return ret;
 	ret = uuid_parse(uuid_str, uuid);
@@ -357,7 +357,7 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	u8 cns = cmd->identify.cns;
 	u8 csi = cmd->identify.csi;
-	int nsid = le32toh(cmd->identify.nsid);
+	u32 nsid = le32toh(cmd->identify.nsid);
 	u16 cid = cmd->identify.command_id;
 	int ret, id_len;
 
@@ -559,11 +559,11 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		       struct nvme_command *cmd)
 {
-	int nsid = le32toh(cmd->rw.nsid);
+	u32 nsid = le32toh(cmd->rw.nsid);
 
 	qe->ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
 	if (!qe->ns) {
-		ctrl_err(ep, "invalid namespace %d", nsid);
+		ctrl_err(ep, "invalid nsid %u", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
@@ -577,7 +577,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
-	ctrl_info(ep, "nsid %d tag %#x ccid %#x read pos %llu len %llu",
+	ctrl_info(ep, "nsid %u tag %#x ccid %#x read pos %llu len %llu",
 		  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	return qe->ns->ops->ns_read(ep, qe);
@@ -587,7 +587,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_command *cmd)
 {
 	u8 sgl_type = cmd->rw.dptr.sgl.type;
-	int nsid = le32toh(cmd->rw.nsid);
+	u32 nsid = le32toh(cmd->rw.nsid);
 	int ret;
 
 	qe->ns = find_namespace(ep->ctrl->subsys->nqn, nsid);
@@ -602,7 +602,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		ctrl_info(ep, "nsid %d tag %#x ccid %#x inline write pos %llu len %llu",
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x inline write pos %llu len %llu",
 			   nsid, qe->tag, qe->ccid,
 			   qe->data_pos, qe->data_len);
 		ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
@@ -622,7 +622,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (ret) {
 		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else
-		ctrl_info(ep, "nsid %d tag %#x ccid %#x write pos %llu len %llu",
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x write pos %llu len %llu",
 			  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	return ret;

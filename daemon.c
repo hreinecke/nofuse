@@ -113,7 +113,7 @@ int del_subsys(struct nofuse_subsys *subsys)
 	return ret;
 }
 
-struct nofuse_namespace *find_namespace(const char *subsysnqn, int nsid)
+struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 
@@ -125,7 +125,7 @@ struct nofuse_namespace *find_namespace(const char *subsysnqn, int nsid)
 	return NULL;
 }
 
-int add_namespace(const char *subsysnqn, int nsid)
+int add_namespace(const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret;
@@ -154,7 +154,7 @@ int add_namespace(const char *subsysnqn, int nsid)
 	return 0;
 }
 
-int enable_namespace(const char *subsysnqn, int nsid)
+int enable_namespace(const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	char path[PATH_MAX + 1], *eptr = NULL;
@@ -220,7 +220,7 @@ int enable_namespace(const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int disable_namespace(const char *subsysnqn, int nsid)
+int disable_namespace(const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret;
@@ -245,7 +245,7 @@ int disable_namespace(const char *subsysnqn, int nsid)
 	return 0;
 }
 
-int del_namespace(const char *subsysnqn, int nsid)
+int del_namespace(const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret = -ENOENT;

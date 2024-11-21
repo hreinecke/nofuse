@@ -32,23 +32,23 @@ int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf);
 int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf);
 int configdb_del_subsys(struct nofuse_subsys *subsys);
 
-int configdb_add_namespace(const char *subsysnqn, int nsid);
+int configdb_add_namespace(const char *subsysnqn, u32 nsid);
 int configdb_count_namespaces(const char *subsysnqn, int *num);
-int configdb_stat_namespace(const char *subsysnqn, int nsid,
+int configdb_stat_namespace(const char *subsysnqn, u32 nsid,
 			 struct stat *stbuf);
 int configdb_fill_namespace_dir(const char *nqn, void *buf,
 			     fuse_fill_dir_t filler);
-int configdb_fill_namespace(const char *nqn, int nsid,
+int configdb_fill_namespace(const char *nqn, u32 nsid,
 			 void *buf, fuse_fill_dir_t filler);
-int configdb_get_namespace_attr(const char *subsysnqn, int nsid,
+int configdb_get_namespace_attr(const char *subsysnqn, u32 nsid,
 			     const char *attr, char *buf);
-int configdb_set_namespace_attr(const char *subsysnqn, int nsid,
+int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
 			     const char *attr, const char *buf);
-int configdb_get_namespace_anagrp(const char *subsysnqn, int nsid,
+int configdb_get_namespace_anagrp(const char *subsysnqn, u32 nsid,
 			       int *ana_grpid);
-int configdb_set_namespace_anagrp(const char *subsysnqn, int nsid,
+int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 			       int ana_grpid);
-int configdb_del_namespace(const char *subsysnqn, int nsid);
+int configdb_del_namespace(const char *subsysnqn, u32 nsid);
 
 int configdb_add_ana_group(int port, int grpid, int ana_state);
 int configdb_count_ana_groups(const char *port, int *num);

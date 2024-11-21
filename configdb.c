@@ -543,7 +543,8 @@ static char set_subsys_attr_sql[] =
 	"UPDATE subsystems SET %s = '%s' "
 	"WHERE nqn = '%s';";
 
-int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf)
+int configdb_set_subsys_attr(const char *nqn, const char *attr,
+			     const char *buf)
 {
 	char *sql;
 	int ret;
@@ -579,10 +580,10 @@ int configdb_del_subsys(struct nofuse_subsys *subsys)
 
 static char add_namespace_sql[] =
 	"INSERT INTO namespaces (device_uuid, nsid, subsys_id, ctime) "
-	"SELECT '%s', '%d', s.id, CURRENT_TIMESTAMP "
+	"SELECT '%s', '%u', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s' AND s.attr_type == '2';";
 
-int configdb_add_namespace(const char *subsysnqn, int nsid)
+int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 {
 	char *sql;
 	uuid_t uuid;
@@ -624,9 +625,9 @@ int configdb_count_namespaces(const char *subsysnqn, int *num)
 static char stat_namespace_sql[] =
 	"SELECT unixepoch(n.ctime) AS tv FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
-	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
+	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
-int configdb_stat_namespace(const char *subsysnqn, int nsid,
+int configdb_stat_namespace(const char *subsysnqn, u32 nsid,
 			 struct stat *stbuf)
 {
 	char *sql;
@@ -649,7 +650,8 @@ static char fill_namespace_dir_sql[] =
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
-int configdb_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t filler)
+int configdb_fill_namespace_dir(const char *nqn, void *buf,
+				fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -679,7 +681,7 @@ int configdb_fill_namespace_dir(const char *nqn, void *buf, fuse_fill_dir_t fill
 static char fill_namespace_sql[] =
 	"SELECT n.* FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
-	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
+	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
 static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 {
@@ -705,8 +707,8 @@ static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
 	return 0;
 }
 
-int configdb_fill_namespace(const char *nqn, int nsid,
-			 void *buf, fuse_fill_dir_t filler)
+int configdb_fill_namespace(const char *nqn, u32 nsid,
+			    void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -737,10 +739,10 @@ int configdb_fill_namespace(const char *nqn, int nsid,
 static char get_namespace_attr_sql[] =
 	"SELECT ns.%s FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
-	"WHERE s.nqn = '%s' AND ns.nsid = '%d';";
+	"WHERE s.nqn = '%s' AND ns.nsid = '%u';";
 
-int configdb_get_namespace_attr(const char *subsysnqn, int nsid,
-			     const char *attr, char *buf)
+int configdb_get_namespace_attr(const char *subsysnqn, u32 nsid,
+				const char *attr, char *buf)
 {
 	int ret;
 	char *sql;
@@ -760,10 +762,10 @@ static char set_namespace_attr_sql[] =
 	"(SELECT ns.nsid AS nsid, s.nqn AS nqn "
 	"FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id) AS sel "
-	"WHERE sel.nqn = '%s' AND sel.nsid = '%d';";
+	"WHERE sel.nqn = '%s' AND sel.nsid = '%u';";
 
-int configdb_set_namespace_attr(const char *subsysnqn, int nsid,
-			     const char *attr, const char *buf)
+int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
+				const char *attr, const char *buf)
 {
 	int ret;
 	char *sql;
@@ -782,10 +784,10 @@ int configdb_set_namespace_attr(const char *subsysnqn, int nsid,
 static char get_namespace_anagrp_sql[] =
 	"SELECT ns.ana_grpid AS grpid FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
-	"WHERE s.nqn = '%s' AND ns.nsid = '%d';";
+	"WHERE s.nqn = '%s' AND ns.nsid = '%u';";
 
-int configdb_get_namespace_anagrp(const char *subsysnqn, int nsid,
-			       int *ana_grpid)
+int configdb_get_namespace_anagrp(const char *subsysnqn, u32 nsid,
+				  int *ana_grpid)
 {
 	int ret;
 	char *sql;
@@ -807,10 +809,10 @@ static char set_namespace_anagrp_sql[] =
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"INNER JOIN ana_groups AS ag ON ag.port_id = p.id) AS sel "
 	"WHERE sel.subsysnqn = '%s' "
-	"AND sel.grpid = '%d' AND nsid = '%d';";
+	"AND sel.grpid = '%d' AND nsid = '%u';";
 
-int configdb_set_namespace_anagrp(const char *subsysnqn, int nsid,
-			       int ana_grpid)
+int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
+				  int ana_grpid)
 {
 	char *sql;
 	int ret;
@@ -827,9 +829,9 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, int nsid,
 static char del_namespace_sql[] =
 	"DELETE FROM namespaces AS ns WHERE ns.subsys_id IN "
 	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
-	"ns.nsid = '%d';";
+	"ns.nsid = '%u';";
 
-int configdb_del_namespace(const char *subsysnqn, int nsid)
+int configdb_del_namespace(const char *subsysnqn, u32 nsid)
 {
 	int ret;
 	char *sql;
@@ -973,7 +975,8 @@ static char update_genctr_port_sql[] =
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
 	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
 
-int configdb_set_port_attr(unsigned int port, const char *attr, const char *value)
+int configdb_set_port_attr(unsigned int port, const char *attr,
+			   const char *value)
 {
 	char *sql;
 	int ret;
@@ -1057,7 +1060,7 @@ static char stat_ana_group_sql[] =
 	"WHERE p.id = '%s' AND ag.grpid = '%s';";
 
 int configdb_stat_ana_group(const char *port, const char *ana_grpid,
-			 struct stat *stbuf)
+			    struct stat *stbuf)
 {
 	int ret, timeval;
 	char *sql;
@@ -1084,7 +1087,7 @@ static char fill_ana_groups_sql[] =
 	"WHERE p.id = '%s';";
 
 int configdb_fill_ana_groups(const char *port,
-			  void *buf, fuse_fill_dir_t filler)
+			     void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -1116,7 +1119,7 @@ static char get_ana_group_sql[] =
 	"WHERE p.id = '%s' AND ag.grpid = '%s';";
 
 int configdb_get_ana_group(const char *port, const char *ana_grpid,
-			int *ana_state)
+			   int *ana_state)
 {
 	int ret;
 	char *sql;
@@ -1134,7 +1137,7 @@ static char set_ana_group_sql[] =
 	"WHERE port_id = '%s' AND grpid = '%s';";
 
 int configdb_set_ana_group(const char *port, const char *ana_grpid,
-			int ana_state)
+			   int ana_state)
 {
 	int ret;
 	char *sql;
@@ -1248,7 +1251,7 @@ static char stat_host_subsys_sql[] =
 	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
 
 int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
-			   struct stat *stbuf)
+			      struct stat *stbuf)
 {
 	char *sql;
 	int ret, timeval;
@@ -1385,7 +1388,7 @@ static char fill_subsys_port_sql[] =
 	"WHERE p.id = '%d';";
 
 int configdb_fill_subsys_port(unsigned int port,
-			   void *buf, fuse_fill_dir_t filler)
+			      void *buf, fuse_fill_dir_t filler)
 {
 	struct fill_parm_t parm = {
 		.filler = filler,
@@ -1418,7 +1421,7 @@ static char stat_subsys_port_sql[] =
 	"WHERE s.nqn = '%s' AND p.id = '%d';";
 
 int configdb_stat_subsys_port(const char *subsysnqn, unsigned int port,
-			   struct stat *stbuf)
+			      struct stat *stbuf)
 {
 	char *sql;
 	int ret, timeval;
@@ -1457,7 +1460,7 @@ static char allow_any_sql[] =
 	"AND s.nqn = '%s' AND p.id = '%d';";
 
 int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
-			     unsigned int portid)
+				unsigned int portid)
 {
 	int ret, num = 0;
 	char *sql;
@@ -1853,7 +1856,7 @@ static int ana_grp_log_entry_cb(void *argp, int argc, char **argv, char **col)
 		if (!strcmp(col[i], "nsid")) {
 			void *buf = parm->buffer + parm->cur;
 			char *eptr = NULL;
-			unsigned int nsid, _nsid = 0;
+			u32 nsid, _nsid = 0;
 
 			if (!arg_len)
 				continue;

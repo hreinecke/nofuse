@@ -142,7 +142,7 @@ struct nofuse_namespace {
 	struct linked_list node;
 	struct ns_ops *ops;
 	char subsysnqn[MAX_NQN_SIZE + 1];
-	int nsid;
+	u32 nsid;
 	int fd;
 	size_t size;
 	unsigned int blksize;
@@ -260,10 +260,10 @@ int del_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
 
-struct nofuse_namespace *find_namespace(const char *subsysnqn, int nsid);
-int add_namespace(const char *subsysnqn, int nsid);
-int del_namespace(const char *subsysnqn, int nsid);
-int enable_namespace(const char *subsysnqn, int nsid);
-int disable_namespace(const char *subsysnqn, int nsid);
+struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid);
+int add_namespace(const char *subsysnqn, u32 nsid);
+int del_namespace(const char *subsysnqn, u32 nsid);
+int enable_namespace(const char *subsysnqn, u32 nsid);
+int disable_namespace(const char *subsysnqn, u32 nsid);
 
 #endif

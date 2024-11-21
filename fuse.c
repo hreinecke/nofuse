@@ -205,7 +205,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	int ret;
 	const char *attr, *p;
 	char *eptr;
-	int nsid;
+	u32 nsid;
 
 	if (!ns) {
 		int num_ns = 0;
@@ -224,7 +224,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	ret = configdb_stat_namespace(subsysnqn, nsid, stbuf);
 	if (ret)
 		return -ENOENT;
-	fuse_info("%s: subsys %s ns %d", __func__, subsysnqn, nsid);
+	fuse_info("%s: subsys %s ns %u", __func__, subsysnqn, nsid);
 	attr = strtok(NULL, "/");
 	if (!attr) {
 		stbuf->st_mode = S_IFDIR | 0755;
@@ -234,7 +234,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	fuse_info("%s: subsys %s ns %d attr %s", __func__,
+	fuse_info("%s: subsys %s ns %u attr %s", __func__,
 		  subsysnqn, nsid, attr);
 	ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
 	if (ret < 0)
@@ -451,7 +451,7 @@ static int fill_subsys(const char *subsys,
 	if (!strcmp(subdir, "namespaces")) {
 		const char *ns = p;
 		char *eptr = NULL;
-		int nsid;
+		u32 nsid;
 
 		if (!ns) {
 			filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -465,7 +465,7 @@ static int fill_subsys(const char *subsys,
 		if (p)
 			return -ENOENT;
 
-		fuse_info("%s: subsys %s ns %d", __func__, subsys, nsid);
+		fuse_info("%s: subsys %s ns %u", __func__, subsys, nsid);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return configdb_fill_namespace(subsys, nsid, buf, filler);
@@ -575,7 +575,7 @@ static int port_mkdir(const char *port)
 static int subsys_mkdir(const char *subsysnqn)
 {
 	char *p, *ns, *eptr = NULL;
-	int nsid;
+	u32 nsid;
 
 	p = strtok(NULL, "/");
 	if (!p)
@@ -684,7 +684,7 @@ static int port_rmdir(const char *port)
 static int subsys_rmdir(const char *subsysnqn)
 {
 	char *p, *ns, *eptr = NULL;
-	int nsid;
+	u32 nsid;
 
 	p = strtok(NULL, "/");
 	if (!p) {
@@ -987,7 +987,7 @@ out_free:
 	return ret;
 }
 
-static int parse_namespace_attr(const char *p, int *nsid,
+static int parse_namespace_attr(const char *p, u32 *nsid,
 				const char **attr)
 {
 	const char *ns;
@@ -1077,7 +1077,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
-		int nsid;
+		u32 nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -1103,11 +1103,11 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		}
 		if (!strcmp(attr, "ana_grpid")) {
 			ret = configdb_get_namespace_anagrp(subsysnqn,
-							 nsid, NULL);
+							    nsid, NULL);
 			goto out_free;
 		}
 		ret = configdb_get_namespace_attr(subsysnqn, nsid,
-					       attr, NULL);
+						  attr, NULL);
 		if (ret < 0)
 			ret = -ENOENT;
 		goto out_free;
@@ -1215,7 +1215,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
-		int nsid;
+		u32 nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -1283,15 +1283,16 @@ out_free:
 static int write_namespace(const char *subsysnqn, const char *p,
 			   const char *buf, size_t len)
 {
-	int ret, nsid;
+	int ret;
+	u32 nsid;
 	const char *attr;
 
 	ret = parse_namespace_attr(p, &nsid, &attr);
 	if (ret < 0)
 		return -ENOENT;
 
-	fuse_info("%s: subsys %s nsid %d attr %s value %s", __func__,
-	       subsysnqn, nsid, attr, buf);
+	fuse_info("%s: subsys %s nsid %u attr %s value %s", __func__,
+		  subsysnqn, nsid, attr, buf);
 
 	if (!strcmp(attr, "ana_grpid")) {
 		int ana_grp, new_ana_grp;
@@ -1305,7 +1306,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 		if (ret < 0)
 			return ret;
 		ret = configdb_get_namespace_anagrp(subsysnqn, nsid,
-						 &new_ana_grp);
+						    &new_ana_grp);
 		if (ret < 0)
 			return ret;
 		if (new_ana_grp != ana_grp)
