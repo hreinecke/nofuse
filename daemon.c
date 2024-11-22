@@ -55,6 +55,10 @@ int default_subsys_type(const char *nqn)
 		return NVME_NQN_NVM;
 }
 
+void raise_aen(int level, int type)
+{
+}
+
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;

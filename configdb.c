@@ -244,6 +244,21 @@ static const char *init_sql[NUM_TABLES] = {
 "ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
+void configdb_update_hook(void *arg, int cmd, const char *db,
+			  const char *tbl, sqlite3_int64 rowid)
+{
+	if (!strcmp(tbl, "namespaces"))
+		raise_aen(NVME_AER_NOTICE_NS_CHANGED,
+			  NVME_AEN_BIT_NS_ATTR);
+	if (!strcmp(tbl, "ana_groups"))
+		raise_aen(NVME_AER_NOTICE_ANA,
+			  NVME_AEN_BIT_ANA_CHANGE);
+	if (!strcmp(tbl, "subsys_port") ||
+	    !strcmp(tbl, "host_subsys"))
+		raise_aen(NVME_AER_NOTICE_DISC_CHANGED,
+			  NVME_AEN_BIT_DISC_CHANGE);
+}
+
 int configdb_init(void)
 {
 	int i, ret;
@@ -253,6 +268,8 @@ int configdb_init(void)
 		if (ret)
 			break;
 	}
+	sqlite3_update_hook(configdb_db, configdb_update_hook, NULL);
+
 	return ret;
 }
 
@@ -846,6 +863,7 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	raise_aen(NVME_AER_NOTICE_ANA, NVME_AEN_BIT_ANA_CHANGE);
 	return ret;
 }
 
@@ -863,6 +881,41 @@ int configdb_del_namespace(const char *subsysnqn, u32 nsid)
 	if (ret < 0)
 		return ret;
 
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
+static char add_ctrl_sql[] =
+	"INSERT INTO controllers ( cntlid, subsys_id ) "
+	"SELECT '%d', s.id FROM subsystems AS s "
+	"WHERE s.nqn = '%s';";
+int configdb_add_ctrl(const char *subsysnqn, int cntlid)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, add_ctrl_sql, cntlid, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
+static char del_ctrl_sql[] =
+	"DELETE FROM controllers AS c WHERE c.subsys_id IN "
+	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
+	"c.cntlid = '%d';";
+
+int configdb_del_ctrl(const char *subsysnqn, int cntlid)
+{
+	int ret;
+	char *sql;
+
+	ret = asprintf(&sql, del_ctrl_sql, cntlid, subsysnqn);
+	if (ret < 0)
+		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;

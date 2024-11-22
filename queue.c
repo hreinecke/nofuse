@@ -70,12 +70,19 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		goto out_unlock;
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
+	cntlid = nvmf_ctrl_id++;
+	ret = configdb_add_ctrl(nqn, cntlid);
+	if (ret < 0) {
+		ep_err(ep, "error registering cntlid %d", cntlid);
+		free(ctrl);
+		goto out_unlock;
+	}
 	strcpy(ctrl->hostnqn, hostnqn);
 	strcpy(ctrl->subsysnqn, nqn);
 	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
 	ctrl->num_queues = 1;
-	ctrl->cntlid = nvmf_ctrl_id++;
+	ctrl->cntlid = cntlid;
 	ctrl->kato_countdown = RETRY_COUNT;
 	INIT_LINKED_LIST(&ctrl->node);
 	list_add(&ctrl->node, &ctrl_linked_list);
@@ -101,6 +108,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	if (!ctrl->num_queues) {
 		printf("ctrl %u qid %d: deleting controller\n",
 		       ctrl->cntlid, ep->qid);
+		configdb_del_ctrl(ctrl->subsysnqn, ctrl->cntlid);
 		list_del(&ctrl->node);
 		free(ctrl);
 	}
