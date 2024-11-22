@@ -182,7 +182,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 11
+#define NUM_TABLES 12
 
 static const char *init_sql[NUM_TABLES] = {
 "CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -206,9 +206,12 @@ static const char *init_sql[NUM_TABLES] = {
 "device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
 "device_path VARCHAR(256), device_enable INT DEFAULT 0, ana_grpid INT, "
 "nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
+"UNIQUE (subsys_id, nsid), "
 "CHECK (device_enable = 0 OR device_enable = 1), "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
+"CREATE UNIQUE INDEX nsid_idx ON "
+"namespaces(subsys_id, nsid); "
 "CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
 "addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
 "addr_treq char(32), "
@@ -260,6 +263,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE ana_groups;",
 	"DROP INDEX port_addr_idx;",
 	"DROP TABLE ports;",
+	"DROP INDEX nsid_idx;",
 	"DROP TABLE namespaces;",
 	"DROP INDEX cntlid_idx;",
 	"DROP TABLE controllers;",
