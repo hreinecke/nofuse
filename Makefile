@@ -4,13 +4,16 @@ OBJS := daemon.o nvmeof.o port.o queue.o tcp.o null.o uring.o \
 	base64.o tls.o fuse.o configdb.o
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3 -lsqlite3
 
-all: nofuse xdp_drop_port.o
+all: nofuse xdp_drop_port.o base64_test
 
 nofuse: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
+
+base64_test: base64_test.o base64.o
+	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c common.h utils.h ops.h firmware.h
 	$(CC) $(CFLAGS) -c -o $@ $<
