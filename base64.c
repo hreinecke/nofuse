@@ -39,21 +39,21 @@ static const char base64_table[65] =
  */
 int base64_encode(const unsigned char *src, int srclen, char *dst)
 {
-	int i, bits = 0;
+	int i, bits = 0, src_bits = 8, dst_bits = 6;
 	u_int32_t ac = 0;
 	char *cp = dst;
 
 	for (i = 0; i < srclen; i++) {
-		ac = (ac << 8) | src[i];
-		bits += 8;
+		ac = (ac << src_bits) | src[i];
+		bits += src_bits;
 		do {
-			bits -= 6;
+			bits -= dst_bits;
 			*cp++ = base64_table[(ac >> bits) & 0x3f];
-		} while (bits >= 6);
+		} while (bits >= dst_bits);
 	}
 	if (bits) {
-		*cp++ = base64_table[(ac << (6 - bits)) & 0x3f];
-		bits -= 6;
+		*cp++ = base64_table[(ac << (dst_bits - bits)) & 0x3f];
+		bits -= dst_bits;
 	}
 	while (bits < 0) {
 		*cp++ = '=';
@@ -76,25 +76,107 @@ int base64_encode(const unsigned char *src, int srclen, char *dst)
 int base64_decode(const char *src, int srclen, unsigned char *dst)
 {
 	u_int32_t ac = 0;
-	int i, bits = 0;
+	int i, bits = 0, src_bits = 6, dst_bits = 8;
 	unsigned char *bp = dst;
 
         for (i = 0; i < srclen; i++) {
                 const char *p = strchr(base64_table, src[i]);
 
                 if (src[i] == '=') {
-                        ac = (ac << 6);
-			bits += 6;
-			if (bits >= 8)
-				bits -= 8;
+                        ac = (ac << src_bits);
+			bits += src_bits;
+			if (bits >= dst_bits)
+				bits -= dst_bits;
                         continue;
                 }
                 if (p == NULL || src[i] == 0)
                         return -EINVAL;
-                ac = (ac << 6) | (p - base64_table);
-                bits += 6;
-                if (bits >= 8) {
-                        bits -= 8;
+                ac = (ac << src_bits) | (p - base64_table);
+                bits += src_bits;
+                if (bits >= dst_bits) {
+                        bits -= dst_bits;
+                        *bp++ = (unsigned char)(ac >> bits);
+                }
+	}
+	if (ac && ((1 << bits) - 1))
+		return -EAGAIN;
+
+	return bp - dst;
+}
+
+static const char base32_table[33] =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/**
+ * base32_encode() - base32-encode some bytes
+ * @src: the bytes to encode
+ * @srclen: number of bytes to encode
+ * @dst: (output) the base64-encoded string.  Not NUL-terminated.
+ *
+ * Encodes the input string using characters from the set [A-Z2-7].
+ * The encoded string is roughly 4/3 times the size of the input string.
+ *
+ * Return: length of the encoded string
+ */
+int base32_encode(const unsigned char *src, int srclen, char *dst)
+{
+	int i, bits = 0, src_bits = 8, dst_bits = 5, pad;
+	u_int32_t ac = 0;
+	char *cp = dst;
+
+	for (i = 0; i < srclen; i++) {
+		ac = (ac << src_bits) | src[i];
+		bits += src_bits;
+		do {
+			bits -= dst_bits;
+			*cp++ = base32_table[(ac >> bits) & 0x1f];
+		} while (bits >= dst_bits);
+	}
+	if (bits) {
+		*cp++ = base32_table[(ac << (dst_bits - bits)) & 0x1f];
+		bits -= dst_bits;
+	}
+	pad = (src_bits - ((cp - dst) % src_bits)) % src_bits;
+	while (pad > 0) {
+		*cp++ = '=';
+		pad--;
+	}
+
+	return cp - dst;
+}
+
+/**
+ * base32_decode() - base32-decode some bytes
+ * @src: the base64-encoded string to decode
+ * @len: number of bytes to decode
+ * @dst: (output) the decoded bytes.
+ *
+ * Decodes the base32-encoded bytes @src according to RFC 4648.
+ *
+ * Return: number of decoded bytes
+ */
+int base32_decode(const char *src, int srclen, unsigned char *dst)
+{
+	u_int32_t ac = 0;
+	int i, bits = 0, src_bits = 5, dst_bits = 8;
+	unsigned char *bp = dst;
+
+        for (i = 0; i < srclen; i++) {
+                const char *p = strchr(base32_table, src[i]);
+
+                if (src[i] == '=') {
+                        ac = (ac << src_bits);
+			bits += src_bits;
+			if (bits >= dst_bits)
+				bits -= dst_bits;
+                        continue;
+                }
+                if (p == NULL || src[i] == 0)
+                        return -EINVAL;
+                ac = (ac << src_bits) | (p - base32_table);
+                bits += src_bits;
+                if (bits >= dst_bits) {
+                        bits -= dst_bits;
                         *bp++ = (unsigned char)(ac >> bits);
                 }
 	}
