@@ -284,24 +284,15 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 static int handle_identify_active_ns(struct nofuse_queue *ep,
 				     u8 *id_buf, u64 len)
 {
-	struct nofuse_namespace *ns;
-	u8 *ns_list = id_buf;
-	int id_len = len;
+	int ret;
 
-	memset(ns_list, 0, len);
-	list_for_each_entry(ns, &device_linked_list, node) {
-		u32 nsid = htole32(ns->nsid);
-		if (len < 4)
-			break;
-		if (strcmp(ns->subsysnqn, ep->ctrl->subsysnqn))
-			continue;
-		if (!ns->size)
-			continue;
-		memcpy(ns_list, &nsid, 4);
-		ns_list += 4;
-		len -= 4;
-	}
-	return id_len;
+	memset(id_buf, 0, len);
+	ret = configdb_identify_active_ns(ep->ctrl->subsysnqn,
+					  id_buf, len);
+	if (ret < 0)
+		return ret;
+
+	return len;
 }
 
 static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
@@ -351,6 +342,9 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		break;
 	case NVME_ID_CNS_CTRL:
 		id_len = handle_identify_ctrl(ep, qe->data, qe->data_len);
+		if (id_len < 0) {
+			return NVME_SC_INTERNAL;
+		}
 		break;
 	case NVME_ID_CNS_NS_ACTIVE_LIST:
 		id_len = handle_identify_active_ns(ep, qe->data, qe->data_len);
@@ -363,13 +357,15 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		if (csi == 0) {
 			id_len = handle_identify_ctrl(ep, qe->data,
 						      qe->data_len);
+			if (id_len < 0)
+				return NVME_SC_INTERNAL;
 			break;
 		}
 		ctrl_err(ep, "unsupported identify ctrl csi %u\n", csi);
-		return NVME_SC_BAD_ATTRIBUTES;
+		return NVME_SC_BAD_ATTRIBUTES | NVME_SC_DNR;
 	default:
 		ctrl_err(ep, "unexpected identify command cns %u", cns);
-		return NVME_SC_BAD_ATTRIBUTES;
+		return NVME_SC_BAD_ATTRIBUTES | NVME_SC_DNR;
 	}
 
 	if (id_len < 0)

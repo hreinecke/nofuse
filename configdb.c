@@ -1789,6 +1789,75 @@ int configdb_subsys_identify_ctrl(const char *subsysnqn,
 	return ret;
 }
 
+static int ns_list_cb(void *argp, int argc, char **argv, char **col)
+{
+	struct sql_entry_parm *parm = argp;
+	int i;
+
+	if (!argp) {
+		fprintf(stderr, "%s: Invalid parameter\n", __func__);
+		return 0;
+	}
+
+	for (i = 0; i < argc; i++) {
+		size_t arg_len = argv[i] ? strlen(argv[i]) : 0;
+
+		if (!strcmp(col[i], "nsid")) {
+			void *buf = parm->buffer + parm->cur;
+			char *eptr = NULL;
+			u32 nsid, _nsid = 0;
+
+			if (!arg_len)
+				continue;
+
+			_nsid = strtoul(argv[i], &eptr, 10);
+			if (argv[i] == eptr) {
+				printf("%s: parsing error on 'nsid'\n",
+				       __func__);
+				_nsid = 0;
+				continue;
+			}
+			nsid = htole32(_nsid);
+			memcpy(buf, &nsid, sizeof(u32));
+			parm->cur += sizeof(u32);
+		}
+	}
+	return 0;
+}
+
+static char identify_active_ns_sql[] =
+	"SELECT n.nsid FROM namespaces AS ns "
+	"INNER JOIN subsystems AS s "
+	"ON ns.subsys_id = s.id "
+	"WHERE s.nqn = '%s' AND n.device_enable = '1';";
+
+int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len)
+{
+	struct sql_entry_parm parm = {
+		.len = len,
+		.buffer = ns_list,
+		.cur = 0,
+	};
+	char *sql, *errmsg;
+	int ret;
+
+	ret = asprintf(&sql, identify_active_ns_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
+			   &parm, &errmsg);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "%s: SQL string: %s\n",
+			__func__, sql);
+		fprintf(stderr, "%s: SQL error: %s\n",
+			__func__, errmsg);
+		sqlite3_free(errmsg);
+		ret = -EINVAL;
+	}
+	free(sql);
+	return ret;
+}
+
 static char count_ana_grps_sql[] =
 	"SELECT ag.ana_state, ag.chgcnt, count(ns.nsid) AS num "
 	"FROM ana_groups AS ag "
@@ -1857,42 +1926,6 @@ static char ana_grp_log_entry_sql[] =
 	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
 	"WHERE s.nqn = '%s' AND ag.port_id = '%d' AND ag.grpid = '%d';";
 
-static int ana_grp_log_entry_cb(void *argp, int argc, char **argv, char **col)
-{
-	struct sql_entry_parm *parm = argp;
-	int i;
-
-	if (!argp) {
-		fprintf(stderr, "%s: Invalid parameter\n", __func__);
-		return 0;
-	}
-
-	for (i = 0; i < argc; i++) {
-		size_t arg_len = argv[i] ? strlen(argv[i]) : 0;
-
-		if (!strcmp(col[i], "nsid")) {
-			void *buf = parm->buffer + parm->cur;
-			char *eptr = NULL;
-			u32 nsid, _nsid = 0;
-
-			if (!arg_len)
-				continue;
-
-			_nsid = strtoul(argv[i], &eptr, 10);
-			if (argv[i] == eptr) {
-				printf("%s: parsing error on 'nsid'\n",
-				       __func__);
-				_nsid = 0;
-				continue;
-			}
-			nsid = htole32(_nsid);
-			memcpy(buf, &nsid, sizeof(u32));
-			parm->cur += sizeof(u32);
-		}
-	}
-	return 0;
-}
-
 int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			     u8 *log, int log_len)
 {
@@ -1936,7 +1969,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			       subsysnqn, portid, grpid);
 		if (ret < 0)
 			return ret;
-		ret = sqlite3_exec(configdb_db, sql, ana_grp_log_entry_cb,
+		ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
 				   &parm, &errmsg);
 		free(sql);
 		if (ret < 0)
