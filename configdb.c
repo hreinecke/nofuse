@@ -1829,7 +1829,8 @@ static char identify_active_ns_sql[] =
 	"SELECT n.nsid FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s "
 	"ON ns.subsys_id = s.id "
-	"WHERE s.nqn = '%s' AND n.device_enable = '1';";
+	"WHERE s.nqn = '%s' AND n.device_enable = '1' "
+	"ORDER BY n.nsid;";
 
 int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len)
 {
