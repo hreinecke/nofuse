@@ -26,13 +26,21 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl;
+	char nqn[MAX_NQN_SIZE + 1];
 	int ret = 0;
+
+	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME)) {
+		ret = configdb_get_discovery_nqn(nqn);
+		if (ret < 0)
+			strcpy(nqn, subsysnqn);
+	} else
+		strcpy(nqn, subsysnqn);
 
 	pthread_mutex_lock(&ctrl_list_mutex);
 	if (ep->qid > 0) {
 		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
 			if (strcmp(hostnqn, ctrl->hostnqn) ||
-			    strcmp(subsysnqn, ctrl->subsysnqn) ||
+			    strcmp(nqn, ctrl->subsysnqn) ||
 			    ctrl->cntlid != cntlid)
 				continue;
 			ep->ctrl = ctrl;
@@ -47,15 +55,14 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		goto out_unlock;
 	}
 
-	if (configdb_check_allowed_host(hostnqn, subsysnqn,
-				     ep->port->portid) <= 0) {
+	if (configdb_check_allowed_host(hostnqn, nqn, ep->port->portid) <= 0) {
 		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
-		       hostnqn, subsysnqn);
+		       hostnqn, nqn);
 		ret = -EPERM;
 		goto out_unlock;
 	}
 	ep_info(ep, "Allocating new controller '%s' for '%s'",
-		hostnqn, subsysnqn);
+		hostnqn, nqn);
 	ctrl = malloc(sizeof(*ctrl));
 	if (!ctrl) {
 		ep_err(ep, "Out of memory allocating controller");
@@ -64,6 +71,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
 	strcpy(ctrl->hostnqn, hostnqn);
+	strcpy(ctrl->subsysnqn, nqn);
 	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
 	ctrl->num_queues = 1;
