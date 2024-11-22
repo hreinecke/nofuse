@@ -295,12 +295,35 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 	return len;
 }
 
+static int parse_guid(u8 *guid, size_t guid_len, const char *guid_str)
+{
+	int ret;
+
+	while (guid_len > 3) {
+		unsigned char a, b, c,d;
+
+		ret = sscanf(guid_str, "%hhx%hhx%hhx%hhx",
+			     &a, &b, &c, &d);
+		if (ret < 4)
+			return -EINVAL;
+
+		guid[0] = a;
+		guid[1] = b;
+		guid[2] = c;
+		guid[3] = d;
+		guid += 4;
+		guid_str += 8;
+		guid_len -= 4;
+	}
+	return 0;
+}
+
 static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 					u8 *desc_list, u64 len)
 {
-	int desc_len = len, ret, i;
+	int desc_len = len, ret;
 	struct nvme_ns_id_desc *desc;
-	char uid_str[37], *eptr;
+	char uid_str[37];
 	uuid_t uuid;
 
 	memset(desc_list, 0, len);
@@ -312,14 +335,27 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	if (ret < 0)
 		return ret;
 
-	if (desc_len < NVME_NIDT_UUID_LEN)
+	if (desc_len < sizeof(*desc) + NVME_NIDT_UUID_LEN)
 		return -EINVAL;
 	desc = (struct nvme_ns_id_desc *)desc_list;
 	desc->nidt = NVME_NIDT_UUID;
         desc->nidl = NVME_NIDT_UUID_LEN;
+	desc_len -= sizeof(*desc);
 	memcpy(&desc_list[4], uuid, desc->nidl);
 	desc_list += sizeof(*desc) + desc->nidl;
-	len -= sizeof(*desc) + desc->nidl;
+	desc_len -= desc->nidl;
+	if (desc_len < sizeof(*desc) + NVME_NIDT_CSI_LEN)
+		return desc_len;
+
+	desc = (struct nvme_ns_id_desc *)desc_list;
+	desc->nidt = NVME_NIDT_CSI;
+	desc->nidl = NVME_NIDT_CSI_LEN;
+	desc_list += sizeof(*desc);
+	desc_len -= sizeof(*desc);
+	desc_list[0] = 0;
+
+	if (desc_len < sizeof(*desc) + NVME_NIDT_NGUID_LEN)
+		goto parse_eui64;
 	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
 					  "device_nguid", uid_str);
 	if (!ret) {
@@ -327,23 +363,13 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 		desc->nidt = NVME_NIDT_NGUID;
 		desc->nidl = NVME_NIDT_NGUID_LEN;
 		desc_list += sizeof(*desc);
-		len -= sizeof(*desc);
-		for (i = 0; i < NVME_NIDT_NGUID_LEN; i+=4) {
-			char part[11];
-			unsigned int val, _val;
-			memset(part, 0, 11);
-			memcpy(part, "0x", 2);
-			memcpy(part + 2, &uid_str[i * 2], 8);
-			_val = strtoul(part, &eptr, 16);
-			if (_val == (unsigned long)-1 || part == eptr) {
-				break;
-			}
-			val = htobe32(_val);
-			memcpy(desc_list, &val, 4);
-			desc_list += 4;
-			len -= 4;
-		}
+		ret = parse_guid(desc_list, NVME_NIDT_NGUID_LEN, uid_str);
+		if (ret)
+			desc_list = (u8 *)desc;
 	}
+parse_eui64:
+	if (desc_len < sizeof(*desc) + NVME_NIDT_EUI64_LEN)
+		return desc_len;
 	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
 					  "device_eui64", uid_str);
 	if (!ret) {
@@ -351,30 +377,10 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 		desc->nidt = NVME_NIDT_EUI64;
 		desc->nidl = NVME_NIDT_EUI64_LEN;
 		desc_list += sizeof(*desc);
-		len -= sizeof(*desc);
-		for (i = 0; i < NVME_NIDT_EUI64_LEN; i+=4) {
-			unsigned int val, _val;
-			char part[11];
-			memset(part, 0, 11);
-			memcpy(part, "0x", 2);
-			memcpy(part + 2, &uuid[i * 2], 8);
-			_val = strtoul(part, &eptr, 16);
-			if (_val == (unsigned long)-1 || part == eptr) {
-				break;
-			}
-			val = htobe32(_val);
-			memcpy(desc_list, &val, 4);
-			desc_list += 4;
-			len -= 4;
-		}
+		ret = parse_guid(desc_list, NVME_NIDT_EUI64_LEN, uid_str);
+		if (ret)
+			desc_list = (u8 *)desc;
 	}
-
-	desc = (struct nvme_ns_id_desc *)desc_list;
-	desc->nidt = NVME_NIDT_CSI;
-	desc->nidl = NVME_NIDT_CSI_LEN;
-	desc_list += sizeof(*desc);
-	desc_list[0] = 0;
-
 	return desc_len;
 }
 

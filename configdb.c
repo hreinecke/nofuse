@@ -203,7 +203,8 @@ static const char *init_sql[NUM_TABLES] = {
 "CREATE UNIQUE INDEX cntlid_idx ON "
 "controllers(cntlid, subsys_id);",
 "CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"device_nguid VARCHAR(256), device_uuid VARCHAR(256) UNIQUE NOT NULL, "
+"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
+"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
 "device_path VARCHAR(256), device_enable INT DEFAULT 0, ana_grpid INT, "
 "nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
 "UNIQUE (subsys_id, nsid), "
@@ -594,20 +595,27 @@ int configdb_del_subsys(const char *nqn)
 }
 
 static char add_namespace_sql[] =
-	"INSERT INTO namespaces (device_uuid, nsid, subsys_id, ctime) "
-	"SELECT '%s', '%u', s.id, CURRENT_TIMESTAMP "
+	"INSERT INTO namespaces (device_uuid, device_nguid, device_eui64, nsid, subsys_id, ctime) "
+	"SELECT '%s', '%s', '%s', '%u', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s' AND s.attr_type == '2';";
 
 int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 {
 	char *sql;
 	uuid_t uuid;
-	char uuid_str[65];
+	char uuid_str[65], nguid_str[33], eui64_str[33];
+	unsigned int nguid1, nguid2;
 	int ret;
 
 	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
-	ret = asprintf(&sql, add_namespace_sql, uuid_str,
+	memcpy(&nguid1, &uuid[8], 4);
+	memcpy(&nguid2, &uuid[12], 4);
+	sprintf(nguid_str, "%08x%08x%s",
+		nguid1, nguid2, NOFUSE_NGUID_PREFIX);
+	sprintf(eui64_str, "0efd37%hhx%08x",
+		uuid[11], nguid2);
+	ret = asprintf(&sql, add_namespace_sql, uuid_str, nguid_str, eui64_str,
 		       nsid, subsysnqn);
 	if (ret < 0)
 		return ret;

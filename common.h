@@ -68,6 +68,8 @@ extern struct linked_list port_linked_list;
 #define ADRFAM_STR_PCI "pci"
 #define ADRFAM_STR_LOOP "loop"
 
+#define NOFUSE_NGUID_PREFIX "0efd376f6e756665"
+
 enum { CONNECTED, STOPPED, DISCONNECTED };
 
 extern int stopped;
