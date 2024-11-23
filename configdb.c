@@ -197,6 +197,7 @@ static const char *init_sql[NUM_TABLES] = {
 "CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 "CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
+"ana_chg_ctr INT, "
 "UNIQUE(cntlid, subsys_id), "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
@@ -851,19 +852,48 @@ static char set_namespace_anagrp_sql[] =
 	"WHERE sel.subsysnqn = '%s' "
 	"AND sel.grpid = '%d' AND nsid = '%u';";
 
+static char set_namespace_anagrp_aen_sql[] =
+	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
+	"FROM "
+	"(SELECT s.nqn AS subsysnqn "
+	" FROM subsystems AS s "
+	" INNER JOIN controllers AS c ON c.subsys_id = s.id ) AS sel "
+	"WHERE sel.subsysnqn = '%s';";
+
 int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 				  int ana_grpid)
 {
 	char *sql;
-	int ret;
+	int ret, _ret;
 
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 	ret = asprintf(&sql, set_namespace_anagrp_sql,
 		       subsysnqn, ana_grpid, nsid);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
-	raise_aen(NVME_AER_NOTICE_ANA, NVME_AEN_BIT_ANA_CHANGE);
+	if (ret < 0)
+		goto rollback;
+	ret = asprintf(&sql, set_namespace_anagrp_aen_sql,
+		       subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple("COMMIT TRANSACTION;");
+	return ret;
+rollback:
+	_ret = sql_exec_simple("ROLLBACK TRANSACTION;");
+	if (_ret < 0) {
+		fprintf(stderr, "%s: rollback failed, database inconsistent\n",
+			__func__);
+		return _ret;
+	}
 	return ret;
 }
 
@@ -1212,17 +1242,46 @@ static char set_ana_group_sql[] =
 	"UPDATE ana_groups SET ana_state = '%d', chgcnt = chgcnt + 1 "
 	"WHERE port_id = '%s' AND grpid = '%s';";
 
+static char set_ana_group_aen_sql[] =
+	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
+	"FROM "
+	"(SELECT sp.port_id AS portid FROM subsys_ports AS sp "
+	" INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	" INNER JOIN controllers AS c on c.subsys_id = s.id ) AS sel "
+	"WHERE sel.portid = '%s';";
+
 int configdb_set_ana_group(const char *port, const char *ana_grpid,
 			   int ana_state)
 {
-	int ret;
+	int ret, _ret;
 	char *sql;
 
-	ret = asprintf(&sql, set_ana_group_sql, ana_state, port, ana_grpid);
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
 	if (ret < 0)
 		return ret;
+	ret = asprintf(&sql, set_ana_group_sql, ana_state, port, ana_grpid);
+	if (ret < 0)
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
+	ret = asprintf(&sql, set_ana_group_aen_sql, port);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple("COMMIT TRANSACTION;");
+	return ret;
+rollback:
+	_ret = sql_exec_simple("ROLLBACK TRANSACTION;");
+	if (_ret < 0) {
+		fprintf(stderr, "%s: rollback failed, database inconsistent.\n",
+			__func__);
+		return _ret;
+	}
 	return ret;
 }
 
