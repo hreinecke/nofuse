@@ -213,7 +213,7 @@ static const char *init_sql[NUM_TABLES] = {
 "CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 "CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
-"ana_chg_ctr INT, ns_chg_ctr INT, "
+"ana_chg_ctr INT, ns_chg_ctr INT, disc_chg_ctr INT, "
 "UNIQUE(cntlid, subsys_id), "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
@@ -1391,23 +1391,53 @@ static char add_host_subsys_sql[] =
 	"SELECT h.id, s.id, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';";
 
+static char discovery_chg_aen_sql[] =
+	"UPDATE controllers SET disc_chg_ctr = disc_chg_ctrl + 1 "
+	"FROM "
+	"(SELECT s.nqn AS subsysnqn "
+	" FROM subsystems AS s "
+	" INNER JOIN controllers AS c ON c.subsys_id = s.id ) AS sel "
+	"WHERE sel.subsysnqn = '%s';";
+
 int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
+	int ret, _ret;
 	char *sql;
-	int ret;
+
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 
 	ret = asprintf(&sql, add_host_subsys_sql,
 		       hostnqn, subsysnqn);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
+
 	ret = asprintf(&sql, "UPDATE hosts SET genctr = genctr + 1 "
 		       "WHERE nqn = '%s';", hostnqn);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
+
+	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -1499,15 +1529,34 @@ static char del_host_subsys_sql[] =
 
 int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
+	int ret, _ret;
 	char *sql;
-	int ret;
+
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 
 	ret = asprintf(&sql, del_host_subsys_sql,
 		       hostnqn, subsysnqn);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
+
+	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -1526,25 +1575,43 @@ static char update_genctr_host_subsys_sql[] =
 
 int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 {
+	int ret, _ret;
 	char *sql;
-	int ret;
+
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 
 	ret = asprintf(&sql, add_subsys_port_sql,
 		       subsysnqn, port);
 	if (ret < 0)
-		return ret;
-
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
 
 	ret = asprintf(&sql, update_genctr_host_subsys_sql,
 		       subsysnqn);
 	if (ret < 0)
-		return ret;
-
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
 
+	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -1557,24 +1624,44 @@ static char del_subsys_port_sql[] =
 
 int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
 {
+	int ret, _ret;
 	char *sql;
-	int ret;
+
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 
 	ret = asprintf(&sql, del_subsys_port_sql,
 		       subsysnqn, port);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
 
 	ret = asprintf(&sql, update_genctr_host_subsys_sql,
 		       subsysnqn);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
 
+	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
