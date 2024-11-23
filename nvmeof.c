@@ -211,6 +211,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 			    NVME_CTRL_ATTR_TBKAS);
 	id.ioccsz = NVME_NVM_IOSQES;
 	id.iorcsz = NVME_NVM_IOCQES;
+	id.oaes = htole32(1 << 11);
 	id.acl = 3;
 	id.aerl = 3;
 	id.nn = htole32(MAX_NSID);
@@ -731,6 +732,9 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 		ret = handle_set_features(ep, qe, cmd);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
+	} else if (cmd->common.opcode == nvme_admin_async_event) {
+		qe->aen = true;
+		return 0;
 	} else {
 		ctrl_err(ep, "unknown nvme admin opcode %d",
 			 cmd->common.opcode);

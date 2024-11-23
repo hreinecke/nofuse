@@ -108,6 +108,17 @@ static int tcp_create_queue(struct nofuse_queue *ep, int conn)
 static void tcp_destroy_queue(struct nofuse_queue *ep)
 {
 	if (ep->qes) {
+		int i;
+
+		for (i = 0; i < ep->qsize; i++) {
+			struct ep_qe *qe = &ep->qes[i];
+
+			if (!qe->busy)
+				continue;
+			qe->busy = false;
+			if (qe->data)
+				free(qe->data);
+		}
 		free(ep->qes);
 		ep->qes = NULL;
 	}

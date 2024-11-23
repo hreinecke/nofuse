@@ -89,6 +89,7 @@ struct ep_qe {
 	int ccid;
 	int opcode;
 	bool busy;
+	bool aen;
 };
 
 enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
