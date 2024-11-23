@@ -264,7 +264,7 @@ static const char *init_sql[NUM_TABLES] = {
 void configdb_update_hook(void *arg, int cmd, const char *db,
 			  const char *tbl, sqlite3_int64 rowid)
 {
-	if (!strcmp(tbl, "namespaces"))
+	if (!strcmp(tbl, "controllers"))
 		raise_aen(NVME_AER_NOTICE_NS_CHANGED,
 			  NVME_AEN_BIT_NS_ATTR);
 	if (!strcmp(tbl, "ana_groups"))
@@ -942,11 +942,13 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 	free(sql);
 	if (ret < 0)
 		goto rollback;
+
 	if (sqlite3_changes(configdb_db) == 0) {
 		printf("%s: no rows modified\n", __func__);
 		ret = -ENOENT;
 		goto done;
 	}
+
 	ret = asprintf(&sql, set_namespace_anagrp_aen_sql,
 		       subsysnqn);
 	if (ret < 0)
@@ -1333,7 +1335,7 @@ static char set_ana_group_sql[] =
 static char set_ana_group_aen_sql[] =
 	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
 	"FROM "
-	"(SELECT sp.port_id AS portid FROM subsys_ports AS sp "
+	"(SELECT sp.port_id AS portid FROM subsys_port AS sp "
 	" INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	" INNER JOIN controllers AS c on c.subsys_id = s.id ) AS sel "
 	"WHERE sel.portid = '%s';";
@@ -1392,7 +1394,7 @@ static char add_host_subsys_sql[] =
 	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';";
 
 static char discovery_chg_aen_sql[] =
-	"UPDATE controllers SET disc_chg_ctr = disc_chg_ctrl + 1 "
+	"UPDATE controllers SET disc_chg_ctr = disc_chg_ctr + 1 "
 	"FROM "
 	"(SELECT s.nqn AS subsysnqn "
 	" FROM subsystems AS s "
