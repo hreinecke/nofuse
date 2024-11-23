@@ -18,6 +18,22 @@
 
 static sqlite3 *configdb_db;
 
+#define COMMIT_TRANSACTION \
+	_ret = sql_exec_simple("COMMIT TRANSACTION;");	\
+	if (_ret) {						\
+		fprintf(stderr, "%s: commit failed, "		\
+			"database inconsistent.\n", __func__);	\
+		return _ret;					\
+	}
+
+#define ROLLBACK_TRANSACTION \
+	_ret = sql_exec_simple("ROLLBACK TRANSACTION;");	\
+	if (_ret) {						\
+		fprintf(stderr, "%s: rollback failed, "		\
+			"database inconsistent.\n", __func__);	\
+		return _ret;					\
+	}
+
 static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 {
 	   int i;
@@ -197,7 +213,7 @@ static const char *init_sql[NUM_TABLES] = {
 "CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 "CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
-"ana_chg_ctr INT, "
+"ana_chg_ctr INT, ns_chg_ctr INT, "
 "UNIQUE(cntlid, subsys_id), "
 "FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
@@ -617,14 +633,26 @@ static char add_namespace_sql[] =
 	"SELECT '%s', '%s', '%s', '%u', s.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s WHERE s.nqn = '%s' AND s.attr_type == '2';";
 
+static char namespace_chg_aen_sql[] =
+	"UPDATE controllers SET ns_chg_ctr = ns_chg_ctr + 1 "
+	"FROM "
+	"(SELECT s.nqn AS subsysnqn, n.nsid "
+	" FROM subsystems AS s "
+	" INNER JOIN namespaces AS n ON n.subsys_id = s.id "
+	" INNER JOIN controllers AS c on c.subsys_id = s.id) AS sel "
+	"WHERE sel.subsysnqn = '%s' AND sel.nsid = '%d';";
+
 int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 {
 	char *sql;
 	uuid_t uuid;
 	char uuid_str[65], nguid_str[33], eui64_str[33];
 	unsigned int nguid1, nguid2;
-	int ret;
+	int ret, _ret;
 
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
 	memcpy(&nguid1, &uuid[8], 4);
@@ -636,11 +664,27 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 	ret = asprintf(&sql, add_namespace_sql, uuid_str, nguid_str, eui64_str,
 		       nsid, subsysnqn);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
-	if (sqlite3_changes(configdb_db) == 0)
-		return -EPERM;
+	if (ret < 0)
+		goto rollback;
+	if (sqlite3_changes(configdb_db) == 0) {
+		ret = -EPERM;
+		goto done;
+	}
+	ret = asprintf(&sql, namespace_chg_aen_sql, subsysnqn, nsid);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+done:
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -808,17 +852,38 @@ static char set_namespace_attr_sql[] =
 int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
 				const char *attr, const char *buf)
 {
-	int ret;
+	int ret, _ret;
 	char *sql;
 
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret < 0)
+		return ret;
 	if (!strcmp(attr, "enable"))
 		attr = "device_enable";
 	ret = asprintf(&sql, set_namespace_attr_sql, attr, buf,
 		       subsysnqn, nsid);
 	if (ret < 0)
-		return ret;
+		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
+	if (sqlite3_changes(configdb_db) == 0) {
+		printf("%s: no rows modified\n", __func__);
+		goto done;
+	}
+	ret = asprintf(&sql, namespace_chg_aen_sql, subsysnqn, nsid);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+done:
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -877,6 +942,11 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 	free(sql);
 	if (ret < 0)
 		goto rollback;
+	if (sqlite3_changes(configdb_db) == 0) {
+		printf("%s: no rows modified\n", __func__);
+		ret = -ENOENT;
+		goto done;
+	}
 	ret = asprintf(&sql, set_namespace_anagrp_aen_sql,
 		       subsysnqn);
 	if (ret < 0)
@@ -885,15 +955,11 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 	free(sql);
 	if (ret < 0)
 		goto rollback;
-	ret = sql_exec_simple("COMMIT TRANSACTION;");
+done:
+	COMMIT_TRANSACTION;
 	return ret;
 rollback:
-	_ret = sql_exec_simple("ROLLBACK TRANSACTION;");
-	if (_ret < 0) {
-		fprintf(stderr, "%s: rollback failed, database inconsistent\n",
-			__func__);
-		return _ret;
-	}
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -904,15 +970,37 @@ static char del_namespace_sql[] =
 
 int configdb_del_namespace(const char *subsysnqn, u32 nsid)
 {
-	int ret;
+	int ret, _ret;
 	char *sql;
 
-	ret = asprintf(&sql, del_namespace_sql, subsysnqn, nsid);
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
 	if (ret < 0)
 		return ret;
+	ret = asprintf(&sql, del_namespace_sql, subsysnqn, nsid);
+	if (ret < 0)
+		goto rollback;
 
 	ret = sql_exec_simple(sql);
 	free(sql);
+	if (ret < 0)
+		goto rollback;
+	if (sqlite3_changes(configdb_db) == 0) {
+		printf("%s: no rows deleted\n", __func__);
+		ret = -ENOENT;
+		goto done;
+	}
+	ret = asprintf(&sql, namespace_chg_aen_sql, subsysnqn, nsid);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+done:
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
@@ -1273,15 +1361,10 @@ int configdb_set_ana_group(const char *port, const char *ana_grpid,
 	free(sql);
 	if (ret < 0)
 		goto rollback;
-	ret = sql_exec_simple("COMMIT TRANSACTION;");
+	COMMIT_TRANSACTION;
 	return ret;
 rollback:
-	_ret = sql_exec_simple("ROLLBACK TRANSACTION;");
-	if (_ret < 0) {
-		fprintf(stderr, "%s: rollback failed, database inconsistent.\n",
-			__func__);
-		return _ret;
-	}
+	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
