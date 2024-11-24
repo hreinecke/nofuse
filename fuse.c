@@ -1121,6 +1121,9 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		ret = 0;
 out_free:
 	free(pathbuf);
+	if (ret != 0)
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -1280,6 +1283,9 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	ret = strlen(buf);
 out_free:
 	free(pathbuf);
+	if (ret < 0)
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
@@ -1497,6 +1503,9 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 out_free:
 	free(value);
 	free(pathbuf);
+	if (ret < 0)
+		fuse_err("%s: path %s error %d",
+			 __func__, path, ret);
 	return ret;
 }
 
