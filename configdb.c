@@ -201,64 +201,79 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 #define NUM_TABLES 12
 
 static const char *init_sql[NUM_TABLES] = {
-"CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
-"ctime TIME, atime TIME, mtime TIME );",
-"CREATE TABLE subsystems ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
-"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
-"attr_model VARCHAR(256), attr_serial VARCHAR(256), attr_version VARCHAR(256), "
-"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME, "
-"ana_chgcnt INT DEFAULT 0, "
-"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
-"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
-"ana_chg_ctr INT, ns_chg_ctr INT, disc_chg_ctr INT, "
-"UNIQUE(cntlid, subsys_id), "
-"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT );",
-"CREATE UNIQUE INDEX cntlid_idx ON "
-"controllers(cntlid, subsys_id);",
-"CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
-"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-"device_path VARCHAR(256), device_enable INT DEFAULT 0, ana_grpid INT, "
-"nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, atime TIME, mtime TIME, "
-"UNIQUE (subsys_id, nsid), "
-"CHECK (device_enable = 0 OR device_enable = 1), "
-"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT );",
-"CREATE UNIQUE INDEX nsid_idx ON "
-"namespaces(subsys_id, nsid); "
-"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
-"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
-"addr_treq char(32), "
-"addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
-"addr_tsas CHAR(255) DEFAULT '', "
-"ctime TIME, atime TIME, mtime TIME, "
-"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
-"CREATE UNIQUE INDEX port_addr_idx ON "
-"ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
-"CREATE TABLE ana_port_group ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-"grpid INT, ana_state INT DEFAULT '1', port_id INTEGER, "
-"chgcnt INT DEFAULT '0', ctime TIME, atime TIME, mtime TIME, "
-"UNIQUE(port_id, grpid), "
-"FOREIGN KEY (port_id) REFERENCES ports(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT );",
-"CREATE UNIQUE INDEX ana_group_idx ON "
-"ana_port_group(port_id, grpid);",
-"CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
-"ctime TIME, atime TIME, mtime TIME, "
-"FOREIGN KEY (host_id) REFERENCES host(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT, "
-"FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT);",
-"CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
-"ctime TIME, atime TIME, mtime TIME, "
-"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT, "
-"FOREIGN KEY (port_id) REFERENCES ports(id) "
-"ON UPDATE CASCADE ON DELETE RESTRICT);",
+	/* hosts */
+	"CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
+	"ctime TIME, atime TIME, mtime TIME );",
+	/* subsystems */
+	"CREATE TABLE subsystems ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
+	"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
+	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
+	"attr_version VARCHAR(256), "
+	"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME, "
+	"ana_chgcnt INT DEFAULT 0, "
+	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
+	/* controllers */
+	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
+	"ana_chg_ctr INT, ns_chg_ctr INT, disc_chg_ctr INT, "
+	"UNIQUE(cntlid, subsys_id), "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT );",
+	/* cntlid index */
+	"CREATE UNIQUE INDEX cntlid_idx ON "
+	"controllers(cntlid, subsys_id);",
+	/* namespaces */
+	"CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
+	"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
+	"device_path VARCHAR(256), device_enable INT DEFAULT 0, "
+	"ana_grpid INT, "
+	"nsid INTEGER NOT NULL, subsys_id INTEGER, "
+	"ctime TIME, atime TIME, mtime TIME, "
+	"UNIQUE (subsys_id, nsid), "
+	"CHECK (device_enable = 0 OR device_enable = 1), "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT );",
+	/* nsid_idx */
+	"CREATE UNIQUE INDEX nsid_idx ON "
+	"namespaces(subsys_id, nsid); "
+	/* ports */
+	"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
+	"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
+	"addr_treq char(32), "
+	"addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
+	"addr_tsas CHAR(255) DEFAULT '', "
+	"ctime TIME, atime TIME, mtime TIME, "
+	"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
+	/* port_addr_idx */
+	"CREATE UNIQUE INDEX port_addr_idx ON "
+	"ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
+	/* ana_port_group */
+	"CREATE TABLE ana_port_group ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"grpid INT, ana_state INT DEFAULT '1', port_id INTEGER, "
+	"chgcnt INT DEFAULT '0', ctime TIME, atime TIME, mtime TIME, "
+	"UNIQUE(port_id, grpid), "
+	"FOREIGN KEY (port_id) REFERENCES ports(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT );",
+	/* ana_port_group_idx */
+	"CREATE UNIQUE INDEX ana_group_idx ON "
+	"ana_port_group(port_id, grpid);",
+	/* host_subsys */
+	"CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
+	"ctime TIME, atime TIME, mtime TIME, "
+	"FOREIGN KEY (host_id) REFERENCES host(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT, "
+	"FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT);",
+	/* subsys_port */
+	"CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
+	"ctime TIME, atime TIME, mtime TIME, "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT, "
+	"FOREIGN KEY (port_id) REFERENCES ports(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
 void configdb_update_hook(void *arg, int cmd, const char *db,
