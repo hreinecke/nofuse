@@ -239,14 +239,14 @@ static const char *init_sql[NUM_TABLES] = {
 "UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
 "CREATE UNIQUE INDEX port_addr_idx ON "
 "ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
-"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+"CREATE TABLE ana_port_group ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 "grpid INT, ana_state INT DEFAULT '1', port_id INTEGER, "
 "chgcnt INT DEFAULT '0', ctime TIME, atime TIME, mtime TIME, "
 "UNIQUE(port_id, grpid), "
 "FOREIGN KEY (port_id) REFERENCES ports(id) "
 "ON UPDATE CASCADE ON DELETE RESTRICT );",
 "CREATE UNIQUE INDEX ana_group_idx ON "
-"ana_groups(port_id, grpid);",
+"ana_port_group(port_id, grpid);",
 "CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
 "ctime TIME, atime TIME, mtime TIME, "
 "FOREIGN KEY (host_id) REFERENCES host(id) "
@@ -267,7 +267,7 @@ void configdb_update_hook(void *arg, int cmd, const char *db,
 	if (!strcmp(tbl, "controllers"))
 		raise_aen(NVME_AER_NOTICE_NS_CHANGED,
 			  NVME_AEN_BIT_NS_ATTR);
-	if (!strcmp(tbl, "ana_groups"))
+	if (!strcmp(tbl, "ana_port_group"))
 		raise_aen(NVME_AER_NOTICE_ANA,
 			  NVME_AEN_BIT_ANA_CHANGE);
 	if (!strcmp(tbl, "subsys_port") ||
@@ -295,7 +295,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE subsys_port;",
 	"DROP TABLE host_subsys;",
 	"DROP INDEX ana_group_idx;",
-	"DROP TABLE ana_groups;",
+	"DROP TABLE ana_port_group;",
 	"DROP INDEX port_addr_idx;",
 	"DROP TABLE ports;",
 	"DROP INDEX nsid_idx;",
@@ -909,11 +909,11 @@ int configdb_get_namespace_anagrp(const char *subsysnqn, u32 nsid,
 static char set_namespace_anagrp_sql[] =
 	"UPDATE namespaces SET ana_grpid = sel.grpid "
 	"FROM "
-	"(SELECT s.nqn AS subsysnqn, p.id AS portid, ag.grpid AS grpid "
+	"(SELECT s.nqn AS subsysnqn, p.id AS portid, ap.grpid AS grpid "
 	"FROM  subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
-	"INNER JOIN ana_groups AS ag ON ag.port_id = p.id) AS sel "
+	"INNER JOIN ana_port_group AS ap ON ap.port_id = p.id) AS sel "
 	"WHERE sel.subsysnqn = '%s' "
 	"AND sel.grpid = '%d' AND nsid = '%u';";
 
@@ -1214,7 +1214,7 @@ int configdb_del_port(unsigned int portid)
 }
 
 static char add_ana_group_sql[] =
-	"INSERT INTO ana_groups (grpid, port_id, ana_state, ctime) "
+	"INSERT INTO ana_port_group (grpid, port_id, ana_state, ctime) "
 	"SELECT '%d', p.id, '%d', CURRENT_TIMESTAMP "
 	"FROM ports AS p WHERE p.id = '%d';";
 
@@ -1231,9 +1231,9 @@ int configdb_add_ana_group(int port, int grpid, int ana_state)
 	return ret;
 }
 
-static char count_ana_groups_sql[] =
-	"SELECT count(ag.id) AS num FROM ana_groups AS ag "
-	"INNER JOIN ports AS p ON p.id = ag.port_id "
+static char count_ana_port_group_sql[] =
+	"SELECT count(ap.id) AS num FROM ana_port_group AS ap "
+	"INNER JOIN ports AS p ON p.id = ap.port_id "
 	"WHERE p.id = '%s';";
 
 int configdb_count_ana_groups(const char *port, int *num)
@@ -1241,7 +1241,7 @@ int configdb_count_ana_groups(const char *port, int *num)
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, count_ana_groups_sql, port);
+	ret = asprintf(&sql, count_ana_port_group_sql, port);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_int(sql, "num", num);
@@ -1251,9 +1251,9 @@ int configdb_count_ana_groups(const char *port, int *num)
 }
 
 static char stat_ana_group_sql[] =
-	"SELECT unixepoch(ag.ctime) AS tv FROM ana_groups AS ag "
-	"INNER JOIN ports AS p ON p.id = ag.port_id "
-	"WHERE p.id = '%s' AND ag.grpid = '%s';";
+	"SELECT unixepoch(ap.ctime) AS tv FROM ana_port_group AS ap "
+	"INNER JOIN ports AS p ON p.id = ap.port_id "
+	"WHERE p.id = '%s' AND ap.grpid = '%s';";
 
 int configdb_stat_ana_group(const char *port, const char *ana_grpid,
 			    struct stat *stbuf)
@@ -1277,9 +1277,9 @@ int configdb_stat_ana_group(const char *port, const char *ana_grpid,
 	return 0;
 }
 
-static char fill_ana_groups_sql[] =
-	"SELECT ag.grpid AS grpid FROM ana_groups AS ag "
-	"INNER JOIN ports AS p ON p.id = ag.port_id "
+static char fill_ana_port_group_sql[] =
+	"SELECT ap.grpid AS grpid FROM ana_port_group AS ap "
+	"INNER JOIN ports AS p ON p.id = ap.port_id "
 	"WHERE p.id = '%s';";
 
 int configdb_fill_ana_groups(const char *port,
@@ -1293,7 +1293,7 @@ int configdb_fill_ana_groups(const char *port,
 	char *sql, *errmsg;
 	int ret;
 
-	ret = asprintf(&sql, fill_ana_groups_sql, port);
+	ret = asprintf(&sql, fill_ana_port_group_sql, port);
 	if (ret < 0)
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
@@ -1310,9 +1310,9 @@ int configdb_fill_ana_groups(const char *port,
 }
 
 static char get_ana_group_sql[] =
-	"SELECT ag.ana_state AS ana_state FROM ana_groups AS ag "
-	"INNER JOIN ports AS p ON p.id = ag.port_id "
-	"WHERE p.id = '%s' AND ag.grpid = '%s';";
+	"SELECT ap.ana_state AS ana_state FROM ana_port_group AS ap "
+	"INNER JOIN ports AS p ON p.id = ap.port_id "
+	"WHERE p.id = '%s' AND ap.grpid = '%s';";
 
 int configdb_get_ana_group(const char *port, const char *ana_grpid,
 			   int *ana_state)
@@ -1329,7 +1329,7 @@ int configdb_get_ana_group(const char *port, const char *ana_grpid,
 }
 
 static char set_ana_group_sql[] =
-	"UPDATE ana_groups SET ana_state = '%d', chgcnt = chgcnt + 1 "
+	"UPDATE ana_port_group SET ana_state = '%d', chgcnt = chgcnt + 1 "
 	"WHERE port_id = '%s' AND grpid = '%s';";
 
 static char set_ana_group_aen_sql[] =
@@ -1371,9 +1371,9 @@ rollback:
 }
 
 static char del_ana_group_sql[] =
-	"DELETE FROM ana_groups AS ag WHERE ag.port_id IN "
+	"DELETE FROM ana_port_group AS ap WHERE ap.port_id IN "
 	"(SELECT id FROM ports WHERE id = '%d') AND "
-	"ag.grpid = '%d';";
+	"ap.grpid = '%d';";
 
 int configdb_del_ana_group(unsigned int portid, int grpid)
 {
@@ -2152,12 +2152,12 @@ int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len)
 }
 
 static char count_ana_grps_sql[] =
-	"SELECT ag.ana_state, ag.chgcnt, count(ns.nsid) AS num "
-	"FROM ana_groups AS ag "
-	"INNER JOIN subsys_port AS sp ON sp.port_id = ag.port_id "
+	"SELECT ap.ana_state, ap.chgcnt, count(ns.nsid) AS num "
+	"FROM ana_port_group AS ap "
+	"INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
 	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
 	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
-	"WHERE s.nqn = '%s' AND ag.port_id = '%d' AND ag.grpid = '%d';";
+	"WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ap.grpid = '%d';";
 
 static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 {
@@ -2213,11 +2213,11 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 }
 
 static char ana_grp_log_entry_sql[] =
-	"SELECT ns.nsid FROM ana_groups AS ag "
-	"INNER JOIN subsys_port AS sp ON sp.port_id = ag.port_id "
+	"SELECT ns.nsid FROM ana_port_group AS ap "
+	"INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
 	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
 	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
-	"WHERE s.nqn = '%s' AND ag.port_id = '%d' AND ag.grpid = '%d';";
+	"WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ap.grpid = '%d';";
 
 int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			     u8 *log, int log_len)
