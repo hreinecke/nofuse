@@ -198,7 +198,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 12
+#define NUM_TABLES 13
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -214,6 +214,12 @@ static const char *init_sql[NUM_TABLES] = {
 	"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
+	/* ana_groups */
+	"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"grpid INT, subsys_id INT, "
+	"CHECK (grpid > 0 AND grpid < 65), "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* controllers */
 	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 	"cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
@@ -317,6 +323,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE namespaces;",
 	"DROP INDEX cntlid_idx;",
 	"DROP TABLE controllers;",
+	"DROP TABLE ana_groups;",
 	"DROP TABLE subsystems;",
 	"DROP TABLE hosts;",
 };
