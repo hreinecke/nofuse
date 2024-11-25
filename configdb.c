@@ -1052,7 +1052,7 @@ int configdb_del_ctrl(const char *subsysnqn, int cntlid)
 	int ret;
 	char *sql;
 
-	ret = asprintf(&sql, del_ctrl_sql, cntlid, subsysnqn);
+	ret = asprintf(&sql, del_ctrl_sql, subsysnqn, cntlid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
