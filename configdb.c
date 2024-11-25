@@ -34,6 +34,18 @@ static sqlite3 *configdb_db;
 		return _ret;					\
 	}
 
+static int sql_exec_error(int ret, const char *sql, char *errmsg)
+{
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "SQL error executing %s\n", sql);
+		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sqlite3_free(errmsg);
+		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
+	} else
+		ret = 0;
+	return ret;
+}
+
 static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 {
 	   int i;
@@ -50,19 +62,13 @@ static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 	   return 0;
 }
 
-static int sql_exec_simple(const char *sql_str)
+static int sql_exec_simple(const char *sql)
 {
 	int ret;
 	char *errmsg = NULL;
 
-	ret = sqlite3_exec(configdb_db, sql_str, sql_simple_cb, NULL, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql_str);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sqlite3_exec(configdb_db, sql, sql_simple_cb, NULL, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
 	return ret;
 }
 
@@ -117,11 +123,9 @@ static int sql_exec_int(const char *sql, const char *col, int *value)
 
 	ret = sqlite3_exec(configdb_db, sql, sql_int_value_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		parm.done = -EINVAL;
+	ret = sql_exec_error(ret, sql, errmsg);
+	if (ret < 0) {
+		parm.done = -ret;
 	}
 	if (parm.done < 0)
 		fprintf(stderr, "value error for '%s': %s\n", col,
@@ -182,11 +186,9 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 
 	ret = sqlite3_exec(configdb_db, sql, sql_str_value_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		parm.done = -EINVAL;
+	ret = sql_exec_error(ret, sql, errmsg);
+	if (ret < 0) {
+		parm.done = ret;
 	}
 	if (parm.done < 0)
 		fprintf(stderr, "value error for '%s': %s\n", col,
@@ -384,7 +386,8 @@ int configdb_count_table(const char *tbl, int *num)
 }
 
 static char add_host_sql[] =
-	"INSERT INTO hosts (nqn, ctime) VALUES ('%s', CURRENT_TIMESTAMP);";
+	"INSERT INTO hosts (nqn, ctime, mtime) "
+	"VALUES ('%s', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);";
 
 int configdb_add_host(const char *nqn)
 {
@@ -400,25 +403,60 @@ int configdb_add_host(const char *nqn)
 	return ret;
 }
 
+static int stat_cb(void *p, int argc, char **argv, char **col)
+{
+	struct stat *stbuf = p;
+	int i;
+
+	if (!p)
+		return 0;
+	for (i = 0; i < argc; i++) {
+		unsigned long timeval;
+		char *eptr = NULL;
+
+		if (!strlen(argv[i]))
+			continue;
+		timeval = strtoul(argv[i], &eptr, 10);
+		if (timeval == ULONG_MAX || argv[i] == eptr)
+			continue;
+		if (!strcmp(col[i], "ctime")) {
+			stbuf->st_ctime = timeval;
+		} else if (strcmp(col[i], "mtime")) {
+			stbuf->st_mtime = timeval;
+		} else if (strcmp(col[i], "atime")) {
+			stbuf->st_atime = timeval;
+		}
+	}
+	return 0;
+}
+
 static char stat_host_sql[] =
-	"SELECT unixepoch(ctime) AS tv FROM hosts WHERE nqn = '%s';";
+	"SELECT unixepoch(ctime) AS ctime FROM hosts WHERE nqn = '%s';";
 
 int configdb_stat_host(const char *hostnqn, struct stat *stbuf)
 {
-		char *sql;
-	int ret, timeval;
+	char *sql, *errmsg;
+	int ret;
+	struct stat st;
 
 	ret = asprintf(&sql, stat_host_sql, hostnqn);
 	if (ret < 0)
 		return ret;
 
-	ret = sql_exec_int(sql, "tv", &timeval);
+	if (!stbuf)
+		stbuf = &st;
+	stbuf->st_ctime = stbuf->st_mtime = stbuf->st_atime = 0;
+	ret = sqlite3_exec(configdb_db, sql, stat_cb, stbuf, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
 	if (ret < 0)
 		return ret;
-	if (stbuf) {
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-	}
+	if (stbuf->st_ctime == 0)
+		return -ENOENT;
+	if (!stbuf->st_mtime)
+		stbuf->st_mtime = stbuf->st_ctime;
+	if (!stbuf->st_atime)
+		stbuf->st_atime = stbuf->st_mtime;
 	return 0;
 }
 
@@ -437,13 +475,7 @@ int configdb_fill_host_dir(void *buf, fuse_fill_dir_t filler)
 
 	ret = sqlite3_exec(configdb_db, fill_host_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sql_exec_error(ret, fill_host_dir_sql, errmsg);
 	return ret;
 }
 
@@ -546,16 +578,7 @@ int configdb_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 
 	ret = sqlite3_exec(configdb_db, fill_subsys_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n",
-			fill_subsys_dir_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
-
-	return ret;
+	return sql_exec_error(ret, fill_subsys_dir_sql, errmsg);
 }
 
 static char fill_subsys_sql[] =
@@ -576,15 +599,10 @@ int configdb_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler)
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_filter_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else	{
+	ret = sql_exec_error(ret, sql, errmsg);
+	if (ret == 0) {
 		filler(buf, "allowed_hosts", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "namespaces", NULL, 0, FUSE_FILL_DIR_PLUS);
-		ret = 0;
 	}
 	free(sql);
 	return ret;
@@ -772,14 +790,7 @@ int configdb_fill_namespace_dir(const char *nqn, void *buf,
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
-
+	ret = sql_exec_error(ret, fill_namespace_dir_sql, errmsg);
 	free(sql);
 	return ret;
 }
@@ -825,13 +836,7 @@ int configdb_fill_namespace(const char *nqn, u32 nsid,
 
 	ret = sqlite3_exec(configdb_db, sql, fill_ns_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sql_exec_error(ret, fill_namespace_sql, errmsg);
 	free(sql);
 	filler(buf, "ana_grpid", NULL, 0, FUSE_FILL_DIR_PLUS);
 	return ret;
@@ -1121,13 +1126,7 @@ int configdb_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 
 	ret = sqlite3_exec(configdb_db, fill_port_dir_sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_port_dir_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sql_exec_error(ret, fill_port_dir_sql, errmsg);
 	return ret;
 }
 
@@ -1149,16 +1148,11 @@ int configdb_fill_port(unsigned int port, void *buf, fuse_fill_dir_t filler)
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_filter_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else {
+	ret = sql_exec_error(ret, sql, errmsg);
+	if (ret == 0) {
 		filler(buf, "ana_groups", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "subsystems", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "referrals", NULL, 0, FUSE_FILL_DIR_PLUS);
-		ret = 0;
 	}
 	free(sql);
 	return ret;
@@ -1319,13 +1313,7 @@ int configdb_fill_ana_groups(const char *port,
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
 	return ret;
 }
@@ -1492,13 +1480,7 @@ int configdb_fill_host_subsys(const char *subsysnqn,
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
 	return ret;
 }
@@ -1737,13 +1719,7 @@ int configdb_fill_subsys_port(unsigned int port,
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, fill_root_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", fill_host_dir_sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
 	return ret;
 }
@@ -1998,23 +1974,16 @@ int configdb_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
 	if (ret < 0)
 		return ret;
 	printf("Display disc entries for %s\n", hostnqn);
-	ret = sqlite3_exec(configdb_db, sql, sql_disc_entry_cb, &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-	}
+	ret = sqlite3_exec(configdb_db, sql, sql_disc_entry_cb,
+			   &parm, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
 	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
 
 	printf("Display disc entries for any host\n");
 	ret = sqlite3_exec(configdb_db, any_disc_entry_sql,
 			   sql_disc_entry_cb, &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-	}
+	ret = sql_exec_error(ret, any_disc_entry_sql, errmsg);
 	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
 	return parm.cur;
 }
@@ -2097,14 +2066,8 @@ int configdb_subsys_identify_ctrl(const char *subsysnqn,
 
 	ret = sqlite3_exec(configdb_db, sql, subsys_identify_ctrl_cb,
 			   id, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
-		sqlite3_free(errmsg);
-		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
-	} else
-		ret = 0;
 	return ret;
 }
 
@@ -2166,14 +2129,7 @@ int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len)
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
 			   &parm, &errmsg);
-	if (ret != SQLITE_OK) {
-		fprintf(stderr, "%s: SQL string: %s\n",
-			__func__, sql);
-		fprintf(stderr, "%s: SQL error: %s\n",
-			__func__, errmsg);
-		sqlite3_free(errmsg);
-		ret = -EINVAL;
-	}
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
 	return ret;
 }
@@ -2269,13 +2225,10 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			return ret;
 		ret = sqlite3_exec(configdb_db, sql, count_ana_grps_cb,
 				   parm.buffer, &errmsg);
+		ret = sql_exec_error(ret, sql, errmsg);
 		free(sql);
-		if (ret != SQLITE_OK) {
-			fprintf(stderr, "SQL error executing %s\n", sql);
-			fprintf(stderr, "SQL error: %s\n", errmsg);
-			sqlite3_free(errmsg);
-			return -EINVAL;
-		}
+		if (ret < 0)
+			return ret;
 		nnsids = le32toh(grp_desc->nnsids);
 		if (!nnsids)
 			continue;
@@ -2293,6 +2246,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			return ret;
 		ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
 				   &parm, &errmsg);
+		ret = sql_exec_error(ret, sql, errmsg);
 		free(sql);
 		if (ret < 0)
 			return ret;
