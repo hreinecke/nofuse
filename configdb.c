@@ -2090,11 +2090,11 @@ static int ns_list_cb(void *argp, int argc, char **argv, char **col)
 }
 
 static char identify_active_ns_sql[] =
-	"SELECT n.nsid FROM namespaces AS ns "
+	"SELECT ns.nsid FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s "
 	"ON ns.subsys_id = s.id "
-	"WHERE s.nqn = '%s' AND n.device_enable = '1' "
-	"ORDER BY n.nsid;";
+	"WHERE s.nqn = '%s' AND ns.device_enable = '1' "
+	"ORDER BY ns.nsid;";
 
 int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len)
 {
