@@ -85,12 +85,8 @@ int add_namespace(const char *subsysnqn, u32 nsid)
 	ns->nsid = nsid;
 	ret = configdb_add_namespace(subsysnqn, ns->nsid);
 	if (ret < 0) {
-		free(ns);
-		return ret;
-	}
-	ret = configdb_set_namespace_anagrp(subsysnqn, ns->nsid, 1);
-	if (ret < 0) {
-		configdb_del_namespace(subsysnqn, ns->nsid);
+		fprintf(stderr, "subsys %s failed to add nsid %d\n",
+			subsysnqn, ns->nsid);
 		free(ns);
 		return ret;
 	}

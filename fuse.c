@@ -236,10 +236,11 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 		return -ENOENT;
 	fuse_info("%s: subsys %s ns %u attr %s", __func__,
 		  subsysnqn, nsid, attr);
-	ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
-	if (ret < 0)
-		return -ENOENT;
-
+	if (strcmp(attr, "ana_grpid")) {
+		ret = configdb_get_namespace_attr(subsysnqn, nsid, attr, NULL);
+		if (ret < 0)
+			return -ENOENT;
+	}
 	stbuf->st_mode = S_IFREG | 0644;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;

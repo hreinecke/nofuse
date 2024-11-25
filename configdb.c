@@ -216,10 +216,8 @@ static const char *init_sql[NUM_TABLES] = {
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 	/* ana_groups */
 	"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-	"grpid INT, subsys_id INT, "
-	"CHECK (grpid > 0 AND grpid < 65), "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
-	"ON UPDATE CASCADE ON DELETE RESTRICT );",
+	"grpid INT, "
+	"CHECK (grpid > 0 AND grpid < 65) );"
 	/* controllers */
 	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 	"cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
@@ -650,9 +648,12 @@ int configdb_del_subsys(const char *nqn)
 }
 
 static char add_namespace_sql[] =
-	"INSERT INTO namespaces (device_uuid, device_nguid, device_eui64, nsid, subsys_id, ctime) "
-	"SELECT '%s', '%s', '%s', '%u', s.id, CURRENT_TIMESTAMP "
-	"FROM subsystems AS s WHERE s.nqn = '%s' AND s.attr_type == '2';";
+	"INSERT INTO namespaces "
+	"(device_uuid, device_nguid, device_eui64, nsid, "
+	"subsys_id, ana_group_id, ctime) "
+	"SELECT '%s', '%s', '%s', '%u', s.id, ag.id, CURRENT_TIMESTAMP "
+	"FROM subsystems AS s, ana_groups AS ag "
+	"WHERE s.nqn = '%s' AND s.attr_type == '2' AND ag.grpid = '1';";
 
 static char namespace_chg_aen_sql[] =
 	"UPDATE controllers SET ns_chg_ctr = ns_chg_ctr + 1 "
@@ -926,11 +927,9 @@ int configdb_get_namespace_anagrp(const char *subsysnqn, u32 nsid,
 static char set_namespace_anagrp_sql[] =
 	"UPDATE namespaces SET ana_group_id = sel.id "
 	"FROM "
-	"(SELECT s.nqn AS subsysnqn, ag.ana_group_id AS grpid, ag.id "
-	"FROM ana_groups AS ag "
-	"INNER JOIN subsystems AS s ON s.id = ag.subsys_id ) AS sel"
-	"WHERE sel.subsysnqn = '%s' "
-	"AND sel.grpid = '%d' AND nsid = '%u';";
+	"(SELECT ag.grpid AS grpid, ag.id AS id "
+	"FROM ana_groups AS ag) AS sel "
+	"WHERE sel.grpid = '%d' AND nsid = '%u';";
 
 static char set_namespace_anagrp_aen_sql[] =
 	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
@@ -944,7 +943,7 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 				  int ana_grpid)
 {
 	char *sql;
-	int ret, _ret;
+	int ret, _ret, new_ana_grpid;
 
 	ret = sql_exec_simple("BEGIN TRANSACTION;");
 	if (ret < 0)
@@ -958,8 +957,13 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 	if (ret < 0)
 		goto rollback;
 
-	if (sqlite3_changes(configdb_db) == 0) {
-		printf("%s: no rows modified\n", __func__);
+	ret = configdb_get_namespace_anagrp(subsysnqn, nsid,
+					    &new_ana_grpid);
+	if (ret < 0)
+		goto rollback;
+	if (new_ana_grpid != ana_grpid) {
+		printf("%s: ana group id %d should be %d\n",
+		       __func__, new_ana_grpid, ana_grpid);
 		ret = -ENOENT;
 		goto done;
 	}
@@ -1269,7 +1273,7 @@ int configdb_count_ana_groups(const char *port, int *num)
 static char stat_ana_group_sql[] =
 	"SELECT unixepoch(ap.ctime) AS tv FROM ana_port_group AS ap "
 	"INNER JOIN ports AS p ON p.id = ap.port_id "
-	"INNER JOIN ana_groups AS ag ON p.ana_group_id = ag.id "
+	"INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
 	"WHERE p.id = '%s' AND ag.grpid = '%s';";
 
 int configdb_stat_ana_group(const char *port, const char *ana_grpid,
@@ -1350,10 +1354,10 @@ int configdb_get_ana_group(const char *port, const char *ana_grpid,
 static char set_ana_group_sql[] =
 	"UPDATE ana_port_group SET ana_state = '%d', chgcnt = chgcnt + 1 "
 	"FROM "
-	"(SELECT p.port_id AS port_id, ag.grpid AS grpid FROM ports AS p "
-	" INNER JOIN ana_port_group AS ap ON ap.port_id = p.id "
-	" INNER JOIN ana_groups AS ag ON ag.id = ap.ana_group_id) AS sel "
-	"WHERE sel.port_id = '%s' AND sel.grpid = '%s';";
+	"(SELECT ap.id AS ag_id, ap.port_id AS port_id, ag.grpid AS grpid "
+	" FROM ana_port_group AS ap "
+	" INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id) AS sel "
+	"WHERE id = sel.ag_id AND sel.port_id = '%s' AND sel.grpid = '%s';";
 
 static char set_ana_group_aen_sql[] =
 	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
@@ -2308,7 +2312,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 
 int configdb_open(const char *filename)
 {
-	int ret;
+	int ret, i;
 
 	ret = sqlite3_open(filename, &configdb_db);
 	if (ret) {
@@ -2321,6 +2325,20 @@ int configdb_open(const char *filename)
 	if (ret) {
 		fprintf(stderr, "Can't initialize database, error %d\n", ret);
 		sqlite3_close(configdb_db);
+	}
+	for (i = 0; i < MAX_ANAGRPID; i++) {
+		int ret;
+		char *sql;
+
+		ret = asprintf(&sql,
+			       "INSERT INTO ana_groups (grpid) VALUES ('%d');",
+			       i + 1);
+		if (ret < 0)
+			break;
+		ret = sql_exec_simple(sql);
+		free(sql);
+		if (ret < 0)
+			break;
 	}
 	return ret;
 }
