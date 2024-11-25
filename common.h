@@ -238,6 +238,7 @@ void raise_aen(const char *subsysnqn, int level);
 
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
+int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		  const char *hostnqn, const char *subsysnqn);
 int queue_update_qdepth(struct nofuse_queue *ep, int qsize);

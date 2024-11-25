@@ -430,10 +430,6 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 	pthread_mutex_unlock(&port->ep_mutex);
 }
 
-void send_aen(struct nofuse_ctrl *ctrl, int level, unsigned int cnt)
-{
-}
-
 void raise_aen(const char *subsysnqn, int level)
 {
 	const char *aen_type = NULL;
@@ -473,7 +469,7 @@ void raise_aen(const char *subsysnqn, int level)
 			       __func__, ctrl->subsysnqn, ctrl->cntlid,
 			       level, aen_type);
 
-			send_aen(ctrl, level, new_aen_ctr);
+			send_aen(ctrl->ep, level, new_aen_ctr);
 		}
 	}
 	pthread_mutex_unlock(&ctrl_list_mutex);

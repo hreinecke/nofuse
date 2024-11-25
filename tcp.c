@@ -181,6 +181,48 @@ struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
 	return &ep->qes[tag];
 }
 
+int send aen(struct nofuse_queue *ep, int type)
+{
+	struct ep_qe *qe = NULL;
+	u8 level;
+	u16 log_page;
+
+	for (i = 0; i < ep->qsize; i++) {
+		if (!ep->qes[i].aen)
+			continue;
+		if (!ep->qes[i].busy)
+			continue;
+		qe = &ep->qes[i];
+		break;
+	}
+	if (!qe)
+		return -EBUSY;
+
+	level = NVME_AER_NOTICE;
+	switch (type) {
+	case NVME_AER_NOTICE_NS_CHANGED:
+		log_page = NVME_LOG_CHANGED_NS;
+		break;
+	case NVME_AER_NOTICE_ANA:
+		log_page = NVME_LOG_ANA;
+		break;
+	case NVME_AER_NOTICE_DISC_CHANGED:
+		log_page = NVME_LOG_DISC;
+		break;
+	default:
+		return NULL;
+	}
+
+	result = level | type << 8 | log_page << 16;
+	qe->resp.ccid = htole16(qe->ccid);
+	qe->resp.result = htole32(result);
+	qe->resp.status = 0;
+
+	ret = ep->ops->send_rsp(ep, &qe->resp);
+	ep->ops->release_tag(ep, qe);
+	return ret;
+}
+
 void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	if (!qe)
