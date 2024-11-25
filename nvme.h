@@ -93,16 +93,6 @@ enum {
         NVMF_TCP_SECTYPE_TLS13 = 2, /* TLSv1.3, NVMe-oF 1.1 and NVMe-TCP 3.6.1.1 */
 };
 
-#define NVME_AQ_DEPTH		32
-#define NVME_NR_AEN_COMMANDS	1
-#define NVME_AQ_BLK_MQ_DEPTH	(NVME_AQ_DEPTH - NVME_NR_AEN_COMMANDS)
-
-/*
- * Subtract one to leave an empty queue entry for 'Full Queue' condition. See
- * NVM-Express 1.2 specification, section 4.1.2.
- */
-#define NVME_AQ_MQ_TAG_DEPTH	(NVME_AQ_BLK_MQ_DEPTH - 1)
-
 enum {
 	NVME_REG_CAP	= 0x0000,	/* Controller Capabilities */
 	NVME_REG_VS	= 0x0008,	/* Version */

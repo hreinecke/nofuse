@@ -214,7 +214,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 	id.oaes = htole32(NVME_AEN_CFG_NS_ATTR | NVME_AEN_CFG_ANA_CHANGE | \
 			  NVME_AEN_CFG_DISC_CHANGE);
 	id.acl = 3;
-	id.aerl = 3;
+	id.aerl = NVME_NR_AEN_COMMANDS - 1;
 	id.nn = htole32(MAX_NSID);
 	id.mnan = htole32(MAX_NSID);
 	id.sqes = (0x6 << 4) | 0x6;
@@ -224,11 +224,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 	if (ret < 0)
 		return ret;
 
-	if (id.cntrltype == NVME_CTRL_CNTRLTYPE_DISC) {
-		id.maxcmd = htole16(NVMF_DQ_DEPTH);
-	} else {
-		id.maxcmd = htole16(ep->qsize);
-	}
+	id.maxcmd = htole16(ep->qsize);
 
 	id.anacap = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
 	id.anatt = 10;

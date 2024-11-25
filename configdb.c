@@ -1807,7 +1807,7 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 
 	memset(entry, 0, sizeof(*entry));
 	entry->cntlid = (u16)NVME_CNTLID_DYNAMIC;
-	entry->asqsz = htole16(32);
+	entry->asqsz = htole16(NVME_AQ_DEPTH);
 	entry->subtype = NVME_NQN_NVM;
 	entry->treq = NVMF_TREQ_NOT_SPECIFIED;
 	entry->tsas.tcp.sectype = NVMF_TCP_SECTYPE_NONE;
