@@ -200,6 +200,56 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
+static int stat_cb(void *p, int argc, char **argv, char **col)
+{
+	struct stat *stbuf = p;
+	int i;
+
+	if (!p)
+		return 0;
+	for (i = 0; i < argc; i++) {
+		unsigned long timeval;
+		char *eptr = NULL;
+
+		if (!argv[i] || !strlen(argv[i]))
+			continue;
+		timeval = strtoul(argv[i], &eptr, 10);
+		if (timeval == ULONG_MAX || argv[i] == eptr)
+			continue;
+		if (!strcmp(col[i], "ctime")) {
+			stbuf->st_ctime = timeval;
+		} else if (strcmp(col[i], "mtime")) {
+			stbuf->st_mtime = timeval;
+		} else if (strcmp(col[i], "atime")) {
+			stbuf->st_atime = timeval;
+		}
+	}
+	return 0;
+}
+
+int sql_exec_stat(const char *sql, struct stat *stbuf)
+{
+	char *errmsg;
+	struct stat st;
+	int ret;
+
+	if (!stbuf)
+		stbuf = &st;
+	stbuf->st_ctime = stbuf->st_mtime = stbuf->st_atime = 0;
+		ret = sqlite3_exec(configdb_db, sql, stat_cb, stbuf, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
+	if (ret < 0)
+		return ret;
+	if (stbuf->st_ctime == 0)
+		return -ENOENT;
+	if (!stbuf->st_mtime)
+		stbuf->st_mtime = stbuf->st_ctime;
+	if (!stbuf->st_atime)
+		stbuf->st_atime = stbuf->st_mtime;
+
+	return ret;
+}
+
 #define NUM_TABLES 12
 
 static const char *init_sql[NUM_TABLES] = {
@@ -403,61 +453,21 @@ int configdb_add_host(const char *nqn)
 	return ret;
 }
 
-static int stat_cb(void *p, int argc, char **argv, char **col)
-{
-	struct stat *stbuf = p;
-	int i;
-
-	if (!p)
-		return 0;
-	for (i = 0; i < argc; i++) {
-		unsigned long timeval;
-		char *eptr = NULL;
-
-		if (!strlen(argv[i]))
-			continue;
-		timeval = strtoul(argv[i], &eptr, 10);
-		if (timeval == ULONG_MAX || argv[i] == eptr)
-			continue;
-		if (!strcmp(col[i], "ctime")) {
-			stbuf->st_ctime = timeval;
-		} else if (strcmp(col[i], "mtime")) {
-			stbuf->st_mtime = timeval;
-		} else if (strcmp(col[i], "atime")) {
-			stbuf->st_atime = timeval;
-		}
-	}
-	return 0;
-}
-
 static char stat_host_sql[] =
 	"SELECT unixepoch(ctime) AS ctime FROM hosts WHERE nqn = '%s';";
 
 int configdb_stat_host(const char *hostnqn, struct stat *stbuf)
 {
-	char *sql, *errmsg;
+	char *sql;
 	int ret;
-	struct stat st;
 
 	ret = asprintf(&sql, stat_host_sql, hostnqn);
 	if (ret < 0)
 		return ret;
 
-	if (!stbuf)
-		stbuf = &st;
-	stbuf->st_ctime = stbuf->st_mtime = stbuf->st_atime = 0;
-	ret = sqlite3_exec(configdb_db, sql, stat_cb, stbuf, &errmsg);
-	ret = sql_exec_error(ret, sql, errmsg);
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf->st_ctime == 0)
-		return -ENOENT;
-	if (!stbuf->st_mtime)
-		stbuf->st_mtime = stbuf->st_ctime;
-	if (!stbuf->st_atime)
-		stbuf->st_atime = stbuf->st_mtime;
-	return 0;
+	return ret;
 }
 
 static char fill_host_dir_sql[] =
@@ -542,25 +552,21 @@ int configdb_set_discovery_nqn(const char *nqn)
 }
 
 static char stat_subsys_sql[] =
-	"SELECT unixepoch(ctime) AS tv FROM subsystems WHERE nqn = '%s';";
+	"SELECT unixepoch(ctime) AS ctime, unixepoch(mtime) AS mtime "
+	"FROM subsystems WHERE nqn = '%s';";
 
 int configdb_stat_subsys(const char *subsysnqn, struct stat *stbuf)
 {
 	char *sql;
-	int ret, timeval;
+	int ret;
 
 	ret = asprintf(&sql, stat_subsys_sql, subsysnqn);
 	if (ret < 0)
 		return ret;
 
-	ret = sql_exec_int(sql, "tv", &timeval);
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf) {
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-	}
-	return 0;
+	return ret;
 }
 
 static char fill_subsys_dir_sql[] =
@@ -626,7 +632,7 @@ int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 }
 
 static char set_subsys_attr_sql[] =
-	"UPDATE subsystems SET %s = '%s' "
+	"UPDATE subsystems SET %s = '%s', mtime = CURRENT_TIMESTAMP "
 	"WHERE nqn = '%s';";
 
 int configdb_set_subsys_attr(const char *nqn, const char *attr,
@@ -747,7 +753,8 @@ int configdb_count_namespaces(const char *subsysnqn, int *num)
 }
 
 static char stat_namespace_sql[] =
-	"SELECT unixepoch(n.ctime) AS tv FROM namespaces AS n "
+	"SELECT unixepoch(n.ctime) AS ctime, unixepoch(n.mtime) AS mtime "
+	"FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
 	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
@@ -755,18 +762,15 @@ int configdb_stat_namespace(const char *subsysnqn, u32 nsid,
 			 struct stat *stbuf)
 {
 	char *sql;
-	int ret, timeval;
+	int ret;
 
 	ret = asprintf(&sql, stat_namespace_sql, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	ret = sql_exec_int(sql, "tv", &timeval);
+
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf)
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-	return 0;
+	return ret;
 }
 
 static char fill_namespace_dir_sql[] =
@@ -1088,27 +1092,21 @@ int configdb_add_port(unsigned int portid)
 }
 
 static char stat_port_sql[] =
-	"SELECT unixepoch(ctime) AS tv FROM ports WHERE id = '%d';";
+	"SELECT unixepoch(ctime) AS ctime, unixepoch(mtime) AS mtime "
+	"FROM ports WHERE id = '%d';";
 
 int configdb_stat_port(unsigned int port, struct stat *stbuf)
 {
 	char *sql;
-	int ret, timeval;
+	int ret;
 
 	ret = asprintf(&sql, stat_port_sql, port);
 	if (ret < 0)
 		return ret;
 
-	ret = sql_exec_int(sql, "tv", &timeval);
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf) {
-		stbuf->st_nlink = 1;
-		stbuf->st_size = 256;
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-	}
-	return 0;
+	return ret;
 }
 
 static char fill_port_dir_sql[] =
@@ -1175,6 +1173,10 @@ int configdb_get_port_attr(unsigned int port, const char *attr, char *buf)
 	return ret;
 }
 
+static char set_port_attr_sql[] =
+	"UPDATE ports SET %s = '%s', mtime = CURRENT_TIMESTAMP "
+	"WHERE id = '%d';";
+
 static char update_genctr_port_sql[] =
 	"UPDATE hosts SET genctr = genctr + 1 "
 	"FROM "
@@ -1189,8 +1191,7 @@ int configdb_set_port_attr(unsigned int port, const char *attr,
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, "UPDATE ports SET %s = '%s' "
-		       "WHERE id = '%d';", attr, value, port);
+	ret = asprintf(&sql, set_port_attr_sql, attr, value, port);
 	if (ret < 0) {
 		return ret;
 	}
@@ -1264,7 +1265,8 @@ int configdb_count_ana_groups(const char *port, int *num)
 }
 
 static char stat_ana_group_sql[] =
-	"SELECT unixepoch(ap.ctime) AS tv FROM ana_port_group AS ap "
+	"SELECT unixepoch(ap.ctime) AS ctime, unixepoch(ap.mtime) AS mtime "
+	"FROM ana_port_group AS ap "
 	"INNER JOIN ports AS p ON p.id = ap.port_id "
 	"INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
 	"WHERE p.id = '%s' AND ag.id = '%s';";
@@ -1272,23 +1274,15 @@ static char stat_ana_group_sql[] =
 int configdb_stat_ana_group(const char *port, const char *ana_grpid,
 			    struct stat *stbuf)
 {
-	int ret, timeval;
+	int ret;
 	char *sql;
 
 	ret = asprintf(&sql, stat_ana_group_sql, port, ana_grpid);
 	if (ret < 0)
 		return ret;
-	ret = sql_exec_int(sql, "tv", &timeval);
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf) {
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-		stbuf->st_mode = S_IFREG | 0644;
-		stbuf->st_nlink = 1;
-		stbuf->st_size = 64;
-	}
-	return 0;
+	return ret;
 }
 
 static char fill_ana_port_group_sql[] =
@@ -1504,7 +1498,8 @@ int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts)
 }
 
 static char stat_host_subsys_sql[] =
-	"SELECT unixepoch(hs.ctime) AS tv FROM host_subsys AS hs "
+	"SELECT unixepoch(hs.ctime) AS ctime, unixepoch(hs.mtime) AS mtime "
+	"FROM host_subsys AS hs "
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
 	"INNER JOIN hosts AS h ON h.id = hs.host_id "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
@@ -1513,22 +1508,15 @@ int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 			      struct stat *stbuf)
 {
 	char *sql;
-	int ret, timeval;
+	int ret;
 
 	ret = asprintf(&sql, stat_host_subsys_sql, hostnqn, subsysnqn);
 	if (ret < 0)
 		return ret;
 
-	ret = sql_exec_int(sql, "tv", &timeval);
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf) {
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-		stbuf->st_mode = S_IFLNK | 0755;
-		stbuf->st_nlink = 1;
-	}
-	return 0;
+	return ret;
 }
 
 static char del_host_subsys_sql[] =
@@ -1725,7 +1713,8 @@ int configdb_fill_subsys_port(unsigned int port,
 }
 
 static char stat_subsys_port_sql[] =
-	"SELECT unixepoch(sp.ctime) AS tv FROM subsys_port AS sp "
+	"SELECT unixepoch(sp.ctime) AS ctime, unixepoch(sp.mtime) AS mtime "
+	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE s.nqn = '%s' AND p.id = '%d';";
@@ -1734,22 +1723,15 @@ int configdb_stat_subsys_port(const char *subsysnqn, unsigned int port,
 			      struct stat *stbuf)
 {
 	char *sql;
-	int ret, timeval;
+	int ret;
 
 	ret = asprintf(&sql, stat_subsys_port_sql, subsysnqn, port);
 	if (ret < 0)
 		return ret;
 
-	ret = sql_exec_int(sql, "tv", &timeval);
+	ret = sql_exec_stat(sql, stbuf);
 	free(sql);
-	if (ret < 0)
-		return ret;
-	if (stbuf) {
-		stbuf->st_ctime = stbuf->st_atime = stbuf->st_mtime = timeval;
-		stbuf->st_mode = S_IFLNK | 0755;
-		stbuf->st_nlink = 1;
-	}
-	return 0;
+	return ret;
 }
 
 static char allowed_host_sql[] =

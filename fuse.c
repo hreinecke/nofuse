@@ -86,7 +86,12 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	return configdb_stat_subsys_port(subsys, portid, stbuf);
+	ret = configdb_stat_subsys_port(subsys, portid, stbuf);
+	if (ret < 0)
+		return -ENOENT;
+	stbuf->st_mode = S_IFLNK | 0755;
+	stbuf->st_nlink = 1;
+	return 0;
 }
 
 static int port_ana_groups_getattr(const char *port, const char *ana_grp,
@@ -120,6 +125,10 @@ static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
+	} else {
+		stbuf->st_mode = S_IFREG | 0644;
+		stbuf->st_nlink = 1;
+		stbuf->st_size = 64;
 	}
 	return 0;
 }
@@ -134,7 +143,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	if (port == eptr)
 		return -ENOENT;
 	ret = configdb_stat_port(portid, stbuf);
-	if (ret)
+	if (ret < 0)
 		return -ENOENT;
 
 	p = strtok(NULL, "/");
@@ -196,7 +205,12 @@ static int subsys_allowed_hosts_getattr(const char *subsysnqn,
 	if (p)
 		return -ENOENT;
 	fuse_info("%s: subsys %s host %s", __func__, subsysnqn, hostnqn);
-	return configdb_stat_host_subsys(hostnqn, subsysnqn, stbuf);
+	ret = configdb_stat_host_subsys(hostnqn, subsysnqn, stbuf);
+	if (ret < 0)
+		return -ENOENT;
+	stbuf->st_mode = S_IFLNK | 0755;
+	stbuf->st_nlink = 1;
+	return 0;
 }
 
 static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
