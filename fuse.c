@@ -111,16 +111,16 @@ static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 		  __func__, port, ana_grp);
 
 	p = strtok(NULL, "/");
-	if (!p) {
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-		return 0;
-	}
-	if (strcmp(p, "ana_state"))
+	if (p && strcmp(p, "ana_state"))
 		return -ENOENT;
+
 	ret = configdb_stat_ana_group(port, ana_grp, stbuf);
 	if (ret < 0)
 		return ret;
+	if (!p) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+	}
 	return 0;
 }
 
@@ -563,7 +563,8 @@ static int port_mkdir(const char *port)
 	fuse_info("%s: port %d ana group %d", __func__,
 		  portid, ana_grpid);
 	ret = configdb_add_ana_group(portid, ana_grpid,
-				     NVME_ANA_OPTIMIZED);
+				     ana_grpid == 1 ?
+				     NVME_ANA_OPTIMIZED : NVME_ANA_INACCESSIBLE);
 	if (ret < 0) {
 		fuse_err("%s: cannot add ana group %d to "
 			 "port %d, error %d", __func__,
