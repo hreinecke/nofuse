@@ -135,7 +135,9 @@ struct nofuse_ctrl {
 	int num_queues;
 	int max_queues;
 	int aen_mask;
-	u64 ana_chgcnt;
+	unsigned int ana_chgcnt;
+	unsigned int ns_chgcnt;
+	unsigned int disc_chgcnt;
 	u64 csts;
 	u64 cc;
 };
@@ -232,7 +234,7 @@ static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)
 	ctrl->kato_countdown = ctrl->kato;
 }
 
-void raise_aen(int level, int type);
+void raise_aen(const char *subsysnqn, int level);
 
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);

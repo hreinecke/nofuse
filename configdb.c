@@ -331,21 +331,6 @@ static const char *init_sql[NUM_TABLES] = {
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
 };
 
-void configdb_update_hook(void *arg, int cmd, const char *db,
-			  const char *tbl, sqlite3_int64 rowid)
-{
-	if (!strcmp(tbl, "controllers"))
-		raise_aen(NVME_AER_NOTICE_NS_CHANGED,
-			  NVME_AEN_BIT_NS_ATTR);
-	if (!strcmp(tbl, "ana_port_group"))
-		raise_aen(NVME_AER_NOTICE_ANA,
-			  NVME_AEN_BIT_ANA_CHANGE);
-	if (!strcmp(tbl, "subsys_port") ||
-	    !strcmp(tbl, "host_subsys"))
-		raise_aen(NVME_AER_NOTICE_DISC_CHANGED,
-			  NVME_AEN_BIT_DISC_CHANGE);
-}
-
 int configdb_init(void)
 {
 	int i, ret;
@@ -355,7 +340,6 @@ int configdb_init(void)
 		if (ret)
 			break;
 	}
-	sqlite3_update_hook(configdb_db, configdb_update_hook, NULL);
 
 	return ret;
 }
@@ -727,6 +711,7 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 		goto rollback;
 done:
 	COMMIT_TRANSACTION;
+	raise_aen(subsysnqn, NVME_AER_NOTICE_NS_CHANGED);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -906,6 +891,7 @@ int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
 		goto rollback;
 done:
 	COMMIT_TRANSACTION;
+	raise_aen(subsysnqn, NVME_AER_NOTICE_NS_CHANGED);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -985,6 +971,7 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 	if (ret < 0)
 		goto rollback;
 done:
+	raise_aen(subsysnqn, NVME_AER_NOTICE_ANA);
 	COMMIT_TRANSACTION;
 	return ret;
 rollback:
@@ -1026,6 +1013,7 @@ int configdb_del_namespace(const char *subsysnqn, u32 nsid)
 	if (ret < 0)
 		goto rollback;
 done:
+	raise_aen(subsysnqn, NVME_AER_NOTICE_NS_CHANGED);
 	COMMIT_TRANSACTION;
 	return ret;
 rollback:
@@ -1046,6 +1034,36 @@ int configdb_add_ctrl(const char *subsysnqn, int cntlid)
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
+static char aen_ctr_sql[] =
+	"SELECT %s AS value FROM controllers WHERE cntlid = '%d';";
+
+int configdb_aen_ctr(unsigned int cntlid, int level, int *counter)
+{
+	int ret;
+	const char *ctr_str;
+	char *sql;
+
+	switch (level) {
+	case NVME_AER_NOTICE_NS_CHANGED:
+		ctr_str = "ns_chg_ctr";
+		break;
+	case NVME_AER_NOTICE_ANA:
+		ctr_str = "ana_chg_ctr";
+		break;
+	case NVME_AER_NOTICE_DISC_CHANGED:
+		ctr_str = "disc_chg_ctr";
+		break;
+	default:
+		return -EINVAL;
+	}
+	ret = asprintf(&sql, aen_ctr_sql, ctr_str, cntlid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "value", counter);
 	free(sql);
 	return ret;
 }
@@ -1371,6 +1389,8 @@ int configdb_set_ana_group(const char *port, const char *ana_grpid,
 	free(sql);
 	if (ret < 0)
 		goto rollback;
+
+	raise_aen(NULL, NVME_AER_NOTICE_ANA);
 	COMMIT_TRANSACTION;
 	return ret;
 rollback:
@@ -1446,6 +1466,7 @@ int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 		goto rollback;
 
 	COMMIT_TRANSACTION;
+	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -1553,6 +1574,7 @@ int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 		goto rollback;
 
 	COMMIT_TRANSACTION;
+	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -1608,6 +1630,7 @@ int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 		goto rollback;
 
 	COMMIT_TRANSACTION;
+	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -1658,6 +1681,7 @@ int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
 		goto rollback;
 
 	COMMIT_TRANSACTION;
+	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;

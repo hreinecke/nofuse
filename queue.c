@@ -429,3 +429,52 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 	}
 	pthread_mutex_unlock(&port->ep_mutex);
 }
+
+void send_aen(struct nofuse_ctrl *ctrl, int level, unsigned int cnt)
+{
+}
+
+void raise_aen(const char *subsysnqn, int level)
+{
+	const char *aen_type = NULL;
+	struct nofuse_ctrl *ctrl;
+
+	pthread_mutex_lock(&ctrl_list_mutex);
+	list_for_each_entry(ctrl, &ctrl_linked_list, node) {
+		int aen_ctr, new_aen_ctr;
+		int ret;
+
+		if (!subsysnqn || strcmp(subsysnqn, ctrl->subsysnqn))
+			continue;
+		ret = configdb_aen_ctr(ctrl->cntlid, level, &new_aen_ctr);
+		if (ret < 0)
+			continue;
+		switch (level) {
+		case NVME_AER_NOTICE_NS_CHANGED:
+			aen_ctr = ctrl->ns_chgcnt;
+			ctrl->ns_chgcnt = new_aen_ctr;
+			aen_type = "ns_changed";
+			break;
+		case NVME_AER_NOTICE_ANA:
+			aen_ctr = ctrl->ana_chgcnt;
+			ctrl->ana_chgcnt = new_aen_ctr;
+			aen_type = "ana";
+			break;
+		case NVME_AER_NOTICE_DISC_CHANGED:
+			aen_ctr = ctrl->disc_chgcnt;
+			ctrl->disc_chgcnt = new_aen_ctr;
+			aen_type = "discovery changed";
+			break;
+		default:
+			break;
+		}
+		if (new_aen_ctr > aen_ctr) {
+			printf("%s: subsys %s ctrl %d level %d type %s\n",
+			       __func__, ctrl->subsysnqn, ctrl->cntlid,
+			       level, aen_type);
+
+			send_aen(ctrl, level, new_aen_ctr);
+		}
+	}
+	pthread_mutex_unlock(&ctrl_list_mutex);
+}
