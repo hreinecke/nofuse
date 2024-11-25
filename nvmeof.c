@@ -350,20 +350,6 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
 	       desc->nidt, desc->nidl, desc_list - desc_list_save);
 
-	if (desc_len < sizeof(*desc) + NVME_NIDT_CSI_LEN)
-		return len;
-
-	desc = (struct nvme_ns_id_desc *)desc_list;
-	desc->nidt = NVME_NIDT_CSI;
-	desc->nidl = NVME_NIDT_CSI_LEN;
-	desc_list += sizeof(*desc);
-	desc_len -= sizeof(*desc);
-	desc_list[0] = 0;
-	desc_list += desc->nidl;
-	desc_len -= desc->nidl;
-	printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
-	       desc->nidt, desc->nidl, desc_list - desc_list_save);
-
 	if (desc_len < sizeof(*desc) + NVME_NIDT_NGUID_LEN) {
 		ctrl_info(ep, "no space for nguid");
 		goto parse_eui64;
@@ -388,6 +374,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 		       desc->nidt, desc->nidl, desc_list - desc_list_save);
 	} else
 		ctrl_info(ep, "no nguid");
+
 parse_eui64:
 	if (desc_len < sizeof(*desc) + NVME_NIDT_EUI64_LEN) {
 		ctrl_info(ep, "no space for eu64");
@@ -414,6 +401,20 @@ parse_eui64:
 	} else
 		ctrl_info(ep, "no eui64");
 done:
+	if (desc_len < sizeof(*desc) + NVME_NIDT_CSI_LEN)
+		return len;
+
+	desc = (struct nvme_ns_id_desc *)desc_list;
+	desc->nidt = NVME_NIDT_CSI;
+	desc->nidl = NVME_NIDT_CSI_LEN;
+	desc_list += sizeof(*desc);
+	desc_len -= sizeof(*desc);
+	desc_list[0] = 0;
+	desc_list += desc->nidl;
+	desc_len -= desc->nidl;
+	printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
+	       desc->nidt, desc->nidl, desc_list - desc_list_save);
+
 	return len;
 }
 
