@@ -2201,6 +2201,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 	for (grpid = 1; grpid <= MAX_ANAGRPID; grpid++) {
 		u32 nnsids;
 
+		parm.buffer = (u8 *)grp_desc;
 		ret = asprintf(&sql, count_ana_grps_sql,
 			       subsysnqn, portid, grpid);
 		if (ret < 0)
@@ -2216,12 +2217,12 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			continue;
 
 		grp_desc->grpid = htole16(grpid);
+		printf("%s: grpid %u %d nsids state %d\n",
+		       __func__, grpid, nnsids, grp_desc->state);
 
 		parm.len -= sizeof(struct nvme_ana_group_desc);
 		parm.buffer = (u8 *)grp_desc->nsids;
 		parm.cur = 0;
-		printf("%s: %d nsids state %d\n",
-		       __func__, nnsids, grp_desc->state);
 		ret = asprintf(&sql, ana_grp_log_entry_sql,
 			       subsysnqn, portid, grpid);
 		if (ret < 0)
@@ -2232,9 +2233,9 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 		free(sql);
 		if (ret < 0)
 			return ret;
-		parm.buffer += parm.cur;
+		grp_desc = (struct nvme_ana_group_desc *)
+			(parm.buffer + parm.cur);
 		parm.len -= parm.cur;
-		grp_desc = (struct nvme_ana_group_desc *)parm.buffer;
 		memset(grp_desc, 0, sizeof(*grp_desc));
 		ngrps++;
 		if (parm.len < 32)

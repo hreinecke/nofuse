@@ -534,8 +534,9 @@ static int format_ana_log(struct nofuse_queue *ep,
 			  void *data, u64 data_offset, u64 data_len)
 {
 	unsigned int len, log_len;
-	u8 *log_buf;
+	u8 *log_buf, *grp_ptr;
 	struct nvme_ana_rsp_hdr *log_hdr;
+	struct nvme_ana_group_desc *desc;
 	int grp;
 
 	log_len = sizeof(*log_hdr) +
@@ -559,10 +560,13 @@ static int format_ana_log(struct nofuse_queue *ep,
 	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 	log_hdr->chgcnt = htole64(ep->ctrl->ana_chgcnt);
 
+	grp_ptr = (u8 *)log_hdr->entries;
 	for (grp = 0; grp < le32toh(log_hdr->ngrps); grp++) {
-		struct nvme_ana_group_desc *desc = &log_hdr->entries[grp];
+		desc = (struct nvme_ana_group_desc *)grp_ptr;
 		ctrl_info(ep, "ANA grp %d (state %d, chgcnt %lu)",
 			  desc->grpid, desc->state, le64toh(desc->chgcnt));
+		grp_ptr += sizeof(*desc);
+		grp_ptr += le32toh(desc->nnsids) * sizeof(u32);
 	}
 	if (log_len < data_offset) {
 		ctrl_err(ep, "offset %llu beyond log page size %d",
