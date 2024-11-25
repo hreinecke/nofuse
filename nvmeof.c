@@ -211,7 +211,8 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 			    NVME_CTRL_ATTR_TBKAS);
 	id.ioccsz = NVME_NVM_IOSQES;
 	id.iorcsz = NVME_NVM_IOCQES;
-	id.oaes = htole32(1 << 11);
+	id.oaes = htole32(NVME_AEN_CFG_NS_ATTR | NVME_AEN_CFG_ANA_CHANGE | \
+			  NVME_AEN_CFG_DISC_CHANGE);
 	id.acl = 3;
 	id.aerl = 3;
 	id.nn = htole32(MAX_NSID);
@@ -347,8 +348,6 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	memcpy(&desc_list[4], uuid, desc->nidl);
 	desc_list += desc->nidl;
 	desc_len -= desc->nidl;
-	printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
-	       desc->nidt, desc->nidl, desc_list - desc_list_save);
 
 	if (desc_len < sizeof(*desc) + NVME_NIDT_NGUID_LEN) {
 		ctrl_info(ep, "no space for nguid");
@@ -370,8 +369,6 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 			desc_list += desc->nidl;
 			desc_len -= desc->nidl;
 		}
-		printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
-		       desc->nidt, desc->nidl, desc_list - desc_list_save);
 	} else
 		ctrl_info(ep, "no nguid");
 
@@ -396,8 +393,6 @@ parse_eui64:
 			desc_list += desc->nidl;
 			desc_len -= desc->nidl;
 		}
-		printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
-		       desc->nidt, desc->nidl, desc_list - desc_list_save);
 	} else
 		ctrl_info(ep, "no eui64");
 done:
@@ -758,7 +753,8 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 		if (!ret)
 			return 0;
 	} else if (cmd->common.opcode == nvme_admin_keep_alive) {
-		ctrl_info(ep, "nvme_keep_alive");
+		ctrl_info(ep, "tag %#x ccid %#x nvme_keep_alive",
+			  qe->tag, qe->ccid);
 		kato_reset_counter(ep->ctrl);
 		ret = 0;
 	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
@@ -770,6 +766,8 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else if (cmd->common.opcode == nvme_admin_async_event) {
+		ctrl_info(ep, "tag %#x ccid %#x nvme_async_event",
+			  qe->tag, qe->ccid);
 		qe->aen = true;
 		return 0;
 	} else {
