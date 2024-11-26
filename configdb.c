@@ -1358,13 +1358,29 @@ static char set_ana_group_sql[] =
 	" INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id) AS sel "
 	"WHERE id = sel.ag_id AND sel.port_id = '%s' AND sel.grpid = '%s';";
 
-static char set_ana_group_aen_sql[] =
-	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
-	"FROM "
-	"(SELECT sp.port_id AS portid FROM subsys_port AS sp "
-	" INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
-	" INNER JOIN controllers AS c on c.subsys_id = s.id ) AS sel "
-	"WHERE sel.portid = '%s';";
+static char raise_ana_group_aen_sql[] =
+	"SELECT c.cntlid FROM controller AS c "
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
+	"INNER JOIN subsys_port AS sp ON sp.subsys_id = s.id "
+	"WHERE sp.port_id = '%s';";
+
+static int ana_aen_cb(void *argp, int argc, char **argv, char **col)
+{
+	for (i = 0; i < argc; i++) {
+		if (!argv[i] || !strlen(argv[i]))
+			continue;
+		if (!strcmp(col[i], "cntlid")) {
+			unsigned long cntlid;
+			char *eptr = NULL;
+
+			cntlid = strtoul(argv[i], &eptr, 10);
+			if (cntlid == ULONG_MAX || argv[i] == eptr)
+				continue;
+			raise_aen(cntlid, NVME_AER_NOTICE_ANA);
+		}
+	}
+	return 0;
+}
 
 int configdb_set_ana_group(const char *port, const char *ana_grpid,
 			   int ana_state)
@@ -1372,29 +1388,19 @@ int configdb_set_ana_group(const char *port, const char *ana_grpid,
 	int ret, _ret;
 	char *sql;
 
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret < 0)
-		return ret;
 	ret = asprintf(&sql, set_ana_group_sql, ana_state, port, ana_grpid);
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_simple(sql);
 	free(sql);
 	if (ret < 0)
-		goto rollback;
-	ret = asprintf(&sql, set_ana_group_aen_sql, port);
+		return 0;
+	ret = asprintf(&sql, raise_ana_group_aen_sql, port);
 	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
+		return 0;
+	ret = sqlite3_exec(configdb_db, sql, ana_aen_cb, NULL, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
-	if (ret < 0)
-		goto rollback;
-
-	raise_aen(NULL, NVME_AER_NOTICE_ANA);
-	COMMIT_TRANSACTION;
-	return ret;
-rollback:
-	ROLLBACK_TRANSACTION;
 	return ret;
 }
 
