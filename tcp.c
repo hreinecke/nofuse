@@ -181,50 +181,6 @@ struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
 	return &ep->qes[tag];
 }
 
-int send_aen(struct nofuse_queue *ep, int type)
-{
-	struct ep_qe *qe = NULL;
-	int ret, i;
-	u8 level;
-	u16 log_page;
-	u32 result;
-
-	for (i = 0; i < ep->qsize; i++) {
-		if (!ep->qes[i].aen)
-			continue;
-		if (!ep->qes[i].busy)
-			continue;
-		qe = &ep->qes[i];
-		break;
-	}
-	if (!qe)
-		return -EBUSY;
-
-	level = NVME_AER_NOTICE;
-	switch (type) {
-	case NVME_AER_NOTICE_NS_CHANGED:
-		log_page = NVME_LOG_CHANGED_NS;
-		break;
-	case NVME_AER_NOTICE_ANA:
-		log_page = NVME_LOG_ANA;
-		break;
-	case NVME_AER_NOTICE_DISC_CHANGED:
-		log_page = NVME_LOG_DISC;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	result = level | type << 8 | log_page << 16;
-	qe->resp.command_id = htole16(qe->ccid);
-	qe->resp.result.u32 = htole32(result);
-	qe->resp.status = 0;
-
-	ret = ep->ops->send_rsp(ep, &qe->resp);
-	ep->ops->release_tag(ep, qe);
-	return ret;
-}
-
 void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	if (!qe)
@@ -864,6 +820,57 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len
 	return 0;
 }
 
+static int tcp_handle_aen(struct nofuse_queue *ep)
+{
+	struct ep_qe *qe = NULL;
+	u32 aen_mask;
+	int ret, i;
+	u8 type, level = NVME_AER_NOTICE;
+	u16 log_page;
+	u32 result;
+
+	if (!ep->ctrl)
+		return 0;
+
+	aen_mask = ep->ctrl->aen_mask;
+	if (aen_mask & NVME_AEN_CFG_NS_ATTR) {
+		type = NVME_AER_NOTICE_NS_CHANGED;
+		log_page = NVME_LOG_CHANGED_NS;
+		aen_mask &= ~NVME_AEN_CFG_NS_ATTR;
+	} else if (aen_mask & NVME_AEN_CFG_ANA_CHANGE) {
+		type = NVME_AER_NOTICE_ANA;
+		log_page = NVME_LOG_ANA;
+		aen_mask &= ~NVME_AEN_CFG_ANA_CHANGE;
+	} else if (aen_mask & NVME_AEN_CFG_DISC_CHANGE) {
+		type = NVME_AER_NOTICE_DISC_CHANGED;
+		log_page = NVME_LOG_DISC;
+		aen_mask &= ~NVME_AEN_CFG_DISC_CHANGE;
+	} else {
+		return -EINVAL;
+	}
+	ep->ctrl->aen_mask = aen_mask;
+
+	for (i = 0; i < ep->qsize; i++) {
+		if (!ep->qes[i].aen)
+			continue;
+		if (!ep->qes[i].busy)
+			continue;
+		qe = &ep->qes[i];
+		break;
+	}
+	if (!qe)
+		return -EBUSY;
+
+	result = level | type << 8 | log_page << 16;
+	qe->resp.command_id = htole16(qe->ccid);
+	qe->resp.result.u32 = htole32(result);
+	qe->resp.status = 0;
+
+	ret = ep->ops->send_rsp(ep, &qe->resp);
+	ep->ops->release_tag(ep, qe);
+	return ret;
+}
+
 static struct xp_ops tcp_ops = {
 	.create_queue		= tcp_create_queue,
 	.destroy_queue		= tcp_destroy_queue,
@@ -880,6 +887,7 @@ static struct xp_ops tcp_ops = {
 	.send_rsp		= tcp_send_rsp,
 	.read_msg		= tcp_read_msg,
 	.handle_msg		= tcp_handle_msg,
+	.handle_aen		= tcp_handle_aen,
 };
 
 struct xp_ops *tcp_register_ops(void)

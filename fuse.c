@@ -1216,7 +1216,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				goto out_free;
 			fuse_info("%s: port %s ana_grp %s", __func__,
 			       port, ana_grp);
-			ret = configdb_get_ana_group(port, ana_grp, &ana_state);
+			ret = configdb_get_ana_group(portid, ana_grp,
+						     &ana_state);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;

@@ -28,6 +28,7 @@ struct xp_ops {
 	int (*send_rsp)(struct nofuse_queue *ep, struct nvme_completion *comp);
 	int (*read_msg)(struct nofuse_queue *ep);
 	int (*handle_msg)(struct nofuse_queue *ep);
+	int (*handle_aen)(struct nofuse_queue *ep);
 };
 
 struct xp_ops *tcp_register_ops(void);

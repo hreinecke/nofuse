@@ -271,6 +271,13 @@ void *queue_thread(void *arg)
 		};
 		void *cqe_data;
 
+		if (ep->ctrl && ep->ctrl->aen_pending) {
+			ret = ep->ops->handle_aen(ep);
+			if (!ret && ep->ctrl->aen_pending)
+				continue;
+			ret = 0;
+		}
+
 		if (!pollin_sqe) {
 			pollin_sqe = queue_submit_poll(ep, POLLIN);
 			if (!pollin_sqe)
@@ -435,6 +442,7 @@ void raise_aen(const char *subsysnqn, u16 cntlid, int level)
 {
 	const char *aen_type = NULL;
 	struct nofuse_ctrl *ctrl;
+	struct nofuse_queue *ep = NULL;
 
 	pthread_mutex_lock(&ctrl_list_mutex);
 	list_for_each_entry(ctrl, &ctrl_linked_list, node) {
@@ -442,24 +450,31 @@ void raise_aen(const char *subsysnqn, u16 cntlid, int level)
 			continue;
 		if (ctrl->cntlid != cntlid)
 			continue;
-		switch (level) {
-		case NVME_AER_NOTICE_NS_CHANGED:
-			aen_type = "ns_changed";
-			break;
-		case NVME_AER_NOTICE_ANA:
-			aen_type = "ana";
-			break;
-		case NVME_AER_NOTICE_DISC_CHANGED:
-			aen_type = "discovery changed";
-			break;
-		default:
-			break;
-		}
-		printf("%s: subsys %s ctrl %d level %d type %s\n",
-		       __func__, ctrl->subsysnqn, ctrl->cntlid,
-		       level, aen_type);
-
-		send_aen(ctrl->ep, level);
+		ep = ctrl->ep;
+		break;
 	}
 	pthread_mutex_unlock(&ctrl_list_mutex);
+	if (!ep || !ep->ctrl)
+		return;
+	switch (level) {
+	case NVME_AER_NOTICE_NS_CHANGED:
+		ep->ctrl->aen_pending |= NVME_AEN_CFG_NS_ATTR;
+		aen_type = "ns_changed";
+		break;
+	case NVME_AER_NOTICE_ANA:
+		ep->ctrl->aen_pending |= NVME_AEN_CFG_ANA_CHANGE;
+		aen_type = "ana";
+		break;
+	case NVME_AER_NOTICE_DISC_CHANGED:
+		ep->ctrl->aen_pending |= NVME_AEN_CFG_DISC_CHANGE;
+		aen_type = "discovery changed";
+		break;
+	default:
+		return;
+	}
+	printf("%s: subsys %s ctrl %d level %d type %s\n",
+	       __func__, ep->ctrl->subsysnqn, ep->ctrl->cntlid,
+	       level, aen_type);
+
+	queue_submit_cancel(ep);
 }

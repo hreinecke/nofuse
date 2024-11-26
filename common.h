@@ -136,9 +136,7 @@ struct nofuse_ctrl {
 	int num_queues;
 	int max_queues;
 	int aen_mask;
-	unsigned int ana_chgcnt;
-	unsigned int ns_chgcnt;
-	unsigned int disc_chgcnt;
+	u32 aen_pending;
 	u64 csts;
 	u64 cc;
 };

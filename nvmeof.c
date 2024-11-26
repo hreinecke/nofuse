@@ -549,7 +549,6 @@ static int format_ana_log(struct nofuse_queue *ep,
 	}
 
 	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
-	log_hdr->chgcnt = htole64(ep->ctrl->ana_chgcnt);
 
 	grp_ptr = (u8 *)log_hdr->entries;
 	for (grp = 0; grp < le32toh(log_hdr->ngrps); grp++) {
