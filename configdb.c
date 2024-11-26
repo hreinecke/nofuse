@@ -250,7 +250,7 @@ int sql_exec_stat(const char *sql, struct stat *stbuf)
 	return ret;
 }
 
-#define NUM_TABLES 14
+#define NUM_TABLES 15
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -329,6 +329,10 @@ static const char *init_sql[NUM_TABLES] = {
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
+	/* host_subsys triger */
+	"CREATE TRIGGER host_subsys_add_trig INSERT ON host_subsys "
+	"BEGIN UPDATE hosts SET genctr = genctr + 1 "
+	"WHERE id = NEW.host_id; END;",
 	/* subsys_port */
 	"CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
 	"ctime TIME, atime TIME, mtime TIME, "
@@ -354,6 +358,7 @@ int configdb_init(void)
 static const char *exit_sql[NUM_TABLES] =
 {
 	"DROP TABLE subsys_port;",
+	"DROP TRIGGER host_subsys_add_trig;",
 	"DROP TABLE host_subsys;",
 	"DROP TABLE ana_port_group;",
 	"DROP INDEX port_addr_idx;",
@@ -1422,37 +1427,17 @@ static char add_host_subsys_sql[] =
 
 int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
-	int ret, _ret;
+	int ret;
 	char *sql;
-
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret < 0)
-		return ret;
 
 	ret = asprintf(&sql, add_host_subsys_sql,
 		       hostnqn, subsysnqn);
 	if (ret < 0)
-		goto rollback;
+		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
-	if (ret < 0)
-		goto rollback;
-
-	ret = asprintf(&sql, "UPDATE hosts SET genctr = genctr + 1 "
-		       "WHERE nqn = '%s';", hostnqn);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-
-	COMMIT_TRANSACTION;
-	raise_disc_chg_aen();
-	return 0;
-
-rollback:
-	ROLLBACK_TRANSACTION;
+	if (!ret)
+		raise_disc_chg_aen();
 	return ret;
 }
 
