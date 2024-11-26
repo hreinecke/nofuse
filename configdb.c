@@ -250,7 +250,7 @@ int sql_exec_stat(const char *sql, struct stat *stbuf)
 	return ret;
 }
 
-#define NUM_TABLES 12
+#define NUM_TABLES 14
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -264,7 +264,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
 	"attr_version VARCHAR(256), "
 	"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME, "
-	"ana_chgcnt INT DEFAULT 0, "
+	"ana_chgcnt INT DEFAULT 0, ns_chgcnt INT DEFAULT 0, "
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 	/* ana_groups */
 	"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY, "
@@ -295,6 +295,14 @@ static const char *init_sql[NUM_TABLES] = {
 	/* nsid_idx */
 	"CREATE UNIQUE INDEX nsid_idx ON "
 	"namespaces(subsys_id, nsid); "
+	/* subsys_ns_add trigger */
+	"CREATE TRIGGER subsys_ns_add_trig INSERT ON namespaces "
+	"BEGIN UPDATE subsystems SET ns_chgcnt = ns_chgcnt + 1 "
+	"WHERE id = NEW.subsys_id; END;",
+	/* subsys_ns_del trigger */
+	"CREATE TRIGGER subsys_ns_del_trig DELETE ON namespaces "
+	"BEGIN UPDATE subsystems SET ns_chgcnt = ns_chgcnt + 1 "
+	"WHERE id = OLD.subsys_id; END;",
 	/* ports */
 	"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
 	"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
@@ -350,6 +358,8 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE ana_port_group;",
 	"DROP INDEX port_addr_idx;",
 	"DROP TABLE ports;",
+	"DROP TRIGGER subsys_ns_del_trig;",
+	"DROP TRIGGER subsys_ns_add_trig;",
 	"DROP INDEX nsid_idx;",
 	"DROP TABLE namespaces;",
 	"DROP INDEX cntlid_idx;",
@@ -735,6 +745,7 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 	if (ret < 0)
 		return ret;
 	ret = raise_ns_chg_aen(subsysnqn, nsid);
+	sql_exec_simple("SELECT * FROM subsystems;");
 	return ret;
 }
 
@@ -873,7 +884,7 @@ int configdb_get_namespace_attr(const char *subsysnqn, u32 nsid,
 }
 
 static char set_namespace_attr_sql[] =
-	"UPDATE namespaces SET %s = '%s' FROM "
+	"UPDATE namespaces SET %s = '%s', mtime = CURRENT_TIMESTAMP FROM "
 	"(SELECT ns.nsid AS nsid, s.nqn AS nqn "
 	"FROM namespaces AS ns "
 	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id) AS sel "
