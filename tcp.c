@@ -181,11 +181,13 @@ struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
 	return &ep->qes[tag];
 }
 
-int send aen(struct nofuse_queue *ep, int type)
+int send_aen(struct nofuse_queue *ep, int type)
 {
 	struct ep_qe *qe = NULL;
+	int ret, i;
 	u8 level;
 	u16 log_page;
+	u32 result;
 
 	for (i = 0; i < ep->qsize; i++) {
 		if (!ep->qes[i].aen)
@@ -210,12 +212,12 @@ int send aen(struct nofuse_queue *ep, int type)
 		log_page = NVME_LOG_DISC;
 		break;
 	default:
-		return NULL;
+		return -EINVAL;
 	}
 
 	result = level | type << 8 | log_page << 16;
-	qe->resp.ccid = htole16(qe->ccid);
-	qe->resp.result = htole32(result);
+	qe->resp.command_id = htole16(qe->ccid);
+	qe->resp.result.u32 = htole32(result);
 	qe->resp.status = 0;
 
 	ret = ep->ops->send_rsp(ep, &qe->resp);

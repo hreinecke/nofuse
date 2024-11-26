@@ -129,6 +129,7 @@ struct nofuse_ctrl {
 	struct linked_list node;
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
+	struct nofuse_queue *ep;
 	int cntlid;
 	int kato;
 	int kato_countdown;

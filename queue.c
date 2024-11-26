@@ -81,6 +81,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	strcpy(ctrl->subsysnqn, nqn);
 	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
+	ctrl->ep = ep;
 	ctrl->num_queues = 1;
 	ctrl->cntlid = cntlid;
 	ctrl->kato_countdown = RETRY_COUNT;
@@ -469,7 +470,7 @@ void raise_aen(const char *subsysnqn, int level)
 			       __func__, ctrl->subsysnqn, ctrl->cntlid,
 			       level, aen_type);
 
-			send_aen(ctrl->ep, level, new_aen_ctr);
+			send_aen(ctrl->ep, level);
 		}
 	}
 	pthread_mutex_unlock(&ctrl_list_mutex);
