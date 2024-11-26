@@ -412,13 +412,11 @@ void destroy_queue(struct nofuse_queue *ep)
 		ep->state = STOPPED;
 		queue_submit_cancel(ep);
 	}
-	ep_info(ep, "destroy queue");
+	ep_info(ep, "cancel queue");
 	if (ep->pthread) {
 		pthread_cancel(ep->pthread);
 		ep->pthread = 0;
 	}
-	list_del(&ep->node);
-	free(ep);
 }
 
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
