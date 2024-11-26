@@ -474,15 +474,14 @@ static int format_disc_log(struct nofuse_queue *ep,
 	len = configdb_host_disc_entries(ep->ctrl->hostnqn, NULL, 0);
 	if (len < 0) {
 		ctrl_err(ep, "error formatting discovery log page");
-		return -1;
+		return len;
 	}
 	num_recs = len / sizeof(struct nvmf_disc_rsp_page_entry);
 	log_len = len + sizeof(struct nvmf_disc_rsp_page_hdr);
 	log_buf = malloc(log_len);
 	if (!log_buf) {
 		ctrl_err(ep, "error allocating discovery log");
-		errno = ENOMEM;
-		return -1;
+		return -ENOMEM;
 	}
 	memset(log_buf, 0, log_len);
 	log_hdr = (struct nvmf_disc_rsp_page_hdr *)log_buf;
@@ -518,6 +517,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 	ctrl_info(ep, "discovery log page entries %d offset %llu len %d",
 		  num_recs, data_offset, log_len);
 	free(log_buf);
+	ep->ctrl->aen_pending &= ~NVME_AEN_CFG_DISC_CHANGE;
 	return log_len;
 }
 
@@ -536,8 +536,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 	log_buf = malloc(log_len);
 	if (!log_buf) {
 		ctrl_err(ep, "error allocating ana log");
-		errno = ENOMEM;
-		return -1;
+		return -ENOMEM;
 	}
 	memset(log_buf, 0, log_len);
 	len = configdb_ana_log_entries(ep->ctrl->subsysnqn,
@@ -571,7 +570,45 @@ static int format_ana_log(struct nofuse_queue *ep,
 	ctrl_info(ep, "ana log page entries %d offset %llu len %d",
 		  le32toh(log_hdr->ngrps), data_offset, log_len);
 	free(log_buf);
+#if 0
+	ep->ctrl->aen_pending &= ~~NVME_AEN_CFG_ANA_CHANGE;
+#else
+	ep->ctrl->aen_pending = 0;
+#endif
 	return log_len;
+}
+
+static int format_ns_chg_log(struct nofuse_queue *ep,
+			     void *data, u64 data_offset, u64 data_len)
+{
+	int log_len;
+	u8 *log_buf;
+	u32 nsid;
+
+	log_len = 1024 * sizeof(u32);
+	log_buf = malloc(log_len);
+	if (!log_buf) {
+		ctrl_err(ep, "error allocating ana log");
+		return -ENOMEM;
+	}
+	memset(log_buf, 0, log_len);
+	nsid = htole32(1);
+	memcpy(log_buf, &nsid, sizeof(nsid));
+	if (log_len < data_offset) {
+		ctrl_err(ep, "offset %llu beyond log pag size %d",
+			 data_offset, log_len);
+		log_len = 0;
+	} else {
+		log_len += data_offset;
+		if (log_len > data_len)
+			log_len = data_len;
+		memcpy(data, log_buf + data_offset, log_len);
+	}
+	ctrl_info(ep, "ns changed entries %d offset %llu len %d",
+		  1, data_offset, log_len);
+	free(log_buf);
+	ep->ctrl->aen_pending &= ~NVME_AEN_CFG_NS_ATTR;
+	return data_len;
 }
 
 static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
@@ -586,32 +623,44 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->data_pos = offset;
 	switch (cmd->get_log_page.lid) {
-	case 0x02:
+	case NVME_LOG_SMART:
 		/* SMART Log */
 		log_len = qe->data_len;
 		memset(qe->data, 0, log_len);
 		break;
-	case 0x0c:
-		/* ANA Log */
-		log_len = format_ana_log(ep, qe->data, qe->data_pos,
-					 qe->data_len);
-		if (!log_len) {
-			ctrl_err(ep, "get_log_page: ana log failed");
+	case NVME_LOG_CHANGED_NS:
+		/* Changed Namespace Log */
+		log_len = format_ns_chg_log(ep, qe->data, qe->data_pos,
+					    qe->data_len);
+		if (log_len < 0) {
+			ctrl_err(ep, "%s: changed namespace log failed",
+				 __func__);
 			return NVME_SC_INTERNAL;
 		}
 		break;
-	case 0x70:
+	case NVME_LOG_ANA:
+		/* ANA Log */
+		log_len = format_ana_log(ep, qe->data, qe->data_pos,
+					 qe->data_len);
+		if (log_len < 0) {
+			ctrl_err(ep, "%s: ana log failed",
+				 __func__);
+			return NVME_SC_INTERNAL;
+		}
+		break;
+	case NVME_LOG_DISC:
 		/* Discovery log */
 		log_len = format_disc_log(ep, qe->data, qe->data_pos,
 					  qe->data_len);
-		if (!log_len) {
-			ctrl_err(ep, "get_log_page: discovery log failed");
+		if (log_len < 0) {
+			ctrl_err(ep, "%s: discovery log failed",
+				__func__);
 			return NVME_SC_INTERNAL;
 		}
 		break;
 	default:
-		ctrl_err(ep, "get_log_page: lid %02x not supported",
-			  cmd->get_log_page.lid);
+		ctrl_err(ep, "%s: lid %02x not supported",
+			 __func__, cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
 	ret = ep->ops->rma_write(ep, qe, log_len);

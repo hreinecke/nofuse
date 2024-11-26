@@ -271,7 +271,9 @@ void *queue_thread(void *arg)
 		};
 		void *cqe_data;
 
-		if (ep->ctrl && ep->ctrl->aen_pending) {
+		if (ep->ctrl && ep->qid == 0 && ep->ctrl->aen_pending) {
+			ctrl_info(ep, "aen pending %#x",
+				  ep->ctrl->aen_pending);
 			ret = ep->ops->handle_aen(ep);
 			if (!ret && ep->ctrl->aen_pending)
 				continue;
@@ -475,6 +477,7 @@ void raise_aen(const char *subsysnqn, u16 cntlid, int level)
 	printf("%s: subsys %s ctrl %d level %d type %s\n",
 	       __func__, ep->ctrl->subsysnqn, ep->ctrl->cntlid,
 	       level, aen_type);
-
+#if 0
 	queue_submit_cancel(ep);
+#endif
 }
