@@ -272,7 +272,6 @@ static const char *init_sql[NUM_TABLES] = {
 	/* controllers */
 	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 	"cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
-	"ana_chg_ctr INT, ns_chg_ctr INT, disc_chg_ctr INT, "
 	"UNIQUE(cntlid, subsys_id), "
 	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
@@ -662,14 +661,53 @@ static char add_namespace_sql[] =
 	"FROM subsystems AS s, ana_groups AS ag "
 	"WHERE s.nqn = '%s' AND s.attr_type == '2' AND ag.id = '1';";
 
-static char namespace_chg_aen_sql[] =
-	"UPDATE controllers SET ns_chg_ctr = ns_chg_ctr + 1 "
-	"FROM "
-	"(SELECT s.nqn AS subsysnqn, n.nsid "
-	" FROM subsystems AS s "
-	" INNER JOIN namespaces AS n ON n.subsys_id = s.id "
-	" INNER JOIN controllers AS c on c.subsys_id = s.id) AS sel "
-	"WHERE sel.subsysnqn = '%s' AND sel.nsid = '%d';";
+static char raise_ns_chg_aen_sql[] =
+	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
+	"INNER JOIN namespaces AS n ON n.subsys_id = s.id "
+	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
+
+static int raise_aen_cb(void *argp, int argc, char **argv, char **col)
+{
+	char nqn[MAX_NQN_SIZE + 1] = {};
+	int *type = argp, i;
+	unsigned long cntlid = 0;
+
+	for (i = 0; i < argc; i++) {
+		if (!argv[i] || !strlen(argv[i]))
+			continue;
+		if (!strcmp(col[i], "cntlid")) {
+			char *eptr = NULL;
+
+			cntlid = strtoul(argv[i], &eptr, 10);
+			if (cntlid == ULONG_MAX || argv[i] == eptr) {
+				cntlid = 0;
+				continue;
+			}
+		}
+		if (!strcmp(col[i], "subsysnqn"))
+			strcpy(nqn, argv[i]);
+	}
+	if (cntlid > 0)
+		raise_aen(nqn, cntlid, *type);
+
+	return 0;
+}
+
+static int raise_ns_chg_aen(const char *subsysnqn, int nsid)
+{
+	char *sql, *errmsg;
+	int type = NVME_AER_NOTICE_NS_CHANGED;
+	int ret;
+
+	ret = asprintf(&sql, raise_ns_chg_aen_sql, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(configdb_db, sql, raise_aen_cb, &type, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
+	free(sql);
+	return ret;
+}
 
 int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 {
@@ -677,11 +715,8 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 	uuid_t uuid;
 	char uuid_str[65], nguid_str[33], eui64_str[33];
 	unsigned int nguid1, nguid2;
-	int ret, _ret;
+	int ret;
 
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret < 0)
-		return ret;
 	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
 	memcpy(&nguid1, &uuid[8], 4);
@@ -693,28 +728,13 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 	ret = asprintf(&sql, add_namespace_sql, uuid_str, nguid_str, eui64_str,
 		       nsid, subsysnqn);
 	if (ret < 0)
-		goto rollback;
+		return ret;
+
 	ret = sql_exec_simple(sql);
 	free(sql);
 	if (ret < 0)
-		goto rollback;
-	if (sqlite3_changes(configdb_db) == 0) {
-		ret = -EPERM;
-		goto done;
-	}
-	ret = asprintf(&sql, namespace_chg_aen_sql, subsysnqn, nsid);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-done:
-	COMMIT_TRANSACTION;
-	raise_aen(subsysnqn, NVME_AER_NOTICE_NS_CHANGED);
-	return ret;
-rollback:
-	ROLLBACK_TRANSACTION;
+		return ret;
+	ret = raise_ns_chg_aen(subsysnqn, nsid);
 	return ret;
 }
 
@@ -882,16 +902,10 @@ int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
 		printf("%s: no rows modified\n", __func__);
 		goto done;
 	}
-	ret = asprintf(&sql, namespace_chg_aen_sql, subsysnqn, nsid);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
 done:
 	COMMIT_TRANSACTION;
-	raise_aen(subsysnqn, NVME_AER_NOTICE_NS_CHANGED);
+	if (!ret)
+		raise_ns_chg_aen(subsysnqn, nsid);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -925,19 +939,17 @@ static char set_namespace_anagrp_sql[] =
 	"FROM ana_groups AS ag) AS sel "
 	"WHERE sel.grpid = '%d' AND nsid = '%u';";
 
-static char set_namespace_anagrp_aen_sql[] =
-	"UPDATE controllers SET ana_chg_ctr = ana_chg_ctr + 1 "
-	"FROM "
-	"(SELECT s.nqn AS subsysnqn "
-	" FROM subsystems AS s "
-	" INNER JOIN controllers AS c ON c.subsys_id = s.id ) AS sel "
-	"WHERE sel.subsysnqn = '%s';";
+static char raise_ns_anagrp_aen_sql[] =
+	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
+	"INNER JOIN subsystems AS s on c.subsys_id = s.id "
+	"WHERE s.nqn = '%s';";
 
 int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 				  int ana_grpid)
 {
-	char *sql;
+	char *sql, *errmsg;
 	int ret, _ret, new_ana_grpid;
+	int type = NVME_AER_NOTICE_ANA;
 
 	ret = sql_exec_simple("BEGIN TRANSACTION;");
 	if (ret < 0)
@@ -959,21 +971,16 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 		printf("%s: ana group id %d should be %d\n",
 		       __func__, new_ana_grpid, ana_grpid);
 		ret = -ENOENT;
-		goto done;
 	}
-
-	ret = asprintf(&sql, set_namespace_anagrp_aen_sql,
-		       subsysnqn);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-done:
-	raise_aen(subsysnqn, NVME_AER_NOTICE_ANA);
 	COMMIT_TRANSACTION;
-	return ret;
+
+	ret = asprintf(&sql, raise_ns_anagrp_aen_sql, subsysnqn);
+	if (ret < 0)
+		return 0;
+	ret = sqlite3_exec(configdb_db, sql, raise_aen_cb, &type, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
+	free(sql);
+	return 0;
 rollback:
 	ROLLBACK_TRANSACTION;
 	return ret;
@@ -1005,16 +1012,10 @@ int configdb_del_namespace(const char *subsysnqn, u32 nsid)
 		ret = -ENOENT;
 		goto done;
 	}
-	ret = asprintf(&sql, namespace_chg_aen_sql, subsysnqn, nsid);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
 done:
-	raise_aen(subsysnqn, NVME_AER_NOTICE_NS_CHANGED);
 	COMMIT_TRANSACTION;
+	if (!ret)
+		raise_ns_chg_aen(subsysnqn, nsid);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -1025,6 +1026,7 @@ static char add_ctrl_sql[] =
 	"INSERT INTO controllers ( cntlid, subsys_id ) "
 	"SELECT '%d', s.id FROM subsystems AS s "
 	"WHERE s.nqn = '%s';";
+
 int configdb_add_ctrl(const char *subsysnqn, int cntlid)
 {
 	int ret;
@@ -1034,36 +1036,6 @@ int configdb_add_ctrl(const char *subsysnqn, int cntlid)
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
-	free(sql);
-	return ret;
-}
-
-static char aen_ctr_sql[] =
-	"SELECT %s AS value FROM controllers WHERE cntlid = '%d';";
-
-int configdb_aen_ctr(unsigned int cntlid, int level, int *counter)
-{
-	int ret;
-	const char *ctr_str;
-	char *sql;
-
-	switch (level) {
-	case NVME_AER_NOTICE_NS_CHANGED:
-		ctr_str = "ns_chg_ctr";
-		break;
-	case NVME_AER_NOTICE_ANA:
-		ctr_str = "ana_chg_ctr";
-		break;
-	case NVME_AER_NOTICE_DISC_CHANGED:
-		ctr_str = "disc_chg_ctr";
-		break;
-	default:
-		return -EINVAL;
-	}
-	ret = asprintf(&sql, aen_ctr_sql, ctr_str, cntlid);
-	if (ret < 0)
-		return ret;
-	ret = sql_exec_int(sql, "value", counter);
 	free(sql);
 	return ret;
 }
@@ -1244,22 +1216,44 @@ int configdb_del_port(unsigned int portid)
 	return ret;
 }
 
+static char raise_ana_port_aen_sql[] =
+	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controller AS c "
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
+	"INNER JOIN subsys_port AS sp ON sp.subsys_id = s.id "
+	"WHERE sp.port_id = '%d';";
+
+static int raise_ana_port_chg_aen(unsigned int portid)
+{
+	char *sql, *errmsg;
+	int type = NVME_AER_NOTICE_ANA;
+	int ret;
+
+	ret = asprintf(&sql, raise_ana_port_aen_sql, portid);
+	if (ret < 0)
+		return ret;
+	ret = sqlite3_exec(configdb_db, sql, raise_aen_cb, &type, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
+	free(sql);
+	return ret;
+}
+
 static char add_ana_group_sql[] =
 	"INSERT INTO ana_port_group (ana_group_id, port_id, ana_state, ctime) "
 	"SELECT ag.id, p.id, '%d', CURRENT_TIMESTAMP "
 	"FROM ports AS p, ana_groups AS ag "
 	"WHERE p.id = '%d' AND ag.id = '%d';";
 
-int configdb_add_ana_group(int port, int grpid, int ana_state)
+int configdb_add_ana_group(unsigned int portid, int grpid, int ana_state)
 {
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, add_ana_group_sql, ana_state, port, grpid);
+	ret = asprintf(&sql, add_ana_group_sql, ana_state, portid, grpid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	raise_ana_port_chg_aen(portid);
 	return ret;
 }
 
@@ -1334,15 +1328,15 @@ static char get_ana_group_sql[] =
 	"SELECT ap.ana_state AS ana_state FROM ana_port_group AS ap "
 	"INNER JOIN ports AS p ON p.id = ap.port_id "
 	"INNER JOIN ana_groups AS ag ON ag.id = ap.ana_group_id "
-	"WHERE p.id = '%s' AND ag.id = '%s';";
+	"WHERE p.id = '%d' AND ag.id = '%s';";
 
-int configdb_get_ana_group(const char *port, const char *ana_grpid,
+int configdb_get_ana_group(unsigned int portid, const char *ana_grpid,
 			   int *ana_state)
 {
 	int ret;
 	char *sql;
 
-	ret = asprintf(&sql, get_ana_group_sql, port, ana_grpid);
+	ret = asprintf(&sql, get_ana_group_sql, portid, ana_grpid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_int(sql, "ana_state", ana_state);
@@ -1356,52 +1350,23 @@ static char set_ana_group_sql[] =
 	"(SELECT ap.id AS ag_id, ap.port_id AS port_id, ag.id AS grpid "
 	" FROM ana_port_group AS ap "
 	" INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id) AS sel "
-	"WHERE id = sel.ag_id AND sel.port_id = '%s' AND sel.grpid = '%s';";
+	"WHERE id = sel.ag_id AND sel.port_id = '%d' AND sel.grpid = '%s';";
 
-static char raise_ana_group_aen_sql[] =
-	"SELECT c.cntlid FROM controller AS c "
-	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
-	"INNER JOIN subsys_port AS sp ON sp.subsys_id = s.id "
-	"WHERE sp.port_id = '%s';";
-
-static int ana_aen_cb(void *argp, int argc, char **argv, char **col)
-{
-	for (i = 0; i < argc; i++) {
-		if (!argv[i] || !strlen(argv[i]))
-			continue;
-		if (!strcmp(col[i], "cntlid")) {
-			unsigned long cntlid;
-			char *eptr = NULL;
-
-			cntlid = strtoul(argv[i], &eptr, 10);
-			if (cntlid == ULONG_MAX || argv[i] == eptr)
-				continue;
-			raise_aen(cntlid, NVME_AER_NOTICE_ANA);
-		}
-	}
-	return 0;
-}
-
-int configdb_set_ana_group(const char *port, const char *ana_grpid,
+int configdb_set_ana_group(unsigned int portid, const char *ana_grpid,
 			   int ana_state)
 {
-	int ret, _ret;
+	int ret;
 	char *sql;
 
-	ret = asprintf(&sql, set_ana_group_sql, ana_state, port, ana_grpid);
+	ret = asprintf(&sql, set_ana_group_sql, ana_state, portid, ana_grpid);
 	if (ret < 0)
-		goto rollback;
+		return 0;
 	ret = sql_exec_simple(sql);
 	free(sql);
 	if (ret < 0)
 		return 0;
-	ret = asprintf(&sql, raise_ana_group_aen_sql, port);
-	if (ret < 0)
-		return 0;
-	ret = sqlite3_exec(configdb_db, sql, ana_aen_cb, NULL, &errmsg);
-	ret = sql_exec_error(ret, sql, errmsg);
-	free(sql);
-	return ret;
+	raise_ana_port_chg_aen(portid);
+	return 0;
 }
 
 static char del_ana_group_sql[] =
@@ -1420,21 +1385,29 @@ int configdb_del_ana_group(unsigned int portid, int grpid)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+	raise_ana_port_chg_aen(portid);
 	return ret;
+}
+
+static char raise_disc_chg_aen_sql[] =
+	"SELECT c.cntlid FROM controllers AS s "
+	"INNER JOIN subsystems AS s ON s.id = c.subsys_id "
+	"WHERE s.attr_type = '3';";
+
+int raise_disc_chg_aen(void) {
+	char *errmsg;
+	int type = NVME_AER_NOTICE_DISC_CHANGED;
+	int ret;
+
+	ret = sqlite3_exec(configdb_db, raise_disc_chg_aen_sql,
+			   raise_aen_cb, &type, &errmsg);
+	return sql_exec_error(ret, raise_disc_chg_aen_sql, errmsg);
 }
 
 static char add_host_subsys_sql[] =
 	"INSERT INTO host_subsys (host_id, subsys_id, ctime) "
 	"SELECT h.id, s.id, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';";
-
-static char discovery_chg_aen_sql[] =
-	"UPDATE controllers SET disc_chg_ctr = disc_chg_ctr + 1 "
-	"FROM "
-	"(SELECT s.nqn AS subsysnqn "
-	" FROM subsystems AS s "
-	" INNER JOIN controllers AS c ON c.subsys_id = s.id ) AS sel "
-	"WHERE sel.subsysnqn = '%s';";
 
 int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
@@ -1463,17 +1436,10 @@ int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 	if (ret < 0)
 		goto rollback;
 
-	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-
 	COMMIT_TRANSACTION;
-	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
-	return ret;
+	raise_disc_chg_aen();
+	return 0;
+
 rollback:
 	ROLLBACK_TRANSACTION;
 	return ret;
@@ -1555,36 +1521,22 @@ static char del_host_subsys_sql[] =
 
 int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
-	int ret, _ret;
+	int ret;
 	char *sql;
-
-	ret = sql_exec_simple("BEGIN TRANSACTION;");
-	if (ret < 0)
-		return ret;
 
 	ret = asprintf(&sql, del_host_subsys_sql,
 		       hostnqn, subsysnqn);
 	if (ret < 0)
-		goto rollback;
+		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
 	if (ret < 0)
-		goto rollback;
+		return ret;
+	if (sqlite3_changes(configdb_db) == 0)
+		return -EINVAL;
 
-	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-
-	COMMIT_TRANSACTION;
-	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
-	return ret;
-rollback:
-	ROLLBACK_TRANSACTION;
-	return ret;
+	raise_disc_chg_aen();
+	return 0;
 }
 
 static char add_subsys_port_sql[] =
@@ -1627,16 +1579,8 @@ int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 	if (ret < 0)
 		goto rollback;
 
-	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-
 	COMMIT_TRANSACTION;
-	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
+	raise_disc_chg_aen();
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -1678,16 +1622,8 @@ int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
 	if (ret < 0)
 		goto rollback;
 
-	ret = asprintf(&sql, discovery_chg_aen_sql, subsysnqn);
-	if (ret < 0)
-		goto rollback;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	if (ret < 0)
-		goto rollback;
-
 	COMMIT_TRANSACTION;
-	raise_aen(subsysnqn, NVME_AER_NOTICE_DISC_CHANGED);
+	raise_disc_chg_aen();
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;

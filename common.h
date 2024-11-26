@@ -235,7 +235,7 @@ static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)
 	ctrl->kato_countdown = ctrl->kato;
 }
 
-void raise_aen(const char *subsysnqn, int level);
+void raise_aen(const char *subsysnqn, u16 cntlid, int level);
 
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);

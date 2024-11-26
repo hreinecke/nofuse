@@ -50,15 +50,15 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, u32 nsid,
 			       int ana_grpid);
 int configdb_del_namespace(const char *subsysnqn, u32 nsid);
 
-int configdb_add_ana_group(int port, int grpid, int ana_state);
+int configdb_add_ana_group(unsigned int portid, int grpid, int ana_state);
 int configdb_count_ana_groups(const char *port, int *num);
 int configdb_stat_ana_group(const char *port, const char *ana_grpid,
 			 struct stat *stbuf);
 int configdb_fill_ana_groups(const char *port,
 			  void *buf, fuse_fill_dir_t filler);
-int configdb_get_ana_group(const char *port, const char *ana_grpid,
+int configdb_get_ana_group(unsigned int portid, const char *ana_grpid,
 			int *ana_state);
-int configdb_set_ana_group(const char *port, const char *ana_grpid,
+int configdb_set_ana_group(unsigned int portid, const char *ana_grpid,
 			int ana_state);
 int configdb_del_ana_group(unsigned int portid, int grpid);
 
@@ -71,7 +71,6 @@ int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn);
 
 int configdb_add_ctrl(const char *subsysnqn, int cntlid);
-int configdb_aen_ctr(unsigned int cntlid, int level, int *counter);
 int configdb_del_ctrl(const char *subsysnqn, int cntlid);
 
 int configdb_add_port(unsigned int port);

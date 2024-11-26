@@ -1080,7 +1080,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 				goto out_free;
 			fuse_info("%s: port %d ana_grp %s attr %s", __func__,
 			       portid, ana_grp, p);
-			ret = configdb_get_ana_group(port, ana_grp, NULL);
+			ret = configdb_get_ana_group(portid, ana_grp, NULL);
 			if (ret < 0) {
 				fuse_err("%s: port %d ana_grp %s error %d",
 					 __func__, portid, ana_grp, ret);
@@ -1477,7 +1477,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			}
 			fuse_info("%s: port %s ana_grp %s state %d", __func__,
 			       port, ana_grp, ana_state);
-			ret = configdb_set_ana_group(port, ana_grp, ana_state);
+			ret = configdb_set_ana_group(portid, ana_grp, ana_state);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
