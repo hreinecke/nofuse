@@ -250,7 +250,7 @@ int sql_exec_stat(const char *sql, struct stat *stbuf)
 	return ret;
 }
 
-#define NUM_TABLES 15
+#define NUM_TABLES 17
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -313,7 +313,8 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE TRIGGER ns_anagrp_update_trig UPDATE OF ana_group_id "
 	"ON namespaces BEGIN UPDATE ana_port_group SET chgcnt = chgcnt + 1 "
 	"FROM ns_ana_port_group AS napg "
-	"WHERE napg.s_id = NEW.subsys_id AND napg.nsid = NEW.nsid; END;";
+	"WHERE napg.ap_id = NEW.ana_group_id AND "
+	"napg.s_id = NEW.subsys_id AND napg.nsid = NEW.nsid; END;",
 	/* ports */
 	"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
 	"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
@@ -374,6 +375,8 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP TABLE ana_port_group;",
 	"DROP INDEX port_addr_idx;",
 	"DROP TABLE ports;",
+	"DROP TRIGGER ns_anagrp_update_trig;",
+	"DROP VIEW ns_ana_port_group;",
 	"DROP TRIGGER subsys_ns_del_trig;",
 	"DROP TRIGGER subsys_ns_add_trig;",
 	"DROP INDEX nsid_idx;",
