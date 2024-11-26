@@ -1217,7 +1217,7 @@ int configdb_del_port(unsigned int portid)
 }
 
 static char raise_ana_port_aen_sql[] =
-	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controller AS c "
+	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
 	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
 	"INNER JOIN subsys_port AS sp ON sp.subsys_id = s.id "
 	"WHERE sp.port_id = '%d';";
@@ -1390,7 +1390,7 @@ int configdb_del_ana_group(unsigned int portid, int grpid)
 }
 
 static char raise_disc_chg_aen_sql[] =
-	"SELECT c.cntlid FROM controllers AS s "
+	"SELECT c.cntlid FROM controllers AS c "
 	"INNER JOIN subsystems AS s ON s.id = c.subsys_id "
 	"WHERE s.attr_type = '3';";
 
