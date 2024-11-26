@@ -107,7 +107,7 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 					      ep->ctrl->max_queues);
 		break;
 	case NVME_FEAT_ASYNC_EVENT:
-		ep->ctrl->aen_mask = cdw11;
+		ep->ctrl->aen_enabled = cdw11;
 		break;
 	case NVME_FEAT_KATO:
 		/* cdw11 / kato is in msecs */
@@ -517,7 +517,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 	ctrl_info(ep, "discovery log page entries %d offset %llu len %d",
 		  num_recs, data_offset, log_len);
 	free(log_buf);
-	ep->ctrl->aen_pending &= ~NVME_AEN_CFG_DISC_CHANGE;
+	ep->ctrl->aen_masked &= ~NVME_AEN_CFG_DISC_CHANGE;
 	return log_len;
 }
 
@@ -570,11 +570,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 	ctrl_info(ep, "ana log page entries %d offset %llu len %d",
 		  le32toh(log_hdr->ngrps), data_offset, log_len);
 	free(log_buf);
-#if 0
-	ep->ctrl->aen_pending &= ~~NVME_AEN_CFG_ANA_CHANGE;
-#else
-	ep->ctrl->aen_pending = 0;
-#endif
+	ep->ctrl->aen_masked &= ~~NVME_AEN_CFG_ANA_CHANGE;
 	return log_len;
 }
 
@@ -607,7 +603,7 @@ static int format_ns_chg_log(struct nofuse_queue *ep,
 	ctrl_info(ep, "ns changed entries %d offset %llu len %d",
 		  1, data_offset, log_len);
 	free(log_buf);
-	ep->ctrl->aen_pending &= ~NVME_AEN_CFG_NS_ATTR;
+	ep->ctrl->aen_masked &= ~NVME_AEN_CFG_NS_ATTR;
 	return data_len;
 }
 

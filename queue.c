@@ -271,9 +271,11 @@ void *queue_thread(void *arg)
 		};
 		void *cqe_data;
 
-		if (ep->ctrl && ep->qid == 0 && ep->ctrl->aen_pending) {
-			ctrl_info(ep, "aen pending %#x",
-				  ep->ctrl->aen_pending);
+		if (ep->ctrl && ep->qid == 0 &&
+		    (ep->ctrl->aen_pending & ~ep->ctrl->aen_masked)) {
+			ctrl_info(ep, "aen pending %#x masked %#x",
+				  ep->ctrl->aen_pending,
+				  ep->ctrl->aen_masked);
 			ret = ep->ops->handle_aen(ep);
 			if (!ret && ep->ctrl->aen_pending)
 				continue;
@@ -460,23 +462,29 @@ void raise_aen(const char *subsysnqn, u16 cntlid, int level)
 		return;
 	switch (level) {
 	case NVME_AER_NOTICE_NS_CHANGED:
-		ep->ctrl->aen_pending |= NVME_AEN_CFG_NS_ATTR;
+		if (!(ep->ctrl->aen_masked & NVME_AEN_CFG_NS_ATTR)) {
+			ep->ctrl->aen_pending |= NVME_AEN_CFG_NS_ATTR;
+		}
 		aen_type = "ns_changed";
 		break;
 	case NVME_AER_NOTICE_ANA:
-		ep->ctrl->aen_pending |= NVME_AEN_CFG_ANA_CHANGE;
+		if (!(ep->ctrl->aen_masked & NVME_AEN_CFG_NS_ATTR)) {
+			ep->ctrl->aen_pending |= NVME_AEN_CFG_ANA_CHANGE;
+		}
 		aen_type = "ana";
 		break;
 	case NVME_AER_NOTICE_DISC_CHANGED:
-		ep->ctrl->aen_pending |= NVME_AEN_CFG_DISC_CHANGE;
+		if (!(ep->ctrl->aen_masked & NVME_AEN_CFG_DISC_CHANGE)) {
+			ep->ctrl->aen_pending |= NVME_AEN_CFG_DISC_CHANGE;
+		}
 		aen_type = "discovery changed";
 		break;
 	default:
 		return;
 	}
-	printf("%s: subsys %s ctrl %d level %d type %s\n",
+	printf("%s: subsys %s ctrl %d type %s pending %#x masked %#x\n",
 	       __func__, ep->ctrl->subsysnqn, ep->ctrl->cntlid,
-	       level, aen_type);
+	       aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
 #if 0
 	queue_submit_cancel(ep);
 #endif

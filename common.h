@@ -135,7 +135,8 @@ struct nofuse_ctrl {
 	int kato_countdown;
 	int num_queues;
 	int max_queues;
-	int aen_mask;
+	u32 aen_enabled;
+	u32 aen_masked;
 	u32 aen_pending;
 	u64 csts;
 	u64 cc;

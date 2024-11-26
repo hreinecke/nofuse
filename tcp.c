@@ -824,7 +824,7 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len
 static int tcp_handle_aen(struct nofuse_queue *ep)
 {
 	struct ep_qe *qe = NULL;
-	u32 aen_pending_mask;
+	u32 aen_pending;
 	int ret, i;
 	u8 type, level = NVME_AER_NOTICE;
 	u16 log_page;
@@ -833,16 +833,19 @@ static int tcp_handle_aen(struct nofuse_queue *ep)
 	if (!ep->ctrl)
 		return 0;
 
-	aen_pending_mask = ep->ctrl->aen_pending;
-	if (aen_pending_mask & NVME_AEN_CFG_NS_ATTR) {
+	aen_pending = ep->ctrl->aen_pending & ~ep->ctrl->aen_masked;
+	if (aen_pending & NVME_AEN_CFG_NS_ATTR) {
 		type = NVME_AER_NOTICE_NS_CHANGED;
 		log_page = NVME_LOG_CHANGED_NS;
-	} else if (aen_pending_mask & NVME_AEN_CFG_ANA_CHANGE) {
+		ep->ctrl->aen_masked |= NVME_AEN_CFG_NS_ATTR;
+	} else if (aen_pending & NVME_AEN_CFG_ANA_CHANGE) {
 		type = NVME_AER_NOTICE_ANA;
 		log_page = NVME_LOG_ANA;
-	} else if (aen_pending_mask & NVME_AEN_CFG_DISC_CHANGE) {
+		ep->ctrl->aen_masked |= NVME_AEN_CFG_ANA_CHANGE;
+	} else if (aen_pending & NVME_AEN_CFG_DISC_CHANGE) {
 		type = NVME_AER_NOTICE_DISC_CHANGED;
 		log_page = NVME_LOG_DISC;
+		ep->ctrl->aen_masked |= NVME_AEN_CFG_DISC_CHANGE;
 	} else {
 		return -EINVAL;
 	}
