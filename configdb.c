@@ -303,6 +303,17 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE TRIGGER subsys_ns_del_trig DELETE ON namespaces "
 	"BEGIN UPDATE subsystems SET ns_chgcnt = ns_chgcnt + 1 "
 	"WHERE id = OLD.subsys_id; END;",
+	/* ns_ana_port_group view */
+	"CREATE VIEW ns_ana_port_group AS "
+	"SELECT s.id AS s_id, ns.nsid, ap.id AS ap_id "
+	"FROM ana_port_group AS ap "
+	"INNER JOIN namespaces AS ns ON ns.ana_group_id = ap.id "
+	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id;"
+	/* ns_anagrp trigger */
+	"CREATE TRIGGER ns_anagrp_update_trig UPDATE OF ana_group_id "
+	"ON namespaces BEGIN UPDATE ana_port_group SET chgcnt = chgcnt + 1 "
+	"FROM ns_ana_port_group AS napg "
+	"WHERE napg.s_id = NEW.subsys_id AND napg.nsid = NEW.nsid; END;";
 	/* ports */
 	"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
 	"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
