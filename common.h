@@ -46,7 +46,7 @@ extern struct linked_list device_linked_list;
 extern struct linked_list port_linked_list;
 
 #define NVME_NR_AEN_COMMANDS	4
-#define NVME_AQ_DEPTH		32
+#define NVMF_AQ_DEPTH		32
 #define NVMF_SQ_DEPTH		128
 #define NVMF_NUM_QUEUES		8
 
@@ -108,6 +108,7 @@ struct nofuse_queue {
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
 	int recv_state;
+	int allocated_qsize;
 	int qsize;
 	int state;
 	int qid;
@@ -249,7 +250,6 @@ int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		  const char *hostnqn, const char *subsysnqn);
-int queue_update_qdepth(struct nofuse_queue *ep, int qsize);
 struct nofuse_queue *create_queue(int conn, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
 void *queue_thread(void *arg);

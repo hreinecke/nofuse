@@ -149,9 +149,9 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			 cntlid, 0xffff);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
-	if (!sqsize) {
-		ctrl_err(ep, "ctrl %d qid %d invalid sqsize",
-			  cntlid, qid);
+	if (!sqsize || sqsize > NVMF_SQ_DEPTH) {
+		ctrl_err(ep, "ctrl %d qid %d invalid sqsize %u",
+			 cntlid, qid, sqsize);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (ep->ctrl) {
@@ -159,13 +159,10 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			  ep->ctrl->cntlid, qid);
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
-	if (qid == 0) {
-		ep->qsize = NVMF_SQ_DEPTH;
-	} else if (queue_update_qdepth(ep, sqsize) < 0) {
-		ctrl_err(ep, "ctrl %d qid %d failed to increase sqsize %d",
-			  cntlid, qid, sqsize);
-		return NVME_SC_INTERNAL;
-	}
+	if (qid == 0 && sqsize > NVMF_AQ_DEPTH)
+		ep->qsize = NVMF_AQ_DEPTH;
+	else
+		ep->qsize = sqsize;
 
 	ep->qid = qid;
 

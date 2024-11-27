@@ -141,27 +141,6 @@ retry:
 	return 0;
 }
 
-int queue_update_qdepth(struct nofuse_queue *ep, int qsize)
-{
-	struct ep_qe *qes;
-	int i;
-
-	if (qsize + 1 == ep->qsize)
-		return 0;
-
-	qes = calloc(qsize + 1, sizeof(struct ep_qe));
-	if (!qes)
-		return -1;
-	free(ep->qes);
-	ep->qes = qes;
-	for (i = 0; i <= qsize; i++) {
-		ep->qes[i].tag = i;
-		ep->qes[i].ep = ep;
-	}
-	ep->qsize = qsize + 1;
-	return 0;
-}
-
 static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 					      int poll_flags)
 {

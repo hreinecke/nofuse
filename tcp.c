@@ -97,7 +97,7 @@ static int tcp_create_queue(struct nofuse_queue *ep, int conn)
 		ep->send_pdu = NULL;
 		return -ENOMEM;
 	}
-	ep->qsize = NVMF_SQ_DEPTH;
+	ep->qsize = ep->allocated_qsize = NVMF_SQ_DEPTH;
 	for (i = 0; i < ep->qsize; i++) {
 		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
@@ -110,11 +110,12 @@ static void tcp_destroy_queue(struct nofuse_queue *ep)
 	if (ep->qes) {
 		int i;
 
-		for (i = 0; i < ep->qsize; i++) {
+		for (i = 0; i < ep->allocated_qsize; i++) {
 			struct ep_qe *qe = &ep->qes[i];
 
-			if (!qe->busy)
-				continue;
+			if (qe->busy) {
+				tcp_err(ep, "qid %#x still busy", qe->tag);
+			}
 			qe->busy = false;
 			if (qe->data)
 				free(qe->data);
