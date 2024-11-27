@@ -44,14 +44,24 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 			    ctrl->cntlid != cntlid)
 				continue;
 			ep->ctrl = ctrl;
-			ctrl->num_queues++;
 			break;
 		}
 		if (!ep->ctrl) {
 			ep_err(ep, "qid %d invalid cntlid %d",
 			       ep->qid, cntlid);
 			ret = -ENOENT;
+			goto out_unlock;
 		}
+		pthread_mutex_lock(&ep->ctrl->ctrl_mutex);
+		if (ep->ctrl->ep[ep->qid]) {
+			ep->ctrl = NULL;
+			ep_err(ep, "qid %d already connected", ep->qid);
+			ret = -EBUSY;
+		} else {
+			ep->ctrl->ep[ep->qid] = ep;
+			ep->ctrl->num_queues++;
+		}
+		pthread_mutex_unlock(&ep->ctrl->ctrl_mutex);
 		goto out_unlock;
 	}
 
@@ -81,10 +91,11 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	strcpy(ctrl->subsysnqn, nqn);
 	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
-	ctrl->ep = ep;
+	ctrl->ep[0] = ep;
 	ctrl->num_queues = 1;
 	ctrl->cntlid = cntlid;
 	ctrl->kato_countdown = RETRY_COUNT;
+	pthread_mutex_init(&ctrl->ctrl_mutex, NULL);
 	INIT_LINKED_LIST(&ctrl->node);
 	list_add(&ctrl->node, &ctrl_linked_list);
 out_unlock:
@@ -104,8 +115,13 @@ static void disconnect_queue(struct nofuse_queue *ep)
 
 	ctrl_info(ep, "disconnect queue");
 	pthread_mutex_lock(&ctrl_list_mutex);
-	ctrl->num_queues--;
 	ep->ctrl = NULL;
+	pthread_mutex_lock(&ctrl->ctrl_mutex);
+	if (ctrl->ep[ep->qid]) {
+		ctrl->ep[ep->qid] = NULL;
+		ctrl->num_queues--;
+	}
+	pthread_mutex_unlock(&ctrl->ctrl_mutex);
 	if (!ctrl->num_queues) {
 		printf("ctrl %u qid %d: deleting controller\n",
 		       ctrl->cntlid, ep->qid);
@@ -241,6 +257,12 @@ static void pop_free(void *arg)
 		ep_err(ep, "no port set");
 		return;
 	}
+
+	pthread_mutex_lock(&ctrl_list_mutex);
+	if (ep->ctrl) {
+		ep_err(ep, "ctrl %u still active", ep->ctrl->cntlid);
+	}
+	pthread_mutex_unlock(&ctrl_list_mutex);
 	ep_info(ep, "destroy queue");
 	pthread_mutex_lock(&port->ep_mutex);
 	list_del(&ep->node);
@@ -398,7 +420,7 @@ struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 		goto out;
 	}
 
-	ep_info(ep, "start queue");
+	ep_info(ep, "queue started");
 	pthread_mutex_lock(&port->ep_mutex);
 	list_add(&ep->node, &port->ep_list);
 	pthread_mutex_unlock(&port->ep_mutex);
@@ -455,11 +477,11 @@ void raise_aen(const char *subsysnqn, u16 cntlid, int level)
 			continue;
 		if (ctrl->cntlid != cntlid)
 			continue;
-		ep = ctrl->ep;
+		ep = ctrl->ep[0];
 		break;
 	}
 	pthread_mutex_unlock(&ctrl_list_mutex);
-	if (!ep || !ep->ctrl)
+	if (!ep)
 		return;
 	switch (level) {
 	case NVME_AER_NOTICE_NS_CHANGED:

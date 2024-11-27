@@ -271,7 +271,8 @@ static const char *init_sql[NUM_TABLES] = {
 	"CHECK (id > 0) );"
 	/* controllers */
 	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-	"cntlid INT, subsys_id INT, ctrl_type INT, max_queues INT, "
+	"cntlid INT NOT NULL, subsys_id INT, ctrl_type INT, max_queues INT, "
+	"CHECK (cntlid > 0 AND cntlid < 65534), "
 	"UNIQUE(cntlid, subsys_id), "
 	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",

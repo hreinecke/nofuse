@@ -128,9 +128,10 @@ struct nofuse_queue {
 
 struct nofuse_ctrl {
 	struct linked_list node;
+	pthread_mutex_t ctrl_mutex;
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
-	struct nofuse_queue *ep;
+	struct nofuse_queue *ep[NVMF_NUM_QUEUES];
 	int cntlid;
 	int kato;
 	int kato_countdown;
