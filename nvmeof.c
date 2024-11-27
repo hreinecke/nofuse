@@ -97,10 +97,10 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 	case NVME_FEAT_NUM_QUEUES:
 		ncqr = (cdw11 >> 16) & 0xffff;
 		nsqr = cdw11 & 0xffff;
-		if (ncqr < ep->ctrl->max_queues) {
+		if (ncqr < NVMF_NUM_QUEUES) {
 			ep->ctrl->max_queues = ncqr;
 		}
-		if (nsqr < ep->ctrl->max_queues) {
+		if (nsqr < NVMF_NUM_QUEUES) {
 			ep->ctrl->max_queues = nsqr;
 		}
 		qe->resp.result.u32 = htole32(ep->ctrl->max_queues << 16 |
@@ -115,6 +115,81 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		break;
 	default:
 		ret = NVME_SC_FEATURE_NOT_CHANGEABLE;
+	}
+	return ret;
+}
+
+static int handle_get_features(struct nofuse_queue *ep, struct ep_qe *qe,
+			       struct nvme_command *cmd)
+{
+	u32 cdw10 = le32toh(cmd->common.cdw10);
+	u8 fid = (cdw10 & 0xff);
+	u8 sel = (cdw10 >> 8) & 0x7;
+	u32 result = 0;
+	int ret = NVME_SC_INVALID_FIELD;
+
+	ctrl_info(ep,"nvme_fabrics_type_get_features cdw10 %x fid %x sel %x",
+		  cdw10, fid, sel);
+
+	switch (fid) {
+	case NVME_FEAT_NUM_QUEUES:
+		switch (sel) {
+		case 0:
+		case 2:
+			result = ep->ctrl->max_queues << 16 |
+				ep->ctrl->max_queues;
+			break;
+		case 1:
+			result = NVMF_NUM_QUEUES << 16 |
+				NVMF_NUM_QUEUES;
+			break;
+		case 3:
+			result = 5;
+			break;
+		default:
+			break;
+		}
+		break;
+	case NVME_FEAT_ASYNC_EVENT:
+		switch (sel) {
+		case 0:
+		case 2:
+			result = ep->ctrl->aen_enabled;
+			break;
+		case 1:
+			result = NVME_AEN_CFG_NS_ATTR |	  \
+				NVME_AEN_CFG_ANA_CHANGE | \
+				NVME_AEN_CFG_DISC_CHANGE;
+			break;
+		case 3:
+			result = 5;
+			break;
+		default:
+			break;
+		}
+		break;
+	case NVME_FEAT_KATO:
+		switch (sel) {
+		case 0:
+		case 2:
+			result = ep->ctrl->kato * ep->kato_interval;
+			break;
+		case 1:
+			result = RETRY_COUNT * ep->kato_interval;
+			break;
+		case 3:
+			result = 5;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+	if (result) {
+		qe->resp.result.u32 = htole32(result);
+		ret = 0;
 	}
 	return ret;
 }
@@ -800,6 +875,10 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 			return 0;
 	} else if (cmd->common.opcode == nvme_admin_set_features) {
 		ret = handle_set_features(ep, qe, cmd);
+		if (ret)
+			ret = NVME_SC_INVALID_FIELD;
+	} else if (cmd->common.opcode == nvme_admin_get_features) {
+		ret = handle_get_features(ep, qe, cmd);
 		if (ret)
 			ret = NVME_SC_INVALID_FIELD;
 	} else if (cmd->common.opcode == nvme_admin_async_event) {
