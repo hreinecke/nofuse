@@ -98,6 +98,8 @@ int configdb_subsys_identify_ctrl(const char *subsysnqn,
 int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len);
 int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			     u8 *log, int log_len);
+int configdb_ns_changed_log_entries(const char *subsysnqn,
+				    u8 *log, int log_len);
 
 #endif /* _CONFIGDB_H */
 

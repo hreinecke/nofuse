@@ -596,7 +596,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 static int format_ana_log(struct nofuse_queue *ep,
 			  void *data, u64 data_offset, u64 data_len)
 {
-	unsigned int len, log_len;
+	int len, log_len;
 	u8 *log_buf, *grp_ptr;
 	struct nvme_ana_rsp_hdr *log_hdr;
 	struct nvme_ana_group_desc *desc;
@@ -611,6 +611,8 @@ static int format_ana_log(struct nofuse_queue *ep,
 		return -ENOMEM;
 	}
 	memset(log_buf, 0, log_len);
+	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
+
 	len = configdb_ana_log_entries(ep->ctrl->subsysnqn,
 				       ep->port->portid,
 				       log_buf, log_len);
@@ -618,8 +620,6 @@ static int format_ana_log(struct nofuse_queue *ep,
 		ctrl_err(ep, "error fetching ana log entries");
 		log_hdr->ngrps = 0;
 	}
-
-	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 
 	grp_ptr = (u8 *)log_hdr->entries;
 	for (grp = 0; grp < le32toh(log_hdr->ngrps); grp++) {
@@ -649,9 +649,8 @@ static int format_ana_log(struct nofuse_queue *ep,
 static int format_ns_chg_log(struct nofuse_queue *ep,
 			     void *data, u64 data_offset, u64 data_len)
 {
-	int log_len;
+	int len, log_len;
 	u8 *log_buf;
-	u32 nsid;
 
 	log_len = 1024 * sizeof(u32);
 	log_buf = malloc(log_len);
@@ -660,8 +659,13 @@ static int format_ns_chg_log(struct nofuse_queue *ep,
 		return -ENOMEM;
 	}
 	memset(log_buf, 0, log_len);
-	nsid = htole32(1);
-	memcpy(log_buf, &nsid, sizeof(nsid));
+	len = configdb_ns_changed_log_entries(ep->ctrl->subsysnqn,
+					      log_buf, log_len);
+	if (len < 0) {
+		ctrl_err(ep, "error fetching ns changed log entries");
+		memset(log_buf, 0, log_len);
+	}
+
 	if (log_len < data_offset) {
 		ctrl_err(ep, "offset %llu beyond log pag size %d",
 			 data_offset, log_len);

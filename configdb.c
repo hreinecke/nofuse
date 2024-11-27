@@ -250,7 +250,7 @@ int sql_exec_stat(const char *sql, struct stat *stbuf)
 	return ret;
 }
 
-#define NUM_TABLES 17
+#define NUM_TABLES 18
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -264,7 +264,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
 	"attr_version VARCHAR(256), "
 	"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME, "
-	"ana_chgcnt INT DEFAULT 0, ns_chgcnt INT DEFAULT 0, "
+	"ana_chgcnt INT DEFAULT 0, "
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 	/* ana_groups */
 	"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY, "
@@ -278,6 +278,10 @@ static const char *init_sql[NUM_TABLES] = {
 	/* cntlid index */
 	"CREATE UNIQUE INDEX cntlid_idx ON "
 	"controllers(cntlid, subsys_id);",
+	/* changed namespaces */
+	"CREATE TABLE ns_changed ( subsys_id INT, nsid INT, "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"ON UPDATE CASCADE ON DELETE RESTRICET );",
 	/* namespaces */
 	"CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
 	"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
@@ -297,12 +301,12 @@ static const char *init_sql[NUM_TABLES] = {
 	"namespaces(subsys_id, nsid); "
 	/* subsys_ns_add trigger */
 	"CREATE TRIGGER subsys_ns_add_trig INSERT ON namespaces "
-	"BEGIN UPDATE subsystems SET ns_chgcnt = ns_chgcnt + 1 "
-	"WHERE id = NEW.subsys_id; END;",
+	"BEGIN INSERT INTO ns_changed (subsys_id, nsid) "
+	"VALUES (NEW.subsys_id, NEW.nsid); END;",
 	/* subsys_ns_del trigger */
 	"CREATE TRIGGER subsys_ns_del_trig DELETE ON namespaces "
-	"BEGIN UPDATE subsystems SET ns_chgcnt = ns_chgcnt + 1 "
-	"WHERE id = OLD.subsys_id; END;",
+	"BEGIN INSERT INTO ns_changed (subsys_id, nsid) "
+	"VALUES (OLD.subsys_id, OLD.nsid); END;",
 	/* ns_ana_port_group view */
 	"CREATE VIEW ns_ana_port_group AS "
 	"SELECT s.id AS s_id, ns.nsid, ap.id AS ap_id "
@@ -379,6 +383,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP VIEW ns_ana_port_group;",
 	"DROP TRIGGER subsys_ns_del_trig;",
 	"DROP TRIGGER subsys_ns_add_trig;",
+	"DROP TABLE ns_changed;",
 	"DROP INDEX nsid_idx;",
 	"DROP TABLE namespaces;",
 	"DROP INDEX cntlid_idx;",
@@ -2220,6 +2225,52 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 	hdr->ngrps = htole16(ngrps);
 	printf("%s: %d ana groups\n", __func__, ngrps);
 	return parm.len;
+}
+
+static char ns_changed_log_sql[] =
+	"SELECT chg.nsid FROM ns_changed AS chg "
+	"INNER JOIN subsystems AS s ON s.id = chg.subsys_id "
+	"WHERE s.nqn = '%s';";
+static char clear_ns_changed_log_sql[] =
+	"DELETE FROM ns_changed AS chg WHERE chg.subsys_id IN "
+	"(SELECT id FROM subsystems WHERE nqn = '%s');";
+
+int configdb_ns_changed_log_entries(const char *subsysnqn,
+				    u8 *log, int log_len)
+{
+	struct sql_entry_parm parm = {
+		.len = log_len,
+		.buffer = log,
+		.cur = 0,
+	};
+	char *sql, *errmsg;
+	int ret, _ret;
+
+	ret = sql_exec_simple("BEGIN TRANSACTION;");
+	if (ret)
+		return ret;
+
+	ret = asprintf(&sql, ns_changed_log_sql, subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
+			   &parm, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+	ret = asprintf(&sql, clear_ns_changed_log_sql, subsysnqn);
+	if (ret < 0)
+		goto rollback;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	if (ret < 0)
+		goto rollback;
+	COMMIT_TRANSACTION;
+	return ret;
+rollback:
+	ROLLBACK_TRANSACTION;
+	return ret;
 }
 
 int configdb_open(const char *filename)
