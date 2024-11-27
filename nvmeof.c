@@ -660,6 +660,7 @@ static int format_ns_chg_log(struct nofuse_queue *ep,
 	}
 	memset(log_buf, 0, log_len);
 	len = configdb_ns_changed_log_entries(ep->ctrl->subsysnqn,
+					      ep->ctrl->cntlid,
 					      log_buf, log_len);
 	if (len < 0) {
 		ctrl_err(ep, "error fetching ns changed log entries");
@@ -676,8 +677,8 @@ static int format_ns_chg_log(struct nofuse_queue *ep,
 			log_len = data_len;
 		memcpy(data, log_buf + data_offset, log_len);
 	}
-	ctrl_info(ep, "ns changed entries %d offset %llu len %d",
-		  1, data_offset, log_len);
+	ctrl_info(ep, "ns changed entries %ld offset %llu len %d",
+		  len / sizeof(u32), data_offset, log_len);
 	free(log_buf);
 	ep->ctrl->aen_masked &= ~NVME_AEN_CFG_NS_ATTR;
 	return data_len;
