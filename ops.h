@@ -21,6 +21,7 @@ struct xp_ops {
 				     union nvme_tcp_pdu *pdu,
 				     u16 ccid, u64 pos, u64 len);
 	struct ep_qe *(*get_tag)(struct nofuse_queue *ep, u16 tag);
+	struct ep_qe *(*get_aen)(struct nofuse_queue *ep);
 	void (*release_tag)(struct nofuse_queue *ep, struct ep_qe *qe);
 	int (*rma_read)(struct nofuse_queue *ep, void *buf, u64 len);
 	int (*rma_write)(struct nofuse_queue *ep, struct ep_qe *qe, u64 len);
@@ -28,7 +29,7 @@ struct xp_ops {
 	int (*send_rsp)(struct nofuse_queue *ep, struct nvme_completion *comp);
 	int (*read_msg)(struct nofuse_queue *ep);
 	int (*handle_msg)(struct nofuse_queue *ep);
-	int (*handle_aen)(struct nofuse_queue *ep);
+	int (*handle_aen)(struct nofuse_queue *ep, struct ep_qe *qe);
 };
 
 struct xp_ops *tcp_register_ops(void);

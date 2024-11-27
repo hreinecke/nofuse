@@ -181,6 +181,19 @@ struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
 	return &ep->qes[tag];
 }
 
+struct ep_qe *tcp_get_aen(struct nofuse_queue *ep)
+{
+	int i;
+
+	for (i = 0; i < ep->qsize; i++) {
+		struct ep_qe *qe = &ep->qes[i];
+
+		if (qe->busy && qe->aen)
+			return qe;
+	}
+	return NULL;
+}
+
 void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	if (!qe)
@@ -821,45 +834,39 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len
 	return 0;
 }
 
-static int tcp_handle_aen(struct nofuse_queue *ep)
+static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	struct ep_qe *qe = NULL;
-	u32 aen_pending;
-	int ret, i;
+	int ret;
 	u8 type, level = NVME_AER_NOTICE;
 	u16 log_page;
-	u32 result;
+	u32 result, pending;
 
 	if (!ep->ctrl)
 		return 0;
 
-	aen_pending = ep->ctrl->aen_pending & ~ep->ctrl->aen_masked;
-	if (aen_pending & NVME_AEN_CFG_NS_ATTR) {
+	pending = aen_pending(ep->ctrl);
+	if (!pending)
+		return 0;
+	ctrl_info(ep, "aen pending %#x masked %#x",
+		  ep->ctrl->aen_pending,
+		  ep->ctrl->aen_masked);
+	if (pending & NVME_AEN_CFG_NS_ATTR) {
 		type = NVME_AER_NOTICE_NS_CHANGED;
 		log_page = NVME_LOG_CHANGED_NS;
 		ep->ctrl->aen_masked |= NVME_AEN_CFG_NS_ATTR;
-	} else if (aen_pending & NVME_AEN_CFG_ANA_CHANGE) {
+	} else if (pending & NVME_AEN_CFG_ANA_CHANGE) {
 		type = NVME_AER_NOTICE_ANA;
 		log_page = NVME_LOG_ANA;
 		ep->ctrl->aen_masked |= NVME_AEN_CFG_ANA_CHANGE;
-	} else if (aen_pending & NVME_AEN_CFG_DISC_CHANGE) {
+	} else if (pending & NVME_AEN_CFG_DISC_CHANGE) {
 		type = NVME_AER_NOTICE_DISC_CHANGED;
 		log_page = NVME_LOG_DISC;
 		ep->ctrl->aen_masked |= NVME_AEN_CFG_DISC_CHANGE;
 	} else {
-		return -EINVAL;
+		ctrl_info(ep, "invalid aen %#x", pending);
+		ep->ctrl->aen_masked |= pending;
+		return 0;
 	}
-
-	for (i = 0; i < ep->qsize; i++) {
-		if (!ep->qes[i].aen)
-			continue;
-		if (!ep->qes[i].busy)
-			continue;
-		qe = &ep->qes[i];
-		break;
-	}
-	if (!qe)
-		return -EBUSY;
 
 	ctrl_info(ep, "send aen level %u type %u", level, type);
 
@@ -882,6 +889,7 @@ static struct xp_ops tcp_ops = {
 	.accept_connection	= tcp_accept_connection,
 	.acquire_tag		= tcp_acquire_tag,
 	.get_tag		= tcp_get_tag,
+	.get_aen		= tcp_get_aen,
 	.release_tag		= tcp_release_tag,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_send_data,

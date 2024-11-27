@@ -209,6 +209,36 @@ static int queue_submit_cancel(struct nofuse_queue *ep)
 	return 0;
 }
 
+static int queue_submit_aen(struct nofuse_queue *ep)
+{
+	struct io_uring_sqe *sqe;
+	struct ep_qe *qe;
+	int ret;
+
+	qe = ep->ops->get_aen(ep);
+	if (!qe) {
+		ep_info(ep, "qid %d no aen request", ep->qid);
+		return 0;
+	}
+	qe->opcode = nvme_admin_async_event;
+	sqe = io_uring_get_sqe(&ep->uring);
+	if (!sqe) {
+		ep_err(ep, "qid %d failed to get nop sqe", ep->qid);
+		return 0;
+	}
+
+	io_uring_prep_nop(sqe);
+	io_uring_sqe_set_data(sqe, qe);
+
+	ret = io_uring_submit(&ep->uring);
+	if (ret <= 0) {
+		ep_err(ep, "qid %d submit nop failed, error %d",
+		       ep->qid, ret);
+		return ret;
+	}
+	return 0;
+}
+
 static void pop_disconnect(void *arg)
 {
 	struct nofuse_queue *ep = arg;
@@ -271,17 +301,6 @@ void *queue_thread(void *arg)
 		};
 		void *cqe_data;
 
-		if (ep->ctrl && ep->qid == 0 &&
-		    (ep->ctrl->aen_pending & ~ep->ctrl->aen_masked)) {
-			ctrl_info(ep, "aen pending %#x masked %#x",
-				  ep->ctrl->aen_pending,
-				  ep->ctrl->aen_masked);
-			ret = ep->ops->handle_aen(ep);
-			if (!ret && ep->ctrl->aen_pending)
-				continue;
-			ret = 0;
-		}
-
 		if (!pollin_sqe) {
 			pollin_sqe = queue_submit_poll(ep, POLLIN);
 			if (!pollin_sqe)
@@ -320,7 +339,12 @@ void *queue_thread(void *arg)
 			}
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
-			ret = handle_data(ep, qe, cqe->res);
+			if (qe->opcode == nvme_admin_async_event) {
+				ret = ep->ops->handle_aen(ep, qe);
+				if (!ret && aen_pending(ep->ctrl))
+					ret = queue_submit_aen(ep);
+			} else
+				ret = handle_data(ep, qe, cqe->res);
 		} else {
 			ctrl_err(ep, "cancel cqe");
 		}
@@ -480,10 +504,10 @@ void raise_aen(const char *subsysnqn, u16 cntlid, int level)
 	default:
 		return;
 	}
-	printf("%s: subsys %s ctrl %d type %s pending %#x masked %#x\n",
-	       __func__, ep->ctrl->subsysnqn, ep->ctrl->cntlid,
-	       aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
-#if 0
-	queue_submit_cancel(ep);
-#endif
+	if (aen_pending(ep->ctrl)) {
+		printf("%s: subsys %s ctrl %d type %s pending %#x masked %#x\n",
+		       __func__, ep->ctrl->subsysnqn, ep->ctrl->cntlid,
+		       aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
+		queue_submit_aen(ep);
+	}
 }
