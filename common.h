@@ -59,7 +59,7 @@ extern struct linked_list port_linked_list;
 #define PAGE_SIZE		4096
 
 #define KATO_INTERVAL	500	/* in ms as per spec */
-#define RETRY_COUNT	1200	/* 2 min; value is multiplied with kato interval */
+#define RETRY_COUNT	2400	/* 2 min; multiplied with kato interval */
 
 
 #define ADRFAM_STR_IPV4 "ipv4"
