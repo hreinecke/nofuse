@@ -19,8 +19,6 @@
 #include "configdb.h"
 #include "firmware.h"
 
-#define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
-
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
 			 u16 status)
 {
@@ -67,11 +65,20 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 		value = 0x200f0003ffL;
 	else if (cmd->prop_get.offset == NVME_REG_CC)
 		value = ep->ctrl->cc;
-	else if (cmd->prop_get.offset == NVME_REG_VS)
-		value = NVME_VER;
-	else {
-		ctrl_info(ep, "nvme_fabrics_type_property_get %x: N/I",
-			  cmd->prop_get.offset);
+	else if (cmd->prop_get.offset == NVME_REG_VS) {
+		struct nvme_id_ctrl id;
+		int ret;
+
+		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
+		if (ret < 0) {
+			ctrl_info(ep, "%s: failed to identify controller",
+				  __func__);
+			return NVME_SC_INTERNAL;
+		}
+		value = id.ver;
+	} else {
+		ctrl_info(ep, "%s: offset %x: N/I",
+			  __func__, cmd->prop_get.offset);
 		return NVME_SC_INVALID_FIELD;
 	}
 
