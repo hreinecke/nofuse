@@ -104,6 +104,8 @@ struct nofuse_queue {
 	struct nofuse_port *port;
 	struct nofuse_ctrl *ctrl;
 	struct ep_qe *qes;
+	u32 qes_map[NVMF_SQ_DEPTH / 8];
+	unsigned int qes_map_index;
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;

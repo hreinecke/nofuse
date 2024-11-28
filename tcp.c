@@ -102,6 +102,8 @@ static int tcp_create_queue(struct nofuse_queue *ep, int conn)
 		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
 	}
+	/* Invert bitmap such that we can use ffs() */
+	memset(ep->qes_map, 0xff, sizeof(ep->qes_map));
 	return 0;
 }
 
@@ -113,8 +115,9 @@ static void tcp_destroy_queue(struct nofuse_queue *ep)
 		for (i = 0; i < ep->allocated_qsize; i++) {
 			struct ep_qe *qe = &ep->qes[i];
 
-			if (qe->busy) {
-				tcp_err(ep, "qid %#x still busy", qe->tag);
+			if (qe->busy && !qe->aen) {
+				tcp_err(ep, "qid %d cid %#x still busy",
+					ep->qid, qe->tag);
 			}
 			qe->busy = false;
 			if (qe->data)
@@ -141,38 +144,63 @@ static void tcp_destroy_queue(struct nofuse_queue *ep)
 struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu,
 			      u16 ccid, u64 pos, u64 len)
 {
-	int i;
+	int m, i = 0, j, cid;
+	struct ep_qe *qe = NULL;
 
-	for (i = 0; i < ep->qsize; i++) {
-		struct ep_qe *qe = &ep->qes[i];
-
-		if (!qe->busy) {
-			qe->busy = true;
-			qe->ccid = ccid;
-			if (len) {
-				qe->data = malloc(len);
-				if (!qe->data) {
-					tcp_err(ep,
-						"Error allocating iovec base");
-					return NULL;
-				}
-				memset(qe->data, 0, len);
-				qe->data_pos = pos;
-				qe->data_len = len;
-				qe->iovec.iov_base = NULL;
-				qe->iovec.iov_len = 0;
-				qe->iovec_offset = 0;
-				qe->data_remaining = 0;
-			}
-			memcpy(&qe->pdu, pdu,
-			       sizeof(union nvme_tcp_pdu));
-			memset(&qe->resp, 0, sizeof(qe->resp));
-			qe->resp.command_id = 0xffff;
-			tcp_info(ep, "acquire tag %#x", qe->tag);
-			return qe;
-		}
+	m = ep->qes_map_index;
+retry:
+	for (j = 0; j < ep->qsize / 8; j++) {
+		i = ffs(ep->qes_map[m]);
+		if (m == (ep->qsize / 8) - 1 &&
+		    i > ep->qsize % 8)
+			i = 0;
+		if (i != 0 && j )
+			break;
+		m++;
+		if (m == ep->qsize / 8)
+			m = 0;
 	}
-	return NULL;
+	if (!i) {
+		tcp_err(ep, "qid %d all tags busy", ep->qid);
+		return NULL;
+	}
+	cid = i - 1;
+	if (ep->qes[cid].busy) {
+		tcp_err(ep, "qid %d cid %d busy after selection",
+			ep->qid, cid);
+		goto retry;
+	}
+	if (ep->qes[cid].tag != cid) {
+		tcp_err(ep, "qid %d cid %d tag mismatch (%d)",
+			ep->qid, cid, ep->qes[cid].tag);
+		return NULL;
+	}
+	ep->qes_map[m] &= ~(1 << cid);
+	ep->qes_map_index = m;
+	qe = &ep->qes[cid];
+	qe->busy = true;
+	qe->ccid = ccid;
+	if (len) {
+		qe->data = malloc(len);
+		if (!qe->data) {
+			tcp_err(ep,
+				"Error allocating iovec base");
+			return NULL;
+		}
+		memset(qe->data, 0, len);
+		qe->data_pos = pos;
+		qe->data_len = len;
+		qe->iovec.iov_base = NULL;
+		qe->iovec.iov_len = 0;
+		qe->iovec_offset = 0;
+		qe->data_remaining = 0;
+	}
+	memcpy(&qe->pdu, pdu,
+	       sizeof(union nvme_tcp_pdu));
+	memset(&qe->resp, 0, sizeof(qe->resp));
+	qe->resp.command_id = 0xffff;
+	tcp_info(ep, "acquire tag %#x", qe->tag);
+	return qe;
 }
 
 struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
@@ -211,6 +239,7 @@ void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 	}
 	qe->iovec.iov_base = NULL;
 	qe->iovec.iov_len = 0;
+	ep->qes_map[qe->tag] |= (1 << qe->tag);
 	tcp_info(ep, "release tag %#x", qe->tag);
 }
 
