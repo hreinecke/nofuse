@@ -263,7 +263,7 @@ static void pop_free(void *arg)
 		ep_err(ep, "ctrl %u still active", ep->ctrl->cntlid);
 	}
 	pthread_mutex_unlock(&ctrl_list_mutex);
-	ep_info(ep, "destroy queue");
+	ep_info(ep, "free queue");
 	pthread_mutex_lock(&port->ep_mutex);
 	list_del(&ep->node);
 	pthread_mutex_unlock(&port->ep_mutex);
@@ -434,11 +434,14 @@ out:
 void destroy_queue(struct nofuse_queue *ep)
 {
 	if (ep->state == CONNECTED) {
+		ep_info(ep, "%s: stop queue",
+			__func__);
 		ep->state = STOPPED;
 		queue_submit_cancel(ep);
 	}
-	ep_info(ep, "cancel queue");
 	if (ep->pthread) {
+		ep_info(ep, "%s: cancel thread",
+			__func__);
 		pthread_cancel(ep->pthread);
 		ep->pthread = 0;
 	}

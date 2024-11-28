@@ -34,22 +34,43 @@ static int handle_property_set(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	int ret = 0;
-
-	ctrl_info(ep, "nvme_fabrics_type_property_set %x = %llx",
-		  cmd->prop_set.offset, cmd->prop_set.value);
+	const char *reg_str = "unknown";
 
 	if (cmd->prop_set.offset == NVME_REG_CC) {
+		reg_str = "cc";
 		ep->ctrl->cc = le64toh(cmd->prop_set.value);
-		if (ep->ctrl->cc & NVME_CC_SHN_MASK)
+		if (ep->ctrl->cc & NVME_CC_SHN_MASK) {
+			/* Initiate controller shutdown */
+			int p;
+
+			for (p = NVMF_NUM_QUEUES; p > 1; p--) {
+				if (!ep->ctrl->ep[p - 1])
+					continue;
+				destroy_queue(ep->ctrl->ep[p - 1]);
+			}
 			ep->ctrl->csts = NVME_CSTS_SHST_CMPLT;
-		else {
-			if (ep->ctrl->cc & NVME_CC_ENABLE)
+		} else {
+			if (ep->ctrl->cc & NVME_CC_ENABLE) {
+				/* Enable controller */
 				ep->ctrl->csts = NVME_CSTS_RDY;
-			else
+			} else {
+				/* Initiate a controller reset */
+				int p;
+
+				for (p = NVMF_NUM_QUEUES; p > 1; p--) {
+					if (!ep->ctrl->ep[p - 1])
+						continue;
+					destroy_queue(ep->ctrl->ep[p - 1]);
+				}
 				ep->ctrl->csts = NVME_CSTS_SHST_CMPLT;
+			}
 		}
 	} else
 		ret = NVME_SC_INVALID_FIELD;
+
+	ctrl_info(ep, "nvme_fabrics_type_property_set %x (%s) = %llx",
+		  cmd->prop_set.offset, reg_str, cmd->prop_set.value);
+
 
 	return ret;
 }
@@ -58,17 +79,27 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	u64 value;
+	const char *reg_str = "unknown";
 
-	if (cmd->prop_get.offset == NVME_REG_CSTS)
+	if (cmd->prop_get.offset == NVME_REG_CSTS) {
+		reg_str = "csts";
 		value = ep->ctrl->csts;
-	else if (cmd->prop_get.offset == NVME_REG_CAP)
-		value = 0x200f0003ffL;
-	else if (cmd->prop_get.offset == NVME_REG_CC)
+	} else if (cmd->prop_get.offset == NVME_REG_CAP) {
+		u16 mqes = (NVMF_SQ_DEPTH - 1);
+		u8 rdy_timeout = 4; /* 2 seconds */
+		u8 css = 1;
+
+		reg_str = "cap";
+		value = (u64)(mqes) | (1 << 16) | \
+			((u64)rdy_timeout << 24) | ((u64)css << 37);
+	} else if (cmd->prop_get.offset == NVME_REG_CC) {
+		reg_str = "cc";
 		value = ep->ctrl->cc;
-	else if (cmd->prop_get.offset == NVME_REG_VS) {
+	} else if (cmd->prop_get.offset == NVME_REG_VS) {
 		struct nvme_id_ctrl id;
 		int ret;
 
+		reg_str = "vs";
 		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
 		if (ret < 0) {
 			ctrl_info(ep, "%s: failed to identify controller",
@@ -76,14 +107,17 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 			return NVME_SC_INTERNAL;
 		}
 		value = id.ver;
+	} else if (cmd->prop_get.offset == NVME_REG_CRTO) {
+		reg_str = "crto";
+		value = 0;
 	} else {
 		ctrl_info(ep, "%s: offset %x: N/I",
 			  __func__, cmd->prop_get.offset);
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ctrl_info(ep, "nvme_fabrics_type_property_get %x: %llx",
-		  cmd->prop_get.offset, value);
+	ctrl_info(ep, "nvme_fabrics_type_property_get %x (%s): %llx",
+		  cmd->prop_get.offset, reg_str, value);
 	qe->resp.result.u64 = htole64(value);
 
 	return 0;

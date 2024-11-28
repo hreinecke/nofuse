@@ -114,6 +114,15 @@ enum {
 	NVME_REG_CMBMSC = 0x0050,	/* Controller Memory Buffer Memory
 					 * Space Control
 					 */
+	NVME_REG_CMBSTS = 0x0058,	/* Controller Memory Buffer Status */
+	NVME_REG_CMBEBS = 0x005c,	/* Controller Memory Buffer
+					 * Elasticity Size
+					 */
+	NVME_REG_CMBSWTP = 0x0060,	/* Controller Memory Buffer
+					 * Sustained Write Throughput
+					 */
+	NVME_REG_NSSD   = 0x0064,	/* NVM Subsystem Shutdown */
+	NVME_REG_CRTO   = 0x0068,	/* Controller Ready Timeouts */
 	NVME_REG_PMRCAP	= 0x0e00,	/* Persistent Memory Capabilities */
 	NVME_REG_PMRCTL	= 0x0e04,	/* Persistent Memory Region Control */
 	NVME_REG_PMRSTS	= 0x0e08,	/* Persistent Memory Region Status */
