@@ -1,6 +1,9 @@
 # Program file
 nofuse
 
+# generated files
+firmware.h
+
 # Prerequisites
 *.d
 
