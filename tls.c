@@ -83,18 +83,24 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	}
 	fprintf(stdout, "%s: tls %s using cipher %s\n",
 		__func__, SSL_get_version(ssl), SSL_CIPHER_get_name(cipher));
-	nsig = SSL_get_shared_sigalgs(ssl, -1, NULL, NULL, NULL, NULL, NULL);
+	nsig = SSL_get_sigalgs(ssl, -1, NULL, NULL, NULL, NULL, NULL);
 	for (i = 0; i < nsig; i++) {
 		int sign_nid, hash_nid;
 		unsigned char rhash, rsign;
 
-		SSL_get_shared_sigalgs(ssl, i, &sign_nid, &hash_nid, NULL,
+		SSL_get_sigalgs(ssl, i, &sign_nid, &hash_nid, NULL,
 				&rsign, &rhash);
 		fprintf(stdout, "sigalg %d: %02x+%02x raw %02x+%02x ", i,
 			sign_nid, hash_nid, rsign, rhash);
 	}
-	if (!nsig)
+	if (!nsig) {
 		fprintf(stdout, "no shared signature algorithms found!\n");
+		cipher = SSL_get_pending_cipher(ssl);
+		if (cipher) {
+			fprintf(stdout, "%s: current cipher %s\n",
+				__func__, SSL_CIPHER_get_name(cipher));
+		}
+	}
 
 	tmpsess = SSL_SESSION_new();
 	if (tmpsess == NULL
@@ -273,9 +279,10 @@ int tls_global_init(void)
 	SSL_library_init();
 	SSL_load_error_strings();
 	ERR_load_crypto_strings();
+#endif
 	OpenSSL_add_all_algorithms();
 	OpenSSL_add_all_digests();
-#endif
+
 	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (!serial) {
 		fprintf(stderr, "default '.nvme' keyring not found\n");

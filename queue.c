@@ -54,6 +54,12 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 			ret = -ENOENT;
 			goto out_unlock;
 		}
+		if (ep->qid > NVMF_NUM_QUEUES) {
+			ep_err(ep, "qid %d beyond max num of queues",
+			       ep->qid);
+			ret = -EINVAL;
+			goto out_unlock;
+		}
 		pthread_mutex_lock(&ctrl->ctrl_mutex);
 		if (ctrl->ep[ep->qid]) {
 			ep_err(ep, "qid %d already connected", ep->qid);

@@ -133,7 +133,7 @@ struct nofuse_ctrl {
 	pthread_mutex_t ctrl_mutex;
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
-	struct nofuse_queue *ep[NVMF_NUM_QUEUES];
+	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
 	int cntlid;
 	int kato;
 	int kato_countdown;
