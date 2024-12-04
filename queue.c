@@ -25,7 +25,7 @@ static int nvmf_ctrl_id = 1;
 int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
-	struct nofuse_ctrl *ctrl;
+	struct nofuse_ctrl *ctrl = NULL;
 	char nqn[MAX_NQN_SIZE + 1];
 	int ret = 0;
 
@@ -38,30 +38,32 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 
 	pthread_mutex_lock(&ctrl_list_mutex);
 	if (ep->qid > 0) {
-		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
-			if (strcmp(hostnqn, ctrl->hostnqn) ||
-			    strcmp(nqn, ctrl->subsysnqn) ||
-			    ctrl->cntlid != cntlid)
+		struct nofuse_ctrl *c;
+
+		list_for_each_entry(c, &ctrl_linked_list, node) {
+			if (strcmp(hostnqn, c->hostnqn) ||
+			    strcmp(nqn, c->subsysnqn) ||
+			    c->cntlid != cntlid)
 				continue;
-			ep->ctrl = ctrl;
+			ctrl = c;
 			break;
 		}
-		if (!ep->ctrl) {
+		if (!ctrl) {
 			ep_err(ep, "qid %d invalid cntlid %d",
 			       ep->qid, cntlid);
 			ret = -ENOENT;
 			goto out_unlock;
 		}
-		pthread_mutex_lock(&ep->ctrl->ctrl_mutex);
-		if (ep->ctrl->ep[ep->qid]) {
-			ep->ctrl = NULL;
+		pthread_mutex_lock(&ctrl->ctrl_mutex);
+		if (ctrl->ep[ep->qid]) {
 			ep_err(ep, "qid %d already connected", ep->qid);
 			ret = -EBUSY;
 		} else {
-			ep->ctrl->ep[ep->qid] = ep;
-			ep->ctrl->num_queues++;
+			ctrl->ep[ep->qid] = ep;
+			ep->ctrl = ctrl;
+			ctrl->num_queues++;
 		}
-		pthread_mutex_unlock(&ep->ctrl->ctrl_mutex);
+		pthread_mutex_unlock(&ctrl->ctrl_mutex);
 		goto out_unlock;
 	}
 
