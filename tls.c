@@ -23,7 +23,8 @@
 #include "tls.h"
 #include "ops.h"
 
-static unsigned char psk_cipher[2] = { 0x00, 0xaa };
+static unsigned char psk_cipher_sha256[2] = { 0x13, 0x01 };
+static unsigned char psk_cipher_sha384[2] = { 0x13, 0x02 };
 
 static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
@@ -45,7 +46,6 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 {
 	SSL_SESSION *tmpsess = NULL;
 	const SSL_CIPHER *cipher = NULL;
-	int i, nsig;
 	key_serial_t keyring_id, psk;
 	void *psk_key;
 	size_t psk_len;
@@ -63,7 +63,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 
 	psk = keyctl_search(keyring_id, "psk", (const char *)identity, 0);
 	if (psk < 0) {
-		fprintf(stdout, "%s: psk identity %s not found\n",
+		fprintf(stdout, "%s: psk identity %s (not found\n",
 			__func__, identity);
 		*sess = NULL;
 		return 0;
@@ -76,30 +76,23 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 		return 0;
 	}
 
-	cipher = SSL_CIPHER_find(ssl, psk_cipher);
+	if (!strncmp((const char *)identity, "NVMe1R02", 8) ||
+	    !strncmp((const char *)identity, "NVMe1G02", 8)) {
+		/* TLS_AES_256_GCM_SHA384 */
+		cipher = SSL_CIPHER_find(ssl, psk_cipher_sha384);
+	} else {
+		cipher = SSL_CIPHER_find(ssl, psk_cipher_sha256);
+	}
 	if (cipher == NULL) {
 		fprintf(stderr, "Error finding suitable ciphersuite\n");
 		return 0;
 	}
 	fprintf(stdout, "%s: tls %s using cipher %s\n",
 		__func__, SSL_get_version(ssl), SSL_CIPHER_get_name(cipher));
-	nsig = SSL_get_sigalgs(ssl, -1, NULL, NULL, NULL, NULL, NULL);
-	for (i = 0; i < nsig; i++) {
-		int sign_nid, hash_nid;
-		unsigned char rhash, rsign;
-
-		SSL_get_sigalgs(ssl, i, &sign_nid, &hash_nid, NULL,
-				&rsign, &rhash);
-		fprintf(stdout, "sigalg %d: %02x+%02x raw %02x+%02x ", i,
-			sign_nid, hash_nid, rsign, rhash);
-	}
-	if (!nsig) {
-		fprintf(stdout, "no shared signature algorithms found!\n");
-		cipher = SSL_get_pending_cipher(ssl);
-		if (cipher) {
-			fprintf(stdout, "%s: current cipher %s\n",
-				__func__, SSL_CIPHER_get_name(cipher));
-		}
+	cipher = SSL_get_pending_cipher(ssl);
+	if (cipher) {
+		fprintf(stdout, "%s: pending cipher %s\n",
+			__func__, SSL_CIPHER_get_name(cipher));
 	}
 
 	tmpsess = SSL_SESSION_new();
