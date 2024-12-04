@@ -1109,8 +1109,8 @@ int configdb_del_ctrl(const char *subsysnqn, int cntlid)
 }
 
 static char add_port_sql[] =
-	"INSERT INTO ports (id, addr_trtype, addr_traddr, addr_adrfam, ctime)"
-	" VALUES ('%d', 'tcp', '127.0.0.1', '%s', CURRENT_TIMESTAMP);";
+	"INSERT INTO ports (id, addr_trtype, addr_traddr, addr_adrfam, addr_tsas, addr_treq, ctime)"
+	" VALUES ('%d', 'tcp', '127.0.0.1', '%s', 'none', 'not specified', CURRENT_TIMESTAMP);";
 
 int configdb_add_port(unsigned int portid)
 {
@@ -1230,6 +1230,25 @@ int configdb_set_port_attr(unsigned int port, const char *attr,
 {
 	char *sql;
 	int ret;
+
+	if (!strcmp(attr, "addr_trtype")) {
+		if (strcmp(value, "tcp")) {
+			return -EINVAL;
+		}
+	} else if (!strcmp(attr, "addr_adrfam")) {
+		if (strcmp(value, ADRFAM_STR_IPV4) &&
+		    strcmp(value, ADRFAM_STR_IPV6))
+			return -EINVAL;
+	} else if (!strcmp(attr, "addr_tsas")) {
+		if (strcmp(value, "tls1.3") &&
+		    strcmp(value, "none"))
+			return -EINVAL;
+	} else if (!strcmp(attr, "addr_treq")) {
+		if (strcmp(value, "not required") &&
+		    strcmp(value, "required") &&
+		    strcmp(value, "not specified"))
+			return -EINVAL;
+	}
 
 	ret = asprintf(&sql, set_port_attr_sql, attr, value, port);
 	if (ret < 0) {
@@ -1882,7 +1901,7 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 				entry->treq = NVMF_TREQ_NOT_REQUIRED;
 			}
 		} else if (!strcmp(colname[i], "tsas")) {
-			if (arg_len && !strcmp(argv[i], "tls13")) {
+			if (arg_len && !strcmp(argv[i], "tls1.3")) {
 				entry->tsas.tcp.sectype =
 					NVMF_TCP_SECTYPE_TLS13;
 			} else {
