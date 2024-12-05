@@ -26,7 +26,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl = NULL;
-	char nqn[MAX_NQN_SIZE + 1];
+	char nqn[MAX_NQN_SIZE + 1], value[16];
 	int ret = 0;
 
 	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME)) {
@@ -54,9 +54,9 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 			ret = -ENOENT;
 			goto out_unlock;
 		}
-		if (ep->qid > NVMF_NUM_QUEUES) {
-			ep_err(ep, "qid %d beyond max num of queues",
-			       ep->qid);
+		if (ep->qid > ctrl->max_queues) {
+			ep_err(ep, "invalid qid %d (max %d)",
+			       ep->qid, ctrl->max_queues);
 			ret = -EINVAL;
 			goto out_unlock;
 		}
@@ -95,9 +95,24 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		free(ctrl);
 		goto out_unlock;
 	}
+	ret = configdb_get_subsys_attr(nqn, "attr_qid_max", value);
+	if (ret < 0) {
+		ep_err(ep, "error fetching attr_qid_max");
+		ctrl->max_queues = NVMF_NUM_QUEUES;
+	} else {
+		unsigned long tmp;
+		char *eptr = NULL;
+
+		tmp = strtoul(value, &eptr, 10);
+		if (tmp == ULONG_MAX || value == eptr) {
+			ep_err(ep, "invalid max_qid value '%s'", value);
+			ctrl->max_queues = NVMF_NUM_QUEUES;
+		} else {
+			ctrl->max_queues = tmp;
+		}
+	}
 	strcpy(ctrl->hostnqn, hostnqn);
 	strcpy(ctrl->subsysnqn, nqn);
-	ctrl->max_queues = NVMF_NUM_QUEUES;
 	ep->ctrl = ctrl;
 	ctrl->ep[0] = ep;
 	ctrl->num_queues = 1;

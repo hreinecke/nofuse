@@ -262,8 +262,10 @@ static const char *init_sql[NUM_TABLES] = {
 	"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
 	"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
-	"attr_version VARCHAR(256), "
-	"attr_type INT DEFAULT 3, ctime TIME, atime TIME, mtime TIME, "
+	"attr_version VARCHAR(256), attr_type INT DEFAULT 3, "
+	"attr_qid_max INT, attr_pi_enable INT, "
+	"attr_cntlid_min INT DEFAULT 1, attr_cntlid_max INT DEFAULT 65519, "
+	"ctime TIME, atime TIME, mtime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 	/* ana_groups */
@@ -271,7 +273,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"CHECK (id > 0) );"
 	/* controllers */
 	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
-	"cntlid INT NOT NULL, subsys_id INT, ctrl_type INT, max_queues INT, "
+	"cntlid INT NOT NULL, subsys_id INT, ctrl_type INT, "
 	"CHECK (cntlid > 0 AND cntlid < 65534), "
 	"UNIQUE(cntlid, subsys_id), "
 	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
@@ -540,8 +542,10 @@ int configdb_del_host(const char *nqn)
 
 static char add_subsys_sql[] =
 	"INSERT INTO subsystems "
-	"(nqn, attr_model, attr_version, attr_ieee_oui, attr_firmware, attr_allow_any_host, attr_type, ctime) "
-	"VALUES ('%s', 'nofuse', '2.0', '851255', '%s', '%d', '%d', CURRENT_TIMESTAMP);";
+	"(nqn, attr_model, attr_version, attr_ieee_oui, attr_firmware, "
+	"attr_allow_any_host, attr_type, attr_qid_max, ctime) "
+	"VALUES ('%s', 'nofuse', '2.0', '851255', '%s', "
+	"'%d', '%d', '%d', CURRENT_TIMESTAMP);";
 
 int configdb_add_subsys(const char *subsysnqn, int type)
 {
@@ -551,7 +555,7 @@ int configdb_add_subsys(const char *subsysnqn, int type)
 	if (type == NVME_NQN_CUR)
 		allow_any = 1;
 	ret = asprintf(&sql, add_subsys_sql, subsysnqn,
-		       firmware_rev, allow_any, type);
+		       firmware_rev, allow_any, type, NVMF_NUM_QUEUES);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -676,6 +680,16 @@ int configdb_set_subsys_attr(const char *nqn, const char *attr,
 
 	if (!strcmp(attr, "attr_type"))
 		return -EPERM;
+	if (!strcmp(attr, "attr_qid_max")) {
+		unsigned long qid_max;
+		char *eptr = NULL;
+
+		qid_max = strtoul(buf, &eptr, 10);
+		if (qid_max == ULONG_MAX || buf == eptr)
+			return -EINVAL;
+		if (qid_max > NVMF_NUM_QUEUES)
+			return -EINVAL;
+	}
 	ret = asprintf(&sql, set_subsys_attr_sql, attr, buf, nqn);
 	if (ret < 0)
 		return ret;
