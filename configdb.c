@@ -272,7 +272,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY, "
 	"CHECK (id > 0) );"
 	/* controllers */
-	"CREATE TABLE controllers ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"CREATE TABLE controllers ( "
 	"cntlid INT NOT NULL, subsys_id INT, ctrl_type INT, "
 	"CHECK (cntlid > 0 AND cntlid < 65534), "
 	"UNIQUE(cntlid, subsys_id), "
@@ -287,7 +287,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"WHERE NEW.subsys_id = oid; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
-	"FOREIGN KEY (ctrl_id) REFERENCES controllers(id) "
+	"FOREIGN KEY (ctrl_id) REFERENCES controllers(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* namespaces */
 	"CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -2308,7 +2308,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 
 static char ns_changed_log_sql[] =
 	"SELECT chg.nsid FROM ns_changed AS chg "
-	"INNER JOIN controllers AS c ON c.id = chg.ctrl_id "
+	"INNER JOIN controllers AS c ON c.oid = chg.ctrl_id "
 	"INNER JOIN subsystems AS s ON s.oid = c.subsys_id "
 	"WHERE s.nqn = '%s' AND c.cntlid = '%d';";
 static char clear_ns_changed_log_sql[] =
