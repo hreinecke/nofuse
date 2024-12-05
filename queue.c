@@ -314,6 +314,7 @@ void *queue_thread(void *arg)
 	if (ret) {
 		ep_err(ep, "qid %d error %d creating uring",
 		       ep->qid, ret);
+		ep->state = STOPPED;
 		goto out_disconnect;
 	}
 
