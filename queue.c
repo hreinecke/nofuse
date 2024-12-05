@@ -143,7 +143,6 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	ctrl_info(ep, "disconnect queue");
 	pthread_mutex_lock(&ctrl_list_mutex);
 	ep->ctrl = NULL;
-	pthread_mutex_lock(&ctrl->ctrl_mutex);
 	if (ctrl->ep[ep->qid]) {
 		ctrl->ep[ep->qid] = NULL;
 		ctrl->num_queues--;
@@ -272,8 +271,8 @@ static void pop_uring_exit(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 
-	io_uring_queue_exit(&ep->uring);
 	ep->state = STOPPED;
+	io_uring_queue_exit(&ep->uring);
 }
 
 static void pop_free(void *arg)
