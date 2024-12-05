@@ -254,7 +254,7 @@ int sql_exec_stat(const char *sql, struct stat *stbuf)
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
-	"CREATE TABLE hosts ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"CREATE TABLE hosts ( "
 	"nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
 	"ctime TIME, atime TIME, mtime TIME );",
 	/* subsystems */
@@ -356,7 +356,7 @@ static const char *init_sql[NUM_TABLES] = {
 	/* host_subsys */
 	"CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
 	"ctime TIME, atime TIME, mtime TIME, "
-	"FOREIGN KEY (host_id) REFERENCES host(id) "
+	"FOREIGN KEY (host_id) REFERENCES hosts(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
@@ -1269,7 +1269,7 @@ static char update_genctr_port_sql[] =
 	"(SELECT hs.host_id AS host_id, sp.port_id AS port_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsys_port AS sp ON hs.subsys_id = sp.subsys_id) "
-	"AS hg WHERE hg.host_id = hosts.id AND hg.port_id = '%d';";
+	"AS hg WHERE hg.host_id = hosts.oid AND hg.port_id = '%d';";
 
 int configdb_set_port_attr(unsigned int port, const char *attr,
 			   const char *value)
@@ -1542,7 +1542,7 @@ int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 
 static char fill_host_subsys_sql[] =
 	"SELECT h.nqn AS hostnqn FROM host_subsys AS hs "
-	"INNER JOIN hosts AS h ON h.id = hs.host_id "
+	"INNER JOIN hosts AS h ON h.oid = hs.host_id "
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
 	"WHERE s.nqn = '%s';";
 
@@ -1589,7 +1589,7 @@ static char stat_host_subsys_sql[] =
 	"SELECT unixepoch(hs.ctime) AS ctime, unixepoch(hs.mtime) AS mtime "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
-	"INNER JOIN hosts AS h ON h.id = hs.host_id "
+	"INNER JOIN hosts AS h ON h.oid = hs.host_id "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
 
 int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
@@ -1645,7 +1645,7 @@ static char update_genctr_host_subsys_sql[] =
 	"(SELECT s.nqn AS subsys_nqn, hs.host_id AS host_id "
 	"FROM host_subsys AS hs "
 	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id) AS hs "
-	"WHERE hs.host_id = hosts.id AND hs.subsys_nqn = '%s';";
+	"WHERE hs.host_id = hosts.oid AND hs.subsys_nqn = '%s';";
 
 int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 {
@@ -1800,7 +1800,7 @@ static char allowed_host_sql[] =
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
-	"INNER JOIN hosts AS h ON hs.host_id = h.id "
+	"INNER JOIN hosts AS h ON hs.host_id = h.oid "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND p.id = '%d';";
 
@@ -1989,7 +1989,7 @@ static char host_disc_entry_sql[] =
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
-	"INNER JOIN hosts AS h ON hs.host_id = h.id "
+	"INNER JOIN hosts AS h ON hs.host_id = h.oid "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE h.nqn LIKE '%s';";
 
