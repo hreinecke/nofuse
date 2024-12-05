@@ -258,7 +258,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
 	"ctime TIME, atime TIME, mtime TIME );",
 	/* subsystems */
-	"CREATE TABLE subsystems ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"CREATE TABLE subsystems ( "
 	"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
 	"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
@@ -276,7 +276,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"cntlid INT NOT NULL, subsys_id INT, ctrl_type INT, "
 	"CHECK (cntlid > 0 AND cntlid < 65534), "
 	"UNIQUE(cntlid, subsys_id), "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* cntlid index */
 	"CREATE UNIQUE INDEX cntlid_idx ON "
@@ -284,7 +284,7 @@ static const char *init_sql[NUM_TABLES] = {
 	/* cntlid trigger */
 	"CREATE TRIGGER cntlid_incr INSERT ON controllers "
 	"BEGIN UPDATE subsystems SET cntlid_next = cntlid_next + 1 "
-	"WHERE NEW.subsys_id = id; END;",
+	"WHERE NEW.subsys_id = oid; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
 	"FOREIGN KEY (ctrl_id) REFERENCES controllers(id) "
@@ -301,17 +301,17 @@ static const char *init_sql[NUM_TABLES] = {
 	"CHECK (device_enable = 0 OR device_enable = 1), "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* nsid_idx */
 	"CREATE UNIQUE INDEX nsid_idx ON "
 	"namespaces(subsys_id, nsid); "
 	/* subsys_ctrl view */
 	"CREATE VIEW subsys_ctrl AS "
-	"SELECT s.id AS subsys_id, s.nqn AS subsys_nqn, "
+	"SELECT s.oid AS subsys_id, s.nqn AS subsys_nqn, "
 	"c.id AS ctrl_id, c.cntlid AS cntlid "
 	"FROM controllers AS c "
-	"INNER JOIN subsystems AS s ON c.subsys_id = s.id;"
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.oid;"
 	/* subsys_ns_add trigger */
 	"CREATE TRIGGER subsys_ns_add_trig INSERT ON namespaces "
 	"BEGIN INSERT INTO ns_changed (ctrl_id, nsid) "
@@ -324,10 +324,10 @@ static const char *init_sql[NUM_TABLES] = {
 	"WHERE sc.subsys_id = OLD.subsys_id; END;",
 	/* ns_ana_port_group view */
 	"CREATE VIEW ns_ana_port_group AS "
-	"SELECT s.id AS s_id, ns.nsid, ap.id AS ap_id "
+	"SELECT s.oid AS s_id, ns.nsid, ap.id AS ap_id "
 	"FROM ana_port_group AS ap "
 	"INNER JOIN namespaces AS ns ON ns.ana_group_id = ap.id "
-	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id;"
+	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id;"
 	/* ns_anagrp trigger */
 	"CREATE TRIGGER ns_anagrp_update_trig UPDATE OF ana_group_id "
 	"ON namespaces BEGIN UPDATE ana_port_group SET chgcnt = chgcnt + 1 "
@@ -358,16 +358,16 @@ static const char *init_sql[NUM_TABLES] = {
 	"ctime TIME, atime TIME, mtime TIME, "
 	"FOREIGN KEY (host_id) REFERENCES hosts(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
-	"FOREIGN KEY (subsys_id) REFERENCES subsys(id) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsys(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
 	/* host_subsys triger */
 	"CREATE TRIGGER host_subsys_add_trig INSERT ON host_subsys "
 	"BEGIN UPDATE hosts SET genctr = genctr + 1 "
-	"WHERE id = NEW.host_id; END;",
+	"WHERE oid = NEW.host_id; END;",
 	/* subsys_port */
 	"CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
 	"ctime TIME, atime TIME, mtime TIME, "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(id) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (port_id) REFERENCES ports(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
@@ -459,7 +459,7 @@ static int fill_filter_cb(void *p, int argc, char **argv, char **colname)
 }
 
 static char count_table_id_sql[] =
-	"SELECT count(id) AS num FROM %s;";
+	"SELECT count(oid) AS num FROM %s;";
 
 int configdb_count_table(const char *tbl, int *num)
 {
@@ -737,14 +737,14 @@ static char add_namespace_sql[] =
 	"INSERT INTO namespaces "
 	"(device_uuid, device_nguid, device_eui64, nsid, "
 	"subsys_id, ana_group_id, ctime) "
-	"SELECT '%s', '%s', '%s', '%u', s.id, ag.id, CURRENT_TIMESTAMP "
+	"SELECT '%s', '%s', '%s', '%u', s.oid, ag.id, CURRENT_TIMESTAMP "
 	"FROM subsystems AS s, ana_groups AS ag "
 	"WHERE s.nqn = '%s' AND s.attr_type == '2' AND ag.id = '1';";
 
 static char raise_ns_chg_aen_sql[] =
 	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
-	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
-	"INNER JOIN namespaces AS n ON n.subsys_id = s.id "
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.oid "
+	"INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
 	"WHERE s.nqn = '%s' AND n.nsid = '%d';";
 
 static int raise_aen_cb(void *argp, int argc, char **argv, char **col)
@@ -821,7 +821,7 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 
 static char count_namespaces_sql[] =
 	"SELECT count(n.id) AS num FROM namespaces AS n "
-	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
 int configdb_count_namespaces(const char *subsysnqn, int *num)
@@ -841,7 +841,7 @@ int configdb_count_namespaces(const char *subsysnqn, int *num)
 static char stat_namespace_sql[] =
 	"SELECT unixepoch(n.ctime) AS ctime, unixepoch(n.mtime) AS mtime "
 	"FROM namespaces AS n "
-	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
 	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
 int configdb_stat_namespace(const char *subsysnqn, u32 nsid,
@@ -861,7 +861,7 @@ int configdb_stat_namespace(const char *subsysnqn, u32 nsid,
 
 static char fill_namespace_dir_sql[] =
 	"SELECT n.nsid AS nsid FROM namespaces AS n "
-	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
 int configdb_fill_namespace_dir(const char *nqn, void *buf,
@@ -887,7 +887,7 @@ int configdb_fill_namespace_dir(const char *nqn, void *buf,
 
 static char fill_namespace_sql[] =
 	"SELECT n.* FROM namespaces AS n "
-	"INNER JOIN subsystems AS s ON s.id = n.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
 	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
 static int fill_ns_cb(void *p, int argc, char **argv, char **colname)
@@ -934,7 +934,7 @@ int configdb_fill_namespace(const char *nqn, u32 nsid,
 
 static char get_namespace_attr_sql[] =
 	"SELECT ns.%s FROM namespaces AS ns "
-	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id "
 	"WHERE s.nqn = '%s' AND ns.nsid = '%u';";
 
 int configdb_get_namespace_attr(const char *subsysnqn, u32 nsid,
@@ -957,7 +957,7 @@ static char set_namespace_attr_sql[] =
 	"UPDATE namespaces SET %s = '%s', mtime = CURRENT_TIMESTAMP FROM "
 	"(SELECT ns.nsid AS nsid, s.nqn AS nqn "
 	"FROM namespaces AS ns "
-	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id) AS sel "
+	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id) AS sel "
 	"WHERE sel.nqn = '%s' AND sel.nsid = '%u';";
 
 int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
@@ -996,7 +996,7 @@ rollback:
 static char get_namespace_anagrp_sql[] =
 	"SELECT ag.id AS grpid FROM ana_groups AS ag "
 	"INNER JOIN namespaces AS ns ON ns.ana_group_id = ag.id "
-	"INNER JOIN subsystems AS s ON s.id = ns.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id "
 	"WHERE s.nqn = '%s' AND ns.nsid = '%u';";
 
 int configdb_get_namespace_anagrp(const char *subsysnqn, u32 nsid,
@@ -1068,7 +1068,7 @@ rollback:
 
 static char del_namespace_sql[] =
 	"DELETE FROM namespaces AS ns WHERE ns.subsys_id IN "
-	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
+	"(SELECT oid FROM subsystems WHERE nqn = '%s') AND "
 	"ns.nsid = '%u';";
 
 int configdb_del_namespace(const char *subsysnqn, u32 nsid)
@@ -1104,7 +1104,7 @@ rollback:
 
 static char add_ctrl_sql[] =
 	"INSERT INTO controllers ( cntlid, subsys_id ) "
-	"SELECT '%d', s.id FROM subsystems AS s "
+	"SELECT '%d', s.oid FROM subsystems AS s "
 	"WHERE s.nqn = '%s';";
 
 int configdb_add_ctrl(const char *subsysnqn, int cntlid)
@@ -1138,7 +1138,7 @@ int configdb_get_cntlid(const char *subsysnqn, u16 *cntlid)
 }
 static char del_ctrl_sql[] =
 	"DELETE FROM controllers AS c WHERE c.subsys_id IN "
-	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
+	"(SELECT oid FROM subsystems WHERE nqn = '%s') AND "
 	"c.cntlid = '%d';";
 
 int configdb_del_ctrl(const char *subsysnqn, int cntlid)
@@ -1333,8 +1333,8 @@ int configdb_del_port(unsigned int portid)
 
 static char raise_ana_port_aen_sql[] =
 	"SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
-	"INNER JOIN subsystems AS s ON c.subsys_id = s.id "
-	"INNER JOIN subsys_port AS sp ON sp.subsys_id = s.id "
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.oid "
+	"INNER JOIN subsys_port AS sp ON sp.subsys_id = s.oid "
 	"WHERE sp.port_id = '%d';";
 
 static int raise_ana_port_chg_aen(unsigned int portid)
@@ -1506,7 +1506,7 @@ int configdb_del_ana_group(unsigned int portid, int grpid)
 
 static char raise_disc_chg_aen_sql[] =
 	"SELECT c.cntlid FROM controllers AS c "
-	"INNER JOIN subsystems AS s ON s.id = c.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = c.subsys_id "
 	"WHERE s.attr_type = '3';";
 
 int raise_disc_chg_aen(void) {
@@ -1521,7 +1521,7 @@ int raise_disc_chg_aen(void) {
 
 static char add_host_subsys_sql[] =
 	"INSERT INTO host_subsys (host_id, subsys_id, ctime) "
-	"SELECT h.id, s.id, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
+	"SELECT h.oid, s.oid, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';";
 
 int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
@@ -1543,7 +1543,7 @@ int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 static char fill_host_subsys_sql[] =
 	"SELECT h.nqn AS hostnqn FROM host_subsys AS hs "
 	"INNER JOIN hosts AS h ON h.oid = hs.host_id "
-	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = hs.subsys_id "
 	"WHERE s.nqn = '%s';";
 
 int configdb_fill_host_subsys(const char *subsysnqn,
@@ -1569,7 +1569,7 @@ int configdb_fill_host_subsys(const char *subsysnqn,
 
 static char count_host_subsys_sql[] =
 	"SELECT count(hs.host_id) AS num FROM host_subsys AS hs "
-	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = hs.subsys_id "
 	"WHERE s.nqn = '%s';";
 
 int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts)
@@ -1588,7 +1588,7 @@ int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts)
 static char stat_host_subsys_sql[] =
 	"SELECT unixepoch(hs.ctime) AS ctime, unixepoch(hs.mtime) AS mtime "
 	"FROM host_subsys AS hs "
-	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = hs.subsys_id "
 	"INNER JOIN hosts AS h ON h.oid = hs.host_id "
 	"WHERE h.nqn = '%s' AND s.nqn = '%s';";
 
@@ -1610,9 +1610,9 @@ int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 static char del_host_subsys_sql[] =
 	"DELETE FROM host_subsys AS hs "
 	"WHERE hs.host_id IN "
-	"(SELECT id FROM hosts WHERE nqn = '%s') AND "
+	"(SELECT oid FROM hosts WHERE nqn = '%s') AND "
 	"hs.subsys_id IN "
-	"(SELECT id FROM subsystems WHERE nqn = '%s');";
+	"(SELECT oid FROM subsystems WHERE nqn = '%s');";
 
 int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 {
@@ -1636,7 +1636,7 @@ int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 
 static char add_subsys_port_sql[] =
 	"INSERT INTO subsys_port (subsys_id, port_id, ctime) "
-	"SELECT s.id, p.id, CURRENT_TIMESTAMP FROM subsystems AS s, ports AS p "
+	"SELECT s.oid, p.id, CURRENT_TIMESTAMP FROM subsystems AS s, ports AS p "
 	"WHERE s.nqn = '%s' AND p.id = '%d';";
 
 static char update_genctr_host_subsys_sql[] =
@@ -1644,7 +1644,7 @@ static char update_genctr_host_subsys_sql[] =
 	"FROM "
 	"(SELECT s.nqn AS subsys_nqn, hs.host_id AS host_id "
 	"FROM host_subsys AS hs "
-	"INNER JOIN subsystems AS s ON s.id = hs.subsys_id) AS hs "
+	"INNER JOIN subsystems AS s ON s.oid = hs.subsys_id) AS hs "
 	"WHERE hs.host_id = hosts.oid AND hs.subsys_nqn = '%s';";
 
 int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
@@ -1685,7 +1685,7 @@ rollback:
 static char del_subsys_port_sql[] =
 	"DELETE FROM subsys_port AS sp "
 	"WHERE sp.subsys_id in "
-	"(SELECT id FROM subsystems WHERE nqn LIKE '%s') AND "
+	"(SELECT oid FROM subsystems WHERE nqn LIKE '%s') AND "
 	"sp.port_id IN "
 	"(SELECT id FROM ports WHERE id = %d);";
 
@@ -1728,7 +1728,7 @@ rollback:
 static char count_subsys_port_sql[] =
 	"SELECT count(p.id) AS portnum "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE p.id = '%d';";
 
@@ -1748,7 +1748,7 @@ int configdb_count_subsys_port(unsigned int port, int *portnum)
 
 static char fill_subsys_port_sql[] =
 	"SELECT s.nqn AS subsysnqn FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE p.id = '%d';";
 
@@ -1776,7 +1776,7 @@ int configdb_fill_subsys_port(unsigned int port,
 static char stat_subsys_port_sql[] =
 	"SELECT unixepoch(sp.ctime) AS ctime, unixepoch(sp.mtime) AS mtime "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON p.id = sp.port_id "
 	"WHERE s.nqn = '%s' AND p.id = '%d';";
 
@@ -1798,7 +1798,7 @@ int configdb_stat_subsys_port(const char *subsysnqn, unsigned int port,
 static char allowed_host_sql[] =
 	"SELECT count(s.nqn) AS subsys_num "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
 	"INNER JOIN hosts AS h ON hs.host_id = h.oid "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
@@ -1807,7 +1807,7 @@ static char allowed_host_sql[] =
 static char allow_any_sql[] =
 	"SELECT count(s.nqn) AS subsys_num "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE s.attr_allow_any_host = '1' "
 	"AND s.nqn = '%s' AND p.id = '%d';";
@@ -1987,7 +1987,7 @@ static char host_disc_entry_sql[] =
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
 	"INNER JOIN hosts AS h ON hs.host_id = h.oid "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
@@ -1999,7 +1999,7 @@ static char any_disc_entry_sql[] =
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
-	"INNER JOIN subsystems AS s ON s.id = sp.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
 	"WHERE s.attr_allow_any_host = '1';";
 
@@ -2152,8 +2152,7 @@ static int ns_list_cb(void *argp, int argc, char **argv, char **col)
 
 static char identify_active_ns_sql[] =
 	"SELECT ns.nsid FROM namespaces AS ns "
-	"INNER JOIN subsystems AS s "
-	"ON ns.subsys_id = s.id "
+	"INNER JOIN subsystems AS s ON ns.subsys_id = s.oid "
 	"WHERE s.nqn = '%s' AND ns.device_enable = '1' "
 	"ORDER BY ns.nsid;";
 
@@ -2181,8 +2180,8 @@ static char count_ana_grps_sql[] =
 	"SELECT ap.ana_state, ap.chgcnt, count(ns.nsid) AS num "
 	"FROM ana_port_group AS ap "
 	"INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
-	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
-	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
+	"INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
+	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.oid "
 	"INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
 	"WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ag.id = '%d';";
 
@@ -2242,8 +2241,8 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 static char ana_grp_log_entry_sql[] =
 	"SELECT ns.nsid FROM ana_port_group AS ap "
 	"INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
-	"INNER JOIN subsystems AS s ON sp.subsys_id = s.id "
-	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.id "
+	"INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
+	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.oid "
 	"INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
 	"WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ag.id = '%d';";
 
@@ -2310,7 +2309,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 static char ns_changed_log_sql[] =
 	"SELECT chg.nsid FROM ns_changed AS chg "
 	"INNER JOIN controllers AS c ON c.id = chg.ctrl_id "
-	"INNER JOIN subsystems AS s ON s.id = c.subsys_id "
+	"INNER JOIN subsystems AS s ON s.oid = c.subsys_id "
 	"WHERE s.nqn = '%s' AND c.cntlid = '%d';";
 static char clear_ns_changed_log_sql[] =
 	"DELETE FROM ns_changed AS chg WHERE chg.ctrl_id IN "
