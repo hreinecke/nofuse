@@ -139,11 +139,13 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		ncqr = (cdw11 >> 16) & 0xffff;
 		nsqr = cdw11 & 0xffff;
 		if (ncqr < NVMF_NUM_QUEUES) {
-			ep->ctrl->max_queues = ncqr;
+			ep->ctrl->max_queues = ncqr + 1;
 		}
 		if (nsqr < NVMF_NUM_QUEUES) {
-			ep->ctrl->max_queues = nsqr;
+			ep->ctrl->max_queues = nsqr + 1;
 		}
+		ctrl_info(ep, "%s: setting %d queues (cdw11 %x)", __func__,
+			  ep->ctrl->max_queues, cdw11);
 		qe->resp.result.u32 = htole32(ep->ctrl->max_queues << 16 |
 					      ep->ctrl->max_queues);
 		break;
@@ -177,8 +179,8 @@ static int handle_get_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		switch (sel) {
 		case 0:
 		case 2:
-			result = ep->ctrl->max_queues << 16 |
-				ep->ctrl->max_queues;
+			result = (ep->ctrl->max_queues  - 1) << 16 |
+				(ep->ctrl->max_queues - 1);
 			break;
 		case 1:
 			result = NVMF_NUM_QUEUES << 16 |
