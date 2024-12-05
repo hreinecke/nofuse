@@ -71,6 +71,7 @@ int configdb_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
 int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn);
 
 int configdb_add_ctrl(const char *subsysnqn, int cntlid);
+int configdb_get_cntlid(const char *subsysnqn, u16 *cntlid);
 int configdb_del_ctrl(const char *subsysnqn, int cntlid);
 
 int configdb_add_port(unsigned int port);

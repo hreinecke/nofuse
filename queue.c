@@ -20,8 +20,6 @@
 LINKED_LIST(ctrl_linked_list);
 pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static int nvmf_ctrl_id = 1;
-
 int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
@@ -88,7 +86,12 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		goto out_unlock;
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
-	cntlid = nvmf_ctrl_id++;
+	ret = configdb_get_cntlid(nqn, &cntlid);
+	if (ret < 0) {
+		ep_err(ep, "error fetching cntlid");
+		free(ctrl);
+		goto out_unlock;
+	}
 	ret = configdb_add_ctrl(nqn, cntlid);
 	if (ret < 0) {
 		ep_err(ep, "error registering cntlid %d", cntlid);

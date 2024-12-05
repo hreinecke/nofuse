@@ -250,7 +250,7 @@ int sql_exec_stat(const char *sql, struct stat *stbuf)
 	return ret;
 }
 
-#define NUM_TABLES 19
+#define NUM_TABLES 20
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -265,7 +265,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"attr_version VARCHAR(256), attr_type INT DEFAULT 3, "
 	"attr_qid_max INT, attr_pi_enable INT, "
 	"attr_cntlid_min INT DEFAULT 1, attr_cntlid_max INT DEFAULT 65519, "
-	"ctime TIME, atime TIME, mtime TIME, "
+	"cntlid_next INT DEFAULT 1, ctime TIME, atime TIME, mtime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 	/* ana_groups */
@@ -281,6 +281,10 @@ static const char *init_sql[NUM_TABLES] = {
 	/* cntlid index */
 	"CREATE UNIQUE INDEX cntlid_idx ON "
 	"controllers(cntlid, subsys_id);",
+	/* cntlid trigger */
+	"CREATE TRIGGER cntlid_incr INSERT ON controllers "
+	"BEGIN UPDATE subsystems SET cntlid_next = cntlid_next + 1 "
+	"WHERE NEW.subsys_id = id; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
 	"FOREIGN KEY (ctrl_id) REFERENCES controllers(id) "
@@ -385,6 +389,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP VIEW subsys_ctrl;",
 	"DROP INDEX nsid_idx;",
 	"DROP TABLE namespaces;",
+	"DROP TRIGGER cntlid_incr;",
 	"DROP INDEX cntlid_idx;",
 	"DROP TABLE controllers;",
 	"DROP TABLE ana_groups;",
@@ -688,6 +693,17 @@ int configdb_set_subsys_attr(const char *nqn, const char *attr,
 		if (qid_max == ULONG_MAX || buf == eptr)
 			return -EINVAL;
 		if (qid_max > NVMF_NUM_QUEUES)
+			return -EINVAL;
+	}
+	if (!strcmp(attr, "attr_cntlid_min") ||
+	    !strcmp(attr, "attr_cntlid_max")) {
+		unsigned long lim;
+		char *eptr = NULL;
+
+		lim = strtoul(buf, &eptr, 10);
+		if (lim == ULONG_MAX || buf == eptr)
+			return -EINVAL;
+		if (lim < NVME_CNTLID_MIN || lim > NVME_CNTLID_MAX)
 			return -EINVAL;
 	}
 	ret = asprintf(&sql, set_subsys_attr_sql, attr, buf, nqn);
@@ -1104,6 +1120,22 @@ int configdb_add_ctrl(const char *subsysnqn, int cntlid)
 	return ret;
 }
 
+static char get_cntlid_sql[] =
+	"SELECT cntlid_next FROM subsystems WHERE nqn = '%s';";
+
+int configdb_get_cntlid(const char *subsysnqn, u16 *cntlid)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, get_cntlid_sql, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "cntlid_next", (int *)cntlid);
+	free(sql);
+
+	return ret;
+}
 static char del_ctrl_sql[] =
 	"DELETE FROM controllers AS c WHERE c.subsys_id IN "
 	"(SELECT id FROM subsystems WHERE nqn = '%s') AND "
