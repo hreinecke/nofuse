@@ -47,6 +47,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	SSL_SESSION *tmpsess = NULL;
 	const SSL_CIPHER *cipher = NULL;
 	key_serial_t keyring_id, psk;
+	unsigned char type, ver, hash;
 	void *psk_key;
 	size_t psk_len;
 
@@ -76,15 +77,21 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 		return 0;
 	}
 
-	if (!strncmp((const char *)identity, "NVMe1R02", 8) ||
-	    !strncmp((const char *)identity, "NVMe1G02", 8)) {
+	if (sscanf((char *)identity,
+		   "NVMe%01hhu%c%02hhu %*s", &ver, &type, &hash) < 3) {
+		fprintf(stderr, "%s: cannot parse psk identity '%s'\n",
+			__func__, identity);
+	}
+	if (hash == NVME_TCP_TLS_CIPHER_SHA256) {
+		/* TLS_AES_128_GCM_SHA256 */
+		cipher = SSL_CIPHER_find(ssl, psk_cipher_sha256);
+	} else if (hash == NVME_TCP_TLS_CIPHER_SHA384) {
 		/* TLS_AES_256_GCM_SHA384 */
 		cipher = SSL_CIPHER_find(ssl, psk_cipher_sha384);
-	} else {
-		cipher = SSL_CIPHER_find(ssl, psk_cipher_sha256);
 	}
 	if (cipher == NULL) {
-		fprintf(stderr, "Error finding suitable ciphersuite\n");
+		fprintf(stderr, "%s: Error finding suitable ciphersuite\n",
+			__func__);
 		return 0;
 	}
 	fprintf(stdout, "%s: tls %s using cipher %s\n",
