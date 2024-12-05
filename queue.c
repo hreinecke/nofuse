@@ -111,6 +111,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 			ctrl->max_queues = tmp;
 		}
 	}
+	ep_info(ep, "using %d queues", ctrl->max_queues);
 	strcpy(ctrl->hostnqn, hostnqn);
 	strcpy(ctrl->subsysnqn, nqn);
 	ep->ctrl = ctrl;
@@ -269,6 +270,7 @@ static void pop_uring_exit(void *arg)
 	struct nofuse_queue *ep = arg;
 
 	io_uring_queue_exit(&ep->uring);
+	ep->state = STOPPED;
 }
 
 static void pop_free(void *arg)
