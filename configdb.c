@@ -346,7 +346,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE UNIQUE INDEX port_addr_idx ON "
 	"ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
 	/* ana_port_group */
-	"CREATE TABLE ana_port_group ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"CREATE TABLE ana_port_group ( "
 	"ana_group_id INT, ana_state INT DEFAULT '1', port_id INTEGER, "
 	"chgcnt INT DEFAULT '0', ctime TIME, atime TIME, mtime TIME, "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
@@ -1373,7 +1373,7 @@ int configdb_add_ana_group(unsigned int portid, int grpid, int ana_state)
 }
 
 static char count_ana_port_group_sql[] =
-	"SELECT count(ap.id) AS num FROM ana_port_group AS ap "
+	"SELECT count(ap.oid) AS num FROM ana_port_group AS ap "
 	"INNER JOIN ports AS p ON p.id = ap.port_id "
 	"WHERE p.id = '%s';";
 
