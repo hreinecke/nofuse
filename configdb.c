@@ -290,7 +290,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"FOREIGN KEY (ctrl_id) REFERENCES controllers(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* namespaces */
-	"CREATE TABLE namespaces ( id INTEGER PRIMARY KEY AUTOINCREMENT, "
+	"CREATE TABLE namespaces ( "
 	"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
 	"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
 	"device_path VARCHAR(256), device_enable INT DEFAULT 0, "
@@ -326,8 +326,8 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE VIEW ns_ana_port_group AS "
 	"SELECT s.oid AS s_id, ns.nsid, ap.id AS ap_id "
 	"FROM ana_port_group AS ap "
-	"INNER JOIN namespaces AS ns ON ns.ana_group_id = ap.id "
-	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id;"
+	"INNER JOIN namespaces AS n ON n.ana_group_id = ap.id "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id;"
 	/* ns_anagrp trigger */
 	"CREATE TRIGGER ns_anagrp_update_trig UPDATE OF ana_group_id "
 	"ON namespaces BEGIN UPDATE ana_port_group SET chgcnt = chgcnt + 1 "
@@ -820,7 +820,7 @@ int configdb_add_namespace(const char *subsysnqn, u32 nsid)
 }
 
 static char count_namespaces_sql[] =
-	"SELECT count(n.id) AS num FROM namespaces AS n "
+	"SELECT count(n.oid) AS num FROM namespaces AS n "
 	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
 	"WHERE s.nqn = '%s';";
 
@@ -933,9 +933,9 @@ int configdb_fill_namespace(const char *nqn, u32 nsid,
 }
 
 static char get_namespace_attr_sql[] =
-	"SELECT ns.%s FROM namespaces AS ns "
-	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id "
-	"WHERE s.nqn = '%s' AND ns.nsid = '%u';";
+	"SELECT ns.%s FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
+	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
 int configdb_get_namespace_attr(const char *subsysnqn, u32 nsid,
 				const char *attr, char *buf)
@@ -956,8 +956,8 @@ int configdb_get_namespace_attr(const char *subsysnqn, u32 nsid,
 static char set_namespace_attr_sql[] =
 	"UPDATE namespaces SET %s = '%s', mtime = CURRENT_TIMESTAMP FROM "
 	"(SELECT ns.nsid AS nsid, s.nqn AS nqn "
-	"FROM namespaces AS ns "
-	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id) AS sel "
+	"FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id) AS sel "
 	"WHERE sel.nqn = '%s' AND sel.nsid = '%u';";
 
 int configdb_set_namespace_attr(const char *subsysnqn, u32 nsid,
@@ -995,9 +995,9 @@ rollback:
 
 static char get_namespace_anagrp_sql[] =
 	"SELECT ag.id AS grpid FROM ana_groups AS ag "
-	"INNER JOIN namespaces AS ns ON ns.ana_group_id = ag.id "
-	"INNER JOIN subsystems AS s ON s.oid = ns.subsys_id "
-	"WHERE s.nqn = '%s' AND ns.nsid = '%u';";
+	"INNER JOIN namespaces AS n ON n.ana_group_id = ag.id "
+	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
+	"WHERE s.nqn = '%s' AND n.nsid = '%u';";
 
 int configdb_get_namespace_anagrp(const char *subsysnqn, u32 nsid,
 				  int *ana_grpid)
@@ -1067,9 +1067,9 @@ rollback:
 }
 
 static char del_namespace_sql[] =
-	"DELETE FROM namespaces AS ns WHERE ns.subsys_id IN "
+	"DELETE FROM namespaces AS n WHERE n.subsys_id IN "
 	"(SELECT oid FROM subsystems WHERE nqn = '%s') AND "
-	"ns.nsid = '%u';";
+	"n.nsid = '%u';";
 
 int configdb_del_namespace(const char *subsysnqn, u32 nsid)
 {
@@ -2151,10 +2151,10 @@ static int ns_list_cb(void *argp, int argc, char **argv, char **col)
 }
 
 static char identify_active_ns_sql[] =
-	"SELECT ns.nsid FROM namespaces AS ns "
-	"INNER JOIN subsystems AS s ON ns.subsys_id = s.oid "
-	"WHERE s.nqn = '%s' AND ns.device_enable = '1' "
-	"ORDER BY ns.nsid;";
+	"SELECT ns.nsid FROM namespaces AS n "
+	"INNER JOIN subsystems AS s ON n.subsys_id = s.oid "
+	"WHERE s.nqn = '%s' AND n.device_enable = '1' "
+	"ORDER BY n.nsid;";
 
 int configdb_identify_active_ns(const char *subsysnqn, u8 *ns_list, size_t len)
 {
@@ -2181,7 +2181,7 @@ static char count_ana_grps_sql[] =
 	"FROM ana_port_group AS ap "
 	"INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
 	"INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
-	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.oid "
+	"INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
 	"INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
 	"WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ag.id = '%d';";
 
@@ -2242,7 +2242,7 @@ static char ana_grp_log_entry_sql[] =
 	"SELECT ns.nsid FROM ana_port_group AS ap "
 	"INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
 	"INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
-	"INNER JOIN namespaces AS ns ON ns.subsys_id = s.oid "
+	"INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
 	"INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
 	"WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ag.id = '%d';";
 
