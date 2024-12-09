@@ -51,6 +51,7 @@ static int _count_key_range(char *key, int *num)
 int etcd_count_root(const char *root, int *nlinks)
 {
 	struct json_object *resp;
+	struct json_object_iterator its, ite;
 	char *key, *attr;
 	int ret, num = 0;
 
@@ -71,10 +72,20 @@ int etcd_count_root(const char *root, int *nlinks)
 	else
 		return -EINVAL;
 			
-	json_object_object_foreach(resp, key_obj, val_obj) {
-		if (!strcmp(key_obj, attr)) {
-			num++;
+	its = json_object_iter_begin(resp);
+	ite = json_object_iter_end(resp);
+
+	while (!json_object_iter_equal(&its, &ite)) {
+		const char *k, *p;
+
+		k = json_object_iter_peek_name(&its);
+		p = strchr(k, '/');
+		if (p) {
+			p++;
+			if (!strcmp(p, attr))
+				num++;
 		}
+		json_object_iter_next(&its);
 	}
 	json_object_put(resp);
 	*nlinks = num;

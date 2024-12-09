@@ -128,6 +128,7 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 				       json_object_new_string(err_str));
 		json_object_object_add(ctx->resp_obj, "errno",
 				       json_object_new_int(EBADMSG));
+		size = 0;
 		goto out;
 	}
 	for (i = 0; i < json_object_array_length(kvs_obj); i++) {
@@ -205,14 +206,14 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 
 	err = curl_easy_setopt(curl, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt url failed, %s",
+		fprintf(stderr, "curl setopt url failed, %s\n",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
 	}
 	err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writefunction failed, %s",
+		fprintf(stderr, "curl setopt writefunction failed, %s\n",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
@@ -225,7 +226,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 	post_data = json_object_to_json_string(post_obj);
 	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
 	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfields failed, %s",
+		fprintf(stderr, "curl setop postfields failed, %s\n",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
@@ -233,7 +234,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 
 	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
 	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfieldsize failed, %s",
+		fprintf(stderr, "curl setop postfieldsize failed, %s\n",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
@@ -241,7 +242,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 
 	err = curl_easy_perform(curl);
 	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed, %s",
+		fprintf(stderr, "curl perform failed, %s\n",
 			curl_easy_strerror(err));
 		errno = EIO;
 	}
@@ -325,7 +326,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
 struct json_object *etcd_kv_get(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
-	struct json_object *post_obj = NULL, *resp;
+	struct json_object *post_obj = NULL, *resp = NULL;
 	char *encoded_key = NULL;
 	int ret;
 
