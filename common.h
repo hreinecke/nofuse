@@ -260,11 +260,19 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
 int default_subsys_type(const char *nqn);
 
+int add_host(const char *nqn);
+int del_host(const char *nqn);
+
+int add_subsys(const char *nqn, int type);
+int del_subsys(const char *nqn);
+
 int add_port(unsigned int id, const char *ifaddr, int portnum);
 struct nofuse_port *find_port(unsigned int id);
 int del_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
+int add_ana_group(int portid, int ana_grpid, int ana_state);
+int del_ana_group(int portid, int ana_grpid);
 
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid);
 int add_namespace(const char *subsysnqn, u32 nsid);

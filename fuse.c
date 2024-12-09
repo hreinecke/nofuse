@@ -546,11 +546,15 @@ out_free:
 	return ret;
 }
 
-static int port_mkdir(const char *port)
+static int port_mkdir(char *s)
 {
-	int ret;
-	char *p, *eptr = NULL;
+	char *port, *p, *eptr = NULL;
 	int portid, ana_grpid;
+	int ret;
+
+	port = strtok_r(NULL, "/", &s);
+	if (!port)
+		return -ENOENT;
 
 	portid = strtoul(port, &eptr, 10);
 	if (port == eptr)
@@ -576,9 +580,9 @@ static int port_mkdir(const char *port)
 		return -ENOENT;
 	fuse_info("%s: port %d ana group %d", __func__,
 		  portid, ana_grpid);
-	ret = configdb_add_ana_group(portid, ana_grpid,
-				     ana_grpid == 1 ?
-				     NVME_ANA_OPTIMIZED : NVME_ANA_INACCESSIBLE);
+	ret = add_ana_group(portid, ana_grpid,
+			    ana_grpid == 1 ?
+			    NVME_ANA_OPTIMIZED : NVME_ANA_INACCESSIBLE);
 	if (ret < 0) {
 		fuse_err("%s: cannot add ana group %d to "
 			 "port %d, error %d", __func__,
@@ -588,30 +592,33 @@ static int port_mkdir(const char *port)
 	return 0;
 }
 
-static int subsys_mkdir(const char *subsysnqn)
+static int subsys_mkdir(char *s)
 {
-	char *p, *ns, *eptr = NULL;
+	char *subsysnqn, *p, *ns, *eptr = NULL;
 	u32 nsid;
 
-	p = strtok(NULL, "/");
+	subsysnqn = strtok_r(NULL, "/", &s);
+	if (!subsysnqn)
+		return -ENOENT;
+	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		int type = default_subsys_type(subsysnqn);
 
 		printf("creating %s subsys %s\n",
 		       type == NVME_NQN_NVM ? "nvm" : "cur",
 		       subsysnqn);
-		return configdb_add_subsys(subsysnqn, type);
+		return add_subsys(subsysnqn, type);
 	}
 
 	if (strcmp(p, "namespaces"))
 		return -ENOENT;
 
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p)
 		return -ENOENT;
 
 	ns = p;
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (p)
 		return -ENOENT;
 	nsid = strtoul(ns, &eptr, 10);
@@ -621,34 +628,39 @@ static int subsys_mkdir(const char *subsysnqn)
 	return add_namespace(subsysnqn, nsid);
 }
 
+static int host_mkdir(char *s)
+{
+	char *hostnqn, *p;
+
+	hostnqn = strtok_r(NULL, "/", &s);
+	if (!hostnqn)
+		return -ENOENT;
+	p = strtok_r(NULL, "/", &s);
+	if (p)
+		return -ENOENT;
+	return add_host(hostnqn);
+}
+
 static int nofuse_mkdir(const char *path, mode_t mode)
 {
-	char *pathbuf, *root, *p;
+	char *pathbuf, *root, *s;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 	fuse_info("%s: path %s", __func__, pathbuf);
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
-	p = strtok(NULL, "/");
-	if (!p)
-		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		ret = port_mkdir(p);
+		ret = port_mkdir(s);
 	}
 	if (!strcmp(root, subsys_dir)) {
-		ret = subsys_mkdir(p);
+		ret = subsys_mkdir(s);
 	}
 	if (!strcmp(root, hosts_dir)) {
-		char *hostnqn = p;
-
-		p = strtok(NULL, "/");
-		if (p)
-			goto out_free;
-		ret = configdb_add_host(hostnqn);
+		ret = host_mkdir(s);
 	}
 out_free:
 	free(pathbuf);
@@ -658,16 +670,19 @@ out_free:
 	return ret;
 }
 
-static int port_rmdir(const char *port)
+static int port_rmdir(char *s)
 {
-	char *p, *ana_grp, *eptr = NULL;
+	char *port, *p, *ana_grp, *eptr = NULL;
 	unsigned int portid;
 	int ana_grpid;
 
+	port = strtok_r(NULL, "/", &s);
+	if (!port)
+		return -ENOENT;
 	portid = strtoul(port, &eptr, 10);
 	if (port == eptr)
 		return -EINVAL;
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		struct nofuse_port *port = find_port(portid);
 		int ret;
@@ -686,7 +701,7 @@ static int port_rmdir(const char *port)
 	}
 	if (strcmp(p, "ana_groups"))
 		return -ENOENT;
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p)
 		return -ENOENT;
 	ana_grp = p;
@@ -700,27 +715,30 @@ static int port_rmdir(const char *port)
 	       portid, ana_grpid);
 	if (ana_grpid == 1)
 		return -EACCES;
-	return configdb_del_ana_group(portid, ana_grpid);
+	return del_ana_group(portid, ana_grpid);
 }
 
-static int subsys_rmdir(const char *subsysnqn)
+static int subsys_rmdir(char *s)
 {
-	char *p, *ns, *eptr = NULL;
+	char *subsysnqn, *p, *ns, *eptr = NULL;
 	u32 nsid;
 
-	p = strtok(NULL, "/");
+	subsysnqn = strtok_r(NULL, "/", &s);
+	if (!subsysnqn)
+		return -ENOENT;
+	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		printf("deleting subsys %s\n", subsysnqn);
-		return configdb_del_subsys(subsysnqn);
+		return del_subsys(subsysnqn);
 	}
 	if (strcmp(p, "namespaces"))
 		return -ENOENT;
 
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p)
 		return -ENOENT;
 	ns = p;
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (p)
 		return -ENOENT;
 	nsid = strtoul(ns, &eptr, 10);
@@ -729,34 +747,39 @@ static int subsys_rmdir(const char *subsysnqn)
 	return del_namespace(subsysnqn, nsid);
 }
 
+static int host_rmdir(char *s)
+{
+	char *hostnqn, *p;
+
+	hostnqn = strtok_r(NULL, "/", &s);
+	if (!hostnqn)
+		return -ENOENT;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	return del_host(hostnqn);
+}
+
 static int nofuse_rmdir(const char *path)
 {
-	char *pathbuf, *root, *p;
+	char *pathbuf, *root, *s;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 	fuse_info("%s: path %s", __func__, pathbuf);
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
-	p = strtok(NULL, "/");
-	if (!p)
-		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		ret = port_rmdir(p);
+		ret = port_rmdir(s);
 	}
 	if (!strcmp(root, subsys_dir)) {
-		ret = subsys_rmdir(p);
+		ret = subsys_rmdir(s);
 	}
 	if (!strcmp(root, hosts_dir)) {
-		const char *hostnqn = p;
-
-		p = strtok(NULL, "/");
-		if (p)
-			goto out_free;
-		ret = configdb_del_host(hostnqn);
+		ret = host_rmdir(s);
 	}
 out_free:
 	free(pathbuf);

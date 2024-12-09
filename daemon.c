@@ -47,6 +47,16 @@ char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
 extern int run_fuse(struct fuse_args *args);
 
+int add_host(const char *nqn)
+{
+	return configdb_add_host(nqn);
+}
+
+int del_host(const char *nqn)
+{
+	return configdb_del_host(nqn);
+}
+
 int default_subsys_type(const char *nqn)
 {
 	if (!strcmp(nqn, discovery_nqn))
@@ -54,6 +64,20 @@ int default_subsys_type(const char *nqn)
 	else
 		return NVME_NQN_NVM;
 }
+
+int add_subsys(const char *subsysnqn, int type)
+{
+	int ret;
+
+	ret = configdb_add_subsys(subsysnqn, type);
+	return ret;
+}
+
+int del_subsys(const char *subsysnqn)
+{
+	return configdb_del_subsys(subsysnqn);
+}
+
 
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid)
 {

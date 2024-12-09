@@ -141,6 +141,16 @@ int del_port(struct nofuse_port *port)
 	return 0;
 }
 
+int add_ana_group(int portid, int ana_grpid, int ana_state)
+{
+	return configdb_add_ana_group(portid, ana_grpid, ana_state);
+}
+
+int del_ana_group(int portid, int ana_grpid)
+{
+	return configdb_del_ana_group(portid, ana_grpid);
+}
+
 static int start_listener(struct nofuse_port *port)
 {
 	int ret;
