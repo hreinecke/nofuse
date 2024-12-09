@@ -270,7 +270,8 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	return size * nmemb;
 }
 
-int etcd_kv_put(struct etcd_ctx *ctx, char *key, char *value, bool lease)
+int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
+		bool lease)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL;
@@ -292,6 +293,9 @@ int etcd_kv_put(struct etcd_ctx *ctx, char *key, char *value, bool lease)
 	if (lease)
 		json_object_object_add(post_obj, "lease",
 				       json_object_new_int64(ctx->lease));
+	else
+		json_object_object_add(post_obj, "ignore_lease",
+				       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_set_response);
 	if (!ret) {
@@ -318,7 +322,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, char *key, char *value, bool lease)
 	return ret;
 }
 
-struct json_object *etcd_kv_get(struct etcd_ctx *ctx, char *key)
+struct json_object *etcd_kv_get(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL, *resp;
@@ -364,7 +368,7 @@ struct json_object *etcd_kv_get(struct etcd_ctx *ctx, char *key)
 	return resp;
 }
 
-struct json_object *etcd_kv_range(struct etcd_ctx *ctx, char *key)
+struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL, *resp = NULL;
@@ -467,7 +471,7 @@ out:
 	return size * nmemb;
 }
 
-int etcd_kv_revision(struct etcd_ctx *ctx, char *key)
+int etcd_kv_revision(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL, *rev_obj;
@@ -561,7 +565,7 @@ out:
 	return size * nmemb;
 }
 
-int etcd_kv_delete(struct etcd_ctx *ctx, char *key)
+int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL;
@@ -678,7 +682,7 @@ out:
 	return size * nmemb;
 }
 
-int etcd_kv_watch(struct etcd_ctx *ctx, char *key)
+int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj, *req_obj;

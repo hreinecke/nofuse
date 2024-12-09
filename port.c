@@ -12,11 +12,33 @@
 
 #include "common.h"
 #include "ops.h"
+#ifdef NOFUSE_ETCD
+#include "etcd_backend.h"
+#else
 #include "configdb.h"
+#endif
 
 LINKED_LIST(port_linked_list);
 
 static void *run_port(void *arg);
+
+int add_ana_group(int portid, int ana_grpid, int ana_state)
+{
+#ifdef NOFUSE_ETCD
+	return etcd_add_ana_group(portid, ana_grpid, ana_state);
+#else
+	return configdb_add_ana_group(portid, ana_grpid, ana_state);
+#endif
+}
+
+int del_ana_group(int portid, int ana_grpid)
+{
+#ifdef NOFUSE_ETCD
+	return etcd_del_ana_group(portid, ana_grpid);
+#else
+	return configdb_del_ana_group(portid, ana_grpid);
+#endif
+}
 
 int add_port(unsigned int id, const char *ifaddr, int portnum)
 {
@@ -29,28 +51,47 @@ int add_port(unsigned int id, const char *ifaddr, int portnum)
 	memset(port, 0, sizeof(*port));
 	port->listenfd = -1;
 	port->portid = id;
+#ifdef NOFUSE_ETCD
+	ret = etcd_add_port(id);
+#else
 	ret = configdb_add_port(id);
+#endif
 	if (ret < 0) {
 		port_err(port, "cannot register port, error %d", ret);
 		free(port);
 		return ret;
 	}
 	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
+#ifdef NOFUSE_ETCD
+		if (!strchr(ifaddr, ','))
+			etcd_set_port_attr(port->portid, "addr_adrfam",
+					   "ipv6");
+		etcd_set_port_attr(port->portid, "addr_traddr", ifaddr);
+#else
 		if (!strchr(ifaddr, ','))
 			configdb_set_port_attr(port->portid, "addr_adrfam",
 					    "ipv6");
 		configdb_set_port_attr(port->portid, "addr_traddr", ifaddr);
+#endif
 	}
 	if (portnum) {
 		char trsvcid[5];
 
 		sprintf(trsvcid, "%d", portnum);
+#ifdef NOFUSE_ETCD
+		etcd_set_port_attr(port->portid, "addr_trsvcid", trsvcid);
+#else
 		configdb_set_port_attr(port->portid, "addr_trsvcid", trsvcid);
+#endif
 	}
-	ret = configdb_add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
+	ret = add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
 		port_err(port, "cannot add ana group to port, error %d", ret);
+#ifdef NOFUSE_ETCD
+		etcd_del_port(port->portid);
+#else
 		configdb_del_port(port->portid);
+#endif
 		free(port);
 		return ret;
 	}
@@ -124,31 +165,25 @@ int del_port(struct nofuse_port *port)
 		port_err(port, "port still running");
 		return -EBUSY;
 	}
-	ret = configdb_del_ana_group(port->portid, 1);
+	ret = del_ana_group(port->portid, 1);
 	if (ret < 0) {
 		port_err(port, "cannot delete ana group from port, error %d",
 			  ret);
 		return ret;
 	}
+#ifdef NOFUSE_ETCD
+	ret = etcd_del_port(port->portid);
+#else
 	ret = configdb_del_port(port->portid);
+#endif
 	if (ret < 0) {
-		configdb_add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
+		add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
 		return ret;
 	}
 	pthread_mutex_destroy(&port->ep_mutex);
 	list_del(&port->node);
 	free(port);
 	return 0;
-}
-
-int add_ana_group(int portid, int ana_grpid, int ana_state)
-{
-	return configdb_add_ana_group(portid, ana_grpid, ana_state);
-}
-
-int del_ana_group(int portid, int ana_grpid)
-{
-	return configdb_del_ana_group(portid, ana_grpid);
 }
 
 static int start_listener(struct nofuse_port *port)

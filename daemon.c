@@ -25,7 +25,11 @@
 #include "common.h"
 #include "ops.h"
 #include "tls.h"
+#ifdef NOFUSE_ETCD
+#include "etcd_backend.h"
+#else
 #include "configdb.h"
+#endif
 
 LINKED_LIST(device_linked_list);
 
@@ -39,6 +43,7 @@ struct nofuse_context {
 	const char *subsysnqn;
 	const char *traddr;
 	const char *dbname;
+	const char *prefix;
 	int debug;
 	int help;
 };
@@ -49,12 +54,20 @@ extern int run_fuse(struct fuse_args *args);
 
 int add_host(const char *nqn)
 {
+#ifdef NOFUSE_ETCD
+	return etcd_add_host(nqn);
+#else
 	return configdb_add_host(nqn);
+#endif
 }
 
 int del_host(const char *nqn)
 {
+#ifdef NOFUSE_ETCD
+	return etcd_del_host(nqn);
+#else
 	return configdb_del_host(nqn);
+#endif
 }
 
 int default_subsys_type(const char *nqn)
@@ -69,15 +82,22 @@ int add_subsys(const char *subsysnqn, int type)
 {
 	int ret;
 
+#ifdef NOFUSE_ETCD
+	ret = etcd_add_subsys(subsysnqn, type);
+#else
 	ret = configdb_add_subsys(subsysnqn, type);
+#endif
 	return ret;
 }
 
 int del_subsys(const char *subsysnqn)
 {
+#ifdef NOFUSE_ETCD
+	return etcd_del_subsys(subsysnqn);
+#else
 	return configdb_del_subsys(subsysnqn);
+#endif
 }
-
 
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid)
 {
@@ -103,7 +123,11 @@ int add_namespace(const char *subsysnqn, u32 nsid)
 	ns->fd = -1;
 	strcpy(ns->subsysnqn, subsysnqn);
 	ns->nsid = nsid;
+#ifdef NOFUSE_ETCD
+	ret = etcd_add_namespace(subsysnqn, ns->nsid);
+#else
 	ret = configdb_add_namespace(subsysnqn, ns->nsid);
+#endif
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s failed to add nsid %d\n",
 			subsysnqn, ns->nsid);
@@ -128,7 +152,11 @@ int enable_namespace(const char *subsysnqn, u32 nsid)
 	if (!ns)
 		return -ENOENT;
 
+#ifdef NOFUSE_ETCD
+	ret = etcd_get_namespace_attr(subsysnqn, nsid, "device_path", path);
+#else
 	ret = configdb_get_namespace_attr(subsysnqn, nsid, "device_path", path);
+#endif
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d no device path, error %d\n",
 			subsysnqn, nsid, ret);
@@ -164,8 +192,13 @@ int enable_namespace(const char *subsysnqn, u32 nsid)
 		ns->blksize = st.st_blksize;
 		ns->ops = uring_register_ops();
 	}
+#ifdef NOFUSE_ETCD
+	ret = etcd_set_namespace_attr(subsysnqn, nsid,
+				      "device_enable", "1");
+#else
 	ret = configdb_set_namespace_attr(subsysnqn, nsid,
 				       "device_enable", "1");
+#endif
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d enable error %d\n",
 			subsysnqn, nsid, ret);
@@ -192,8 +225,13 @@ int disable_namespace(const char *subsysnqn, u32 nsid)
 	ns = find_namespace(subsysnqn, nsid);
 	if (!ns)
 		return -ENOENT;
+#ifdef NOFUSE_ETCD
+	ret = etcd_set_namespace_attr(subsysnqn, nsid,
+				      "device_enable", "0");
+#else
 	ret = configdb_set_namespace_attr(subsysnqn, nsid,
 				       "device_enable", "0");
+#endif
 	if (ret < 0)
 		return ret;
 
@@ -217,7 +255,11 @@ int del_namespace(const char *subsysnqn, u32 nsid)
 		return ret;
 	printf("%s: subsys %s nsid %d\n",
 	       __func__, subsysnqn, nsid);
+#ifdef NOFUSE_ETCD
+	ret = etcd_del_namespace(subsysnqn, ns->nsid);
+#else
 	ret = configdb_del_namespace(subsysnqn, ns->nsid);
+#endif
 	if (ret < 0)
 		return ret;
 	list_del(&ns->node);
@@ -232,12 +274,16 @@ static int init_subsys(struct nofuse_context *ctx)
 	struct nofuse_port *port;
 	int ret;
 
-	ret = configdb_add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
+	ret = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
 	if (ret)
 		return ret;
 
 	list_for_each_entry(port, &port_linked_list, node) {
+#ifdef NOFUSE_ETCD
+		etcd_add_subsys_port(ctx->subsysnqn, port->portid);
+#else
 		configdb_add_subsys_port(ctx->subsysnqn, port->portid);
+#endif
 	}
 
 	return 0;
@@ -251,7 +297,11 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--help", help),
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
+#ifdef NOFUSE_ETCD
+	OPTION("--prefix=%s", prefix),
+#else
 	OPTION("--dbname=%s", dbname),
+#endif
 	FUSE_OPT_END,
 };
 
@@ -262,7 +312,11 @@ static void show_help(void)
 	printf("  --debug - enable debug prints in log files");
 	printf("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
 	printf("  --subsysnqn=<NQN> - Discovery subsystem NQN to use");
+#ifdef NOFUSE_ETCD
+	printf("  --prefix=<prefix> - etcd key-value prefix");
+#else
 	printf("  --dbname=<filename> - Database filename");
+#endif
 }
 
 static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
@@ -317,22 +371,6 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	return 0;
 }
 
-void free_devices(void)
-{
-	struct linked_list *p;
-	struct linked_list *n;
-	struct nofuse_namespace *dev;
-
-	list_for_each_safe(p, n, &device_linked_list) {
-		list_del(p);
-		dev = container_of(p, struct nofuse_namespace, node);
-		configdb_del_namespace(dev->subsysnqn, dev->nsid);
-		if (dev->fd >= 0)
-			close(dev->fd);
-		free(dev);
-	}
-}
-
 void free_ports(void)
 {
 	struct nofuse_port *port, *_port;
@@ -352,12 +390,20 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
+#ifdef NOFUSE_ETCD
+	ctx->prefix = strdup("nofuse");
+#else
 	ctx->dbname = strdup("nofuse.sqlite");
+#endif
 
 	if (fuse_opt_parse(&args, ctx, nofuse_options, NULL) < 0)
 		return 1;
 
+#ifdef NOFUSE_ETCD
+	ret = etcd_backend_init(ctx->prefix);
+#else
 	ret = configdb_open(ctx->dbname);
+#endif
 	if (ret)
 		return 1;
 
@@ -379,9 +425,12 @@ int main(int argc, char *argv[])
 
 	free_ports();
 
-	free_devices();
 out_close:
+#ifdef NOFUSE_ETCD
+	etcd_backend_exit();
+#else
 	configdb_close(ctx->dbname);
+#endif
 
 	free(ctx);
 

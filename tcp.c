@@ -14,7 +14,11 @@
 #include "common.h"
 #include "tcp.h"
 #include "ops.h"
+#ifdef NOFUSE_ETCD
+#include "etcd_backend.h"
+#else
 #include "configdb.h"
+#endif
 #include "tls.h"
 
 #define NVME_OPCODE_MASK 0x3
@@ -253,17 +257,29 @@ static int tcp_init_listener(struct nofuse_port *port)
 	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
+#ifdef NOFUSE_ETCD
+	ret = etcd_get_port_attr(port->portid, "addr_traddr", traddr);
+#else
 	ret = configdb_get_port_attr(port->portid, "addr_traddr", traddr);
+#endif
 	if (ret < 0) {
 		port_err(port, "failed to get traddr, error %d", ret);
 		return ret;
 	}
+#ifdef NOFUSE_ETCD
+	ret = etcd_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
+#else
 	ret = configdb_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
+#endif
 	if (ret < 0) {
 		port_err(port, "failed to get trsvcid, errot %d", ret);
 		return ret;
 	}
+#ifdef NOFUSE_ETCD
+	ret = etcd_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
+#else
 	ret = configdb_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
+#endif
 	if (ret < 0) {
 		port_err(port, "failed to get adrfam, error %d", ret);
 		return ret;
