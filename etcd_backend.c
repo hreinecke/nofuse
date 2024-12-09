@@ -18,12 +18,30 @@ static struct etcd_ctx *ctx;
 
 int etcd_set_discovery_nqn(char *buf)
 {
-	return -ENOTSUP;
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/discovery_nqn", ctx->prefix);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_put(ctx, key, buf, true);
+	free(key);
+	return ret;
 }
 
 int etcd_get_discovery_nqn(char *buf)
 {
-	return -ENOTSUP;
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/discovery_nqn", ctx->prefix);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_get(ctx, key, buf);
+	free(key);
+	return ret;
 }
 
 static int _count_key_range(char *key, int *num)
@@ -32,7 +50,7 @@ static int _count_key_range(char *key, int *num)
 	struct json_object_iterator its, ite;
 	int val = 0;
 
-	resp = etcd_kv_get(ctx, key);
+	resp = etcd_kv_range(ctx, key);
 	if (!resp)
 		return -errno;
 
@@ -58,7 +76,7 @@ int etcd_count_root(const char *root, int *nlinks)
 	ret = asprintf(&key, "%s/%s", ctx->prefix, root);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	resp = etcd_kv_range(ctx, key);
 	free(key);
 	if (!resp)
 		return -errno;
@@ -102,7 +120,7 @@ int etcd_fill_root(const char *root, void *buf, fuse_fill_dir_t filler)
 	if (ret < 0)
 		return ret;
 
-	resp = etcd_kv_get(ctx, key);
+	resp = etcd_kv_range(ctx, key);
 	free(key);
 	if (!resp)
 		return -errno;
@@ -157,33 +175,15 @@ int etcd_add_host(const char *nqn)
 
 int etcd_get_host_attr(const char *nqn, const char *attr, char *value)
 {
-	struct json_object *resp;
-	int ret = -ENOENT;
 	char *key;
+	int ret;
 
 	ret = asprintf(&key, "%s/hosts/%s/%s",
 		       ctx->prefix, nqn, attr);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (!resp)
-		return -errno;
-
-	json_object_object_foreach(resp, key_obj, val_obj) {
-		key = strrchr(key_obj, '/');
-		if (!key)
-			continue;
-		key++;
-		if (!strcmp(key, attr)) {
-			if (value)
-				strcpy(value,
-				       json_object_get_string(val_obj));
-			ret = 0;
-			break;
-		}
-	}
-	json_object_put(resp);
 	return ret;
 }
 
@@ -270,29 +270,15 @@ int etcd_set_port_attr(unsigned int id, const char *attr, const char *value)
 
 int etcd_get_port_attr(unsigned int id, const char *attr, char *value)
 {
-	struct json_object *resp;
-	int ret = -ENOENT;
 	char *key;
+	int ret;
 
 	ret = asprintf(&key, "%s/ports/%d/%s",
 		       ctx->prefix, id, attr);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (!resp)
-		return -errno;
-
-	json_object_object_foreach(resp, key_obj, val_obj) {
-		if (!strcmp(key_obj, attr)) {
-			if (value)
-				strcpy(value,
-				       json_object_get_string(val_obj));
-			ret = 0;
-			break;
-		}
-	}
-	json_object_put(resp);
 	return ret;
 }
 
@@ -379,7 +365,7 @@ int etcd_get_ana_group(int portid, const char *ana_grp, int *ana_state)
 		       ctx->prefix, portid, ana_grp);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	resp = etcd_kv_range(ctx, key);
 	free(key);
 	if (!resp)
 		return -errno;
@@ -538,29 +524,15 @@ int etcd_set_subsys_attr(const char *subsysnqn, const char *attr,
 
 int etcd_get_subsys_attr(const char *nqn, const char *attr, char *value)
 {
-	struct json_object *resp;
-	int ret = -ENOENT;
 	char *key;
+	int ret;
 
 	ret = asprintf(&key, "%s/subsystems/%s/%s",
 		       ctx->prefix, nqn, attr);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (!resp)
-		return -errno;
-
-	json_object_object_foreach(resp, key_obj, val_obj) {
-		if (!strcmp(key_obj, attr)) {
-			if (value)
-				strcpy(value,
-				       json_object_get_string(val_obj));
-			ret = 0;
-			break;
-		}
-	}
-	json_object_put(resp);
 	return ret;
 }
 
@@ -796,29 +768,15 @@ int etcd_set_namespace_attr(const char *subsysnqn, int nsid,
 int etcd_get_namespace_attr(const char *subsysnqn, int nsid,
 			    const char *attr, char *value)
 {
-	struct json_object *resp;
-	int ret = -ENOENT;
 	char *key;
+	int ret;
 
 	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/%s",
 		       ctx->prefix, subsysnqn, nsid, attr);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (!resp)
-		return -errno;
-
-	json_object_object_foreach(resp, key_obj, val_obj) {
-		if (!strcmp(key_obj, attr)) {
-			if (value)
-				strcpy(value,
-				       json_object_get_string(val_obj));
-			ret = 0;
-			break;
-		}
-	}
-	json_object_put(resp);
 	return ret;
 }
 
@@ -854,7 +812,7 @@ int etcd_get_namespace_anagrp(const char *subsysnqn, int nsid, int *ana_grpid)
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_get(ctx, key);
+	resp = etcd_kv_range(ctx, key);
 	free(key);
 	if (!resp)
 		return -errno;

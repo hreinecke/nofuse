@@ -35,7 +35,7 @@ struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);
 int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
 		bool lease);
-struct json_object *etcd_kv_get(struct etcd_ctx *ctx, const char *key);
+int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
 struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key);

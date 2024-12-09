@@ -323,7 +323,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
 	return ret;
 }
 
-struct json_object *etcd_kv_get(struct etcd_ctx *ctx, const char *key)
+int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL, *resp = NULL;
@@ -361,12 +361,26 @@ struct json_object *etcd_kv_get(struct etcd_ctx *ctx, const char *key)
 	json_object_put(post_obj);
 	free(encoded_key);
 	json_tokener_free(ctx->tokener);
-	if (ret < 0)
-		json_object_put(ctx->resp_obj);
-	else
-		resp = ctx->resp_obj;
+	if (!ret) {
+		struct json_object_iterator its, ite;
+		struct json_object *val_obj;
+
+		its = json_object_iter_begin(resp);
+		ite = json_object_iter_end(resp);
+
+		ret = -ENOENT;
+		while (!json_object_iter_equal(&its, &ite)) {
+			val_obj = json_object_iter_peek_value(&its);
+			if (ret) {
+				strcpy(value, json_object_get_string(val_obj));
+				ret = 0;
+			}
+			json_object_iter_next(&its);
+		}
+	}
+	json_object_put(ctx->resp_obj);
 	ctx->resp_obj = NULL;
-	return resp;
+	return ret;
 }
 
 struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key)
