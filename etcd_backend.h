@@ -12,6 +12,7 @@ int etcd_fill_host_dir(void *buf, fuse_fill_dir_t filler);
 int etcd_fill_port_dir(void *buf, fuse_fill_dir_t filler);
 int etcd_fill_subsys_dir(void *buf, fuse_fill_dir_t filler);
 
+int etcd_fill_host(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int etcd_add_host(const char *nqn);
 int etcd_get_host_attr(const char *nqn, const char *attr, char *value);
 int etcd_del_host(const char *nqn);

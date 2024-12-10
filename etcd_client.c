@@ -122,15 +122,9 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		printf("DATA:\n%s\n", json_object_to_json_string_ext(etcd_resp,
 					JSON_C_TO_STRING_PRETTY));
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
-	if (!kvs_obj) {
-		char *err_str = "invalid response, 'kvs' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
-		size = 0;
+	if (!kvs_obj)
 		goto out;
-	}
+
 	for (i = 0; i < json_object_array_length(kvs_obj); i++) {
 		struct json_object *kv_obj, *key_obj, *value_obj;
 		char *key_str, *value_str;
@@ -144,6 +138,9 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			continue;
 		key_str = __b64dec(json_object_get_string(key_obj));
 		value_str = __b64dec(json_object_get_string(value_obj));
+		if (ctx->debug)
+			fprintf(stderr, "key '%s', val '%s'\n",
+				key_str, value_str);
 		json_object_object_add(ctx->resp_obj, key_str,
 				       json_object_new_string(value_str));
 		free(value_str);
@@ -242,8 +239,8 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 
 	err = curl_easy_perform(curl);
 	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed, %s\n",
-			curl_easy_strerror(err));
+		fprintf(stderr, "curl perform failed, %d (%s)\n",
+			err, curl_easy_strerror(err));
 		errno = EIO;
 	}
 
@@ -326,7 +323,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
 int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 {
 	char url[1024];
-	struct json_object *post_obj = NULL, *resp = NULL;
+	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
 	int ret;
 
@@ -365,14 +362,16 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 		struct json_object_iterator its, ite;
 		struct json_object *val_obj;
 
-		its = json_object_iter_begin(resp);
-		ite = json_object_iter_end(resp);
+		its = json_object_iter_begin(ctx->resp_obj);
+		ite = json_object_iter_end(ctx->resp_obj);
 
 		ret = -ENOENT;
 		while (!json_object_iter_equal(&its, &ite)) {
 			val_obj = json_object_iter_peek_value(&its);
 			if (ret) {
-				strcpy(value, json_object_get_string(val_obj));
+				if (value)
+					strcpy(value,
+					       json_object_get_string(val_obj));
 				ret = 0;
 			}
 			json_object_iter_next(&its);

@@ -8,6 +8,7 @@
 #include "common.h"
 #include "etcd_backend.h"
 #include "etcd_client.h"
+#include "firmware.h"
 
 struct key_value_template {
 	const char *key;
@@ -97,7 +98,7 @@ int etcd_count_root(const char *root, int *nlinks)
 		const char *k, *p;
 
 		k = json_object_iter_peek_name(&its);
-		p = strchr(k, '/');
+		p = strrchr(k, '/');
 		if (p) {
 			p++;
 			if (!strcmp(p, attr))
@@ -105,6 +106,7 @@ int etcd_count_root(const char *root, int *nlinks)
 		}
 		json_object_iter_next(&its);
 	}
+	printf("%s: root %s %d elements\n", __func__, root, num);
 	json_object_put(resp);
 	*nlinks = num;
 	return 0;
@@ -113,28 +115,40 @@ int etcd_count_root(const char *root, int *nlinks)
 int etcd_fill_root(const char *root, void *buf, fuse_fill_dir_t filler)
 {
 	struct json_object *resp;
-	char *key, *val, *p;
-	int ret;
+	char *key, *val, *attr, *p;
+	int ret, key_offset;
 
-	ret = asprintf(&key, "%s/%s", ctx->prefix, root);
+	ret = asprintf(&key, "%s/%s/", ctx->prefix, root);
 	if (ret < 0)
 		return ret;
 
+	if (!strcmp(root, "hosts"))
+		attr = "dhchap_hash";
+	else if (!strcmp(root, "subsystems"))
+		attr = "attr_type";
+	else if (!strcmp(root, "ports"))
+		attr = "addr_traddr";
+	else
+		return -EINVAL;
+
+	key_offset = strlen(key);
 	resp = etcd_kv_range(ctx, key);
 	free(key);
 	if (!resp)
 		return -errno;
 
 	json_object_object_foreach(resp, key_obj, val_obj) {
-		key = strrchr(key_obj, '/');
-		if (!key)
+		p = strrchr(key_obj, '/');
+		if (!p)
 			continue;
-		if (!strcmp(key, "dhchap_hash")) {
-			val = strdup(key_obj + strlen(ctx->prefix) + 7);
+		p++;
+		if (!strcmp(p, attr)) {
+			val = strdup(key_obj + key_offset);
 			p = strchr(val, '/');
 			if (p)
 				*p = '\0';
 			filler(buf, val, NULL, 0, FUSE_FILL_DIR_PLUS);
+			free(val);
 		}
 	}
 	return 0;
@@ -151,6 +165,18 @@ static struct key_value_template host_template[NUM_HOST_ATTRS] = {
 int etcd_fill_host_dir(void *buf, fuse_fill_dir_t filler)
 {
 	return etcd_fill_root("hosts", buf, filler);
+}
+
+int etcd_fill_host(const char *nqn, void *buf, fuse_fill_dir_t filler)
+{
+	int i;
+
+	for (i = 0; i < NUM_HOST_ATTRS; i++) {
+		struct key_value_template *kv = &host_template[i];
+
+		filler(buf, kv->key, NULL, 0, FUSE_FILL_DIR_PLUS);
+	}
+	return 0;
 }
 
 int etcd_add_host(const char *nqn)
@@ -182,6 +208,7 @@ int etcd_get_host_attr(const char *nqn, const char *attr, char *value)
 		       ctx->prefix, nqn, attr);
 	if (ret < 0)
 		return ret;
+
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
 	return ret;
@@ -218,7 +245,17 @@ int etcd_fill_port_dir(void *buf, fuse_fill_dir_t filler)
 
 int etcd_fill_port(unsigned int id, void *buf, fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	int i;
+
+	for (i = 0; i < NUM_PORT_ATTRS; i++) {
+		struct key_value_template *kv = &port_template[i];
+
+		filler(buf, kv->key, NULL, 0, FUSE_FILL_DIR_PLUS);
+	}
+	filler(buf, "ana_groups", NULL, 0, FUSE_FILL_DIR_PLUS);
+	filler(buf, "subsystems", NULL, 0, FUSE_FILL_DIR_PLUS);
+	filler(buf, "referrals", NULL, 0, FUSE_FILL_DIR_PLUS);
+	return 0;
 }
 
 int etcd_add_port(unsigned int id)
@@ -449,7 +486,7 @@ int etcd_del_ana_group(int portid, int ana_grpid)
 static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_allow_any_host", .value = "1" },
 	{ .key = "attr_firmware", .value = "" },
-	{ .key = "attr_ieee_oui", .value = "" },
+	{ .key = "attr_ieee_oui", .value = "851255" },
 	{ .key = "attr_model", .value = "nofuse" },
 	{ .key = "attr_serial", .value = "nofuse" },
 	{ .key = "attr_version", .value = "2.0" },
@@ -465,7 +502,16 @@ int etcd_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
 
 int etcd_fill_subsys(const char *subsys, void *buf, fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	int i;
+
+	for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
+		struct key_value_template *kv = &subsys_template[i];
+
+		filler(buf, kv->key, NULL, 0, FUSE_FILL_DIR_PLUS);
+	}
+	filler(buf, "allowed_hosts", NULL, 0, FUSE_FILL_DIR_PLUS);
+	filler(buf, "namespaces", NULL, 0, FUSE_FILL_DIR_PLUS);
+	return 0;
 }
 
 int etcd_add_subsys(const char *nqn, int type)
@@ -485,6 +531,8 @@ int etcd_add_subsys(const char *nqn, int type)
 
 			sprintf(type_str, "%d", type);
 			ret = etcd_kv_put(ctx, key, type_str, true);
+		} else if (!strcmp(kv->key, "attr_firmware")) {
+			ret = etcd_kv_put(ctx, key, firmware_rev, true);
 		} else
 			ret = etcd_kv_put(ctx, key, kv->value, true);
 		free(key);
@@ -672,13 +720,49 @@ static struct key_value_template ns_template[NUM_NS_ATTRS] = {
 int etcd_fill_namespace_dir(const char *subsysnqn,
 			    void *buf, fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	struct json_object *resp;
+	char *key, *val, *p;
+	int ret, key_offset;
+
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/",
+		       ctx->prefix, subsysnqn);
+	if (ret < 0)
+		return ret;
+
+	key_offset = strlen(key);
+	resp = etcd_kv_range(ctx, key);
+	free(key);
+	if (!resp)
+		return -errno;
+
+	json_object_object_foreach(resp, key_obj, val_obj) {
+		p = strrchr(key_obj, '/');
+		if (!p)
+			continue;
+		p++;
+		if (!strcmp(p, "device_uuid")) {
+			val = strdup(key_obj + key_offset);
+			p = strchr(val, '/');
+			if (p)
+				*p = '\0';
+			filler(buf, val, NULL, 0, FUSE_FILL_DIR_PLUS);
+			free(val);
+		}
+	}
+	return 0;
 }
 
 int etcd_fill_namespace(const char *subsysnqn, int nsid,
 			void *buf, fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	int i;
+
+	for (i = 0; i < NUM_NS_ATTRS; i++) {
+		struct key_value_template *kv = &ns_template[i];
+
+		filler(buf, kv->key, NULL, 0, FUSE_FILL_DIR_PLUS);
+	}
+	return 0;
 }
 
 int etcd_count_namespaces(const char *subsysnqn, int *nns)

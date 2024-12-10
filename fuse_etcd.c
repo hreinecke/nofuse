@@ -365,15 +365,24 @@ out_free:
 	return res;
 }
 
-static int fill_host(const char *path,
+static int fill_host(const char *host,
 		     void *buf, fuse_fill_dir_t filler)
 {
-	const char *p = path;
+	const char *p = host;
 
-	if (p)
-		return -ENOENT;
-
-	return etcd_fill_host_dir(buf, filler);
+	if (!host) {
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return etcd_fill_host_dir(buf, filler);
+	}
+	p = strtok(NULL, "/");
+	if (!p) {
+		fuse_info("%s: host %s", __func__, host);
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return etcd_fill_host(host, buf, filler);
+	}
+	return -ENOENT;
 }
 
 static int fill_port(const char *port,
@@ -1571,6 +1580,7 @@ int run_fuse(struct fuse_args *args)
 {
 	int ret;
 
+	fuse_debug = true;
 	ret = fuse_main(args->argc, args->argv, &nofuse_oper, NULL);
 	if (ret)
 		fuse_err("fuse terminated with %d", ret);
