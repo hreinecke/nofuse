@@ -391,13 +391,13 @@ int etcd_del_port(unsigned int id)
 	return ret;
 }
 
-int etcd_count_ana_groups(const char *port, int *ngrps)
+int etcd_count_ana_groups(int id, int *ngrps)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%s/ana_groups",
-		       ctx->prefix, port);
+	ret = asprintf(&key, "%s/ports/%d/ana_groups",
+		       ctx->prefix, id);
 	if (ret < 0)
 		return ret;
 
@@ -440,12 +440,6 @@ int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler)
 	}
 	json_object_put(resp);
 	return 0;
-}
-
-int etcd_stat_ana_group(const char *port, const char *ana_grp,
-			struct stat *stbuf)
-{
-	return -ENOTSUP;
 }
 
 int etcd_add_ana_group(int portid, int ana_grpid, int ana_state)

@@ -110,10 +110,10 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	return 0;
 }
 
-static int port_ana_groups_getattr(const char *port, const char *ana_grp,
+static int port_ana_groups_getattr(int portid, const char *ana_grp,
 				   struct stat *stbuf)
 {
-	int ret;
+	int ret, ana_state;
 	const char *p;
 
 	if (!ana_grp) {
@@ -121,21 +121,21 @@ static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 1;
-		ret = etcd_count_ana_groups(port, &num_grps);
+		ret = etcd_count_ana_groups(portid, &num_grps);
 		if (ret)
 			return -ENOENT;
 		stbuf->st_nlink += num_grps;
 		return 0;
 	}
 
-	fuse_info("%s: port %s ana group %s",
-		  __func__, port, ana_grp);
+	fuse_info("%s: port %d ana group %s",
+		  __func__, portid, ana_grp);
 
 	p = strtok(NULL, "/");
 	if (p && strcmp(p, "ana_state"))
 		return -ENOENT;
 
-	ret = etcd_stat_ana_group(port, ana_grp, stbuf);
+	ret = etcd_get_ana_group(portid, ana_grp, &ana_state);
 	if (ret < 0)
 		return ret;
 	if (!p) {
@@ -176,7 +176,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	if (!strcmp(attr, "subsystems"))
 		return port_subsystems_getattr(portid, p, stbuf);
 	if (!strcmp(attr, "ana_groups"))
-		return port_ana_groups_getattr(port, p, stbuf);
+		return port_ana_groups_getattr(portid, p, stbuf);
 
 	if (p)
 		return -ENOENT;
@@ -442,6 +442,7 @@ static int fill_port(const char *port,
 	}
 	if (!strcmp(subdir, "ana_groups")) {
 		const char *ana_grp = p;
+		int ana_state;
 
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -453,7 +454,7 @@ static int fill_port(const char *port,
 		}
 		if (!ana_grp)
 			return etcd_fill_ana_groups(port, buf, filler);
-		if (etcd_stat_ana_group(port, ana_grp, NULL) < 0)
+		if (etcd_get_ana_group(portid, ana_grp, &ana_state) < 0)
 			return -ENOENT;
 		filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;

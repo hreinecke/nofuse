@@ -26,8 +26,6 @@ int etcd_get_port_attr(unsigned int id, const char *attr, char *value);
 int etcd_del_port(unsigned int id);
 
 int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler);
-int etcd_stat_ana_group(const char *port, const char *ana_grp,
-			struct stat *stbuf);
 int etcd_add_ana_group(int portid, int ana_grpid, int ana_state);
 int etcd_get_ana_group(int portid, const char *ana_grp, int *ana_state);
 int etcd_set_ana_group(int portid, const char *ana_grp, int ana_state);
@@ -69,7 +67,7 @@ int etcd_get_namespace_anagrp(const char *subsysnqn, int nsid, int *ana_grpid);
 int etcd_del_namespace(const char *subsysnqn, int nsid);
 
 int etcd_count_subsys_port(int portid, int *nsubsys);
-int etcd_count_ana_groups(const char *port, int *ngrps);
+int etcd_count_ana_groups(int portid, int *ngrps);
 int etcd_count_host_subsys(const char *subsysnqn, int *nhosts);
 
 int etcd_get_cntlid(const char *subsysnqn, u16 *cntlid);
