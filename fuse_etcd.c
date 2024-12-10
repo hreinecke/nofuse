@@ -252,7 +252,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	nsid = strtoul(ns, &eptr, 10);
 	if (ns == eptr)
 		return -EINVAL;
-	ret = etcd_get_namespace_attr(subsysnqn, nsid, "device_uuid", NULL);
+	ret = etcd_test_namespace(subsysnqn, nsid);
 	if (ret)
 		return -ENOENT;
 	fuse_info("%s: subsys %s ns %u", __func__, subsysnqn, nsid);

@@ -59,6 +59,7 @@ int etcd_fill_namespace_dir(const char *subsysnqn, void *buf,
 int etcd_fill_namespace(const char *subsysnqn, int nsid,
 			void *buf, fuse_fill_dir_t filler);
 int etcd_add_namespace(const char *subsysnqn, int nsid);
+int etcd_test_namespace(const char *subsysnqn, int nsid);
 int etcd_set_namespace_attr(const char *subsysnqn, int nsid,
 			    const char *attr, const char *value);
 int etcd_get_namespace_attr(const char *subsysnqn, int nsid,

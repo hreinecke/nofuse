@@ -408,7 +408,38 @@ int etcd_count_ana_groups(const char *port, int *ngrps)
 
 int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	struct json_object *resp;
+	char *key, *val, *p;
+	int ret, key_offset;
+
+	ret = asprintf(&key, "%s/ports/%s/ana_groups",
+		       ctx->prefix, port);
+	if (ret < 0)
+		return ret;
+
+	key_offset = strlen(key);
+	resp = etcd_kv_range(ctx, key);
+	free(key);
+	if (!resp) {
+		return -errno;
+	}
+
+	json_object_object_foreach(resp, key_obj, val_obj) {
+		p = strrchr(key_obj, '/');
+		if (!p)
+			continue;
+		p++;
+		if (!strcmp(p, "ana_state")) {
+			val = strdup(key_obj + key_offset);
+			p = strchr(val, '/');
+			if (p)
+				*p = '\0';
+			filler(buf, val, NULL, 0, FUSE_FILL_DIR_PLUS);
+			free(val);
+		}
+	}
+	json_object_put(resp);
+	return 0;
 }
 
 int etcd_stat_ana_group(const char *port, const char *ana_grp,
@@ -974,6 +1005,20 @@ int etcd_add_namespace(const char *subsysnqn, int nsid)
 		ret = etcd_kv_put(ctx, key, value, true);
 		free(key);
 	}
+	return ret;
+}
+
+int etcd_test_namespace(const char *subsysnqn, int nsid)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/enable",
+		       ctx->prefix, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, NULL);
+	free(key);
 	return ret;
 }
 
