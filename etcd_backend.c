@@ -1131,11 +1131,10 @@ int etcd_subsys_identify_ctrl(const char *subsysnqn,
 	return -ENOTSUP;
 }
 
-int etcd_backend_init(const char *prefix, bool debug)
+int etcd_backend_init(const char *prefix)
 {
 	ctx = etcd_init();
 	ctx->prefix = prefix;
-	ctx->debug = debug;
 	return etcd_lease_grant(ctx);
 }
 

@@ -404,7 +404,7 @@ int main(int argc, char *argv[])
 		return 1;
 
 #ifdef NOFUSE_ETCD
-	ret = etcd_backend_init(ctx->prefix, ctx->debug);
+	ret = etcd_backend_init(ctx->prefix);
 #else
 	ret = configdb_open(ctx->dbname);
 #endif

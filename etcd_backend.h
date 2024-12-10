@@ -76,7 +76,7 @@ int etcd_host_genctr(const char *hostnqn, int *genctr);
 int etcd_subsys_identify_ctrl(const char *subsysnqn,
 			      struct nvme_id_ctrl *id);
 
-int etcd_backend_init(const char *prefix, bool debug);
+int etcd_backend_init(const char *prefix);
 void etcd_backend_exit(void);
 
 #endif /* _ETCD_BACKEND_H */
