@@ -113,7 +113,7 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 static int port_ana_groups_getattr(int portid, const char *ana_grp,
 				   struct stat *stbuf)
 {
-	int ret, ana_state;
+	int ret;
 	const char *p;
 
 	if (!ana_grp) {
@@ -135,7 +135,7 @@ static int port_ana_groups_getattr(int portid, const char *ana_grp,
 	if (p && strcmp(p, "ana_state"))
 		return -ENOENT;
 
-	ret = etcd_get_ana_group(portid, ana_grp, &ana_state);
+	ret = etcd_get_ana_group(portid, ana_grp, NULL);
 	if (ret < 0)
 		return ret;
 	if (!p) {
@@ -442,7 +442,6 @@ static int fill_port(const char *port,
 	}
 	if (!strcmp(subdir, "ana_groups")) {
 		const char *ana_grp = p;
-		int ana_state;
 
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -454,7 +453,7 @@ static int fill_port(const char *port,
 		}
 		if (!ana_grp)
 			return etcd_fill_ana_groups(port, buf, filler);
-		if (etcd_get_ana_group(portid, ana_grp, &ana_state) < 0)
+		if (etcd_get_ana_group(portid, ana_grp, NULL) < 0)
 			return -ENOENT;
 		filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -1195,15 +1194,6 @@ struct value_map_t {
 	char *desc;
 };
 
-struct value_map_t ana_value_map[] =
-{
-	{ NVME_ANA_OPTIMIZED, "optimized" },
-	{ NVME_ANA_NONOPTIMIZED, "non-optimized" },
-	{ NVME_ANA_INACCESSIBLE, "inaccessible" },
-	{ NVME_ANA_PERSISTENT_LOSS, "persistent-loss" },
-	{ NVME_ANA_CHANGE, "change" },
-};
-
 static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
@@ -1254,7 +1244,6 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       portid, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
-			int ana_state, i;
 
 			if (!ana_grp)
 				goto out_free;
@@ -1263,19 +1252,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				goto out_free;
 			fuse_info("%s: port %s ana_grp %s", __func__,
 			       port, ana_grp);
-			ret = etcd_get_ana_group(portid, ana_grp,
-						     &ana_state);
+			ret = etcd_get_ana_group(portid, ana_grp, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
 			}
-			for (i = 0; i < 5; i++) {
-				if (ana_value_map[i].val == ana_state) {
-					strcpy(buf, ana_value_map[i].desc);
-					break;
-				}
-			}
-			ret = 0;
 		} else {
 			ret = etcd_get_port_attr(portid, attr, buf);
 			if (ret < 0) {
@@ -1504,7 +1485,6 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
-			int ana_state = 0, i;
 
 			if (!ana_grp)
 				goto out_free;
@@ -1512,20 +1492,9 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
 
-			for (i = 0; i < 5; i++) {
-				if (!strncmp(ana_value_map[i].desc, value,
-					     strlen(ana_value_map[i].desc))) {
-					ana_state = ana_value_map[i].val;
-					break;
-				}
-			}
-			if (ana_state == 0) {
-				ret = -EINVAL;
-				goto out_free;
-			}
-			fuse_info("%s: port %s ana_grp %s state %d", __func__,
-			       port, ana_grp, ana_state);
-			ret = etcd_set_ana_group(portid, ana_grp, ana_state);
+			fuse_info("%s: port %s ana_grp %s state %s", __func__,
+			       port, ana_grp, value);
+			ret = etcd_set_ana_group(portid, ana_grp, value);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;

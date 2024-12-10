@@ -412,7 +412,7 @@ int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler)
 	char *key, *val, *p;
 	int ret, key_offset;
 
-	ret = asprintf(&key, "%s/ports/%s/ana_groups",
+	ret = asprintf(&key, "%s/ports/%s/ana_groups/",
 		       ctx->prefix, port);
 	if (ret < 0)
 		return ret;
@@ -475,9 +475,8 @@ int etcd_add_ana_group(int portid, int ana_grpid, int ana_state)
 	return ret;
 }
 
-int etcd_get_ana_group(int portid, const char *ana_grp, int *ana_state)
+int etcd_get_ana_group(int portid, const char *ana_grp, char *ana_state)
 {
-	struct json_object *resp;
 	int ret = -ENOENT;
 	char *key;
 
@@ -485,68 +484,29 @@ int etcd_get_ana_group(int portid, const char *ana_grp, int *ana_state)
 		       ctx->prefix, portid, ana_grp);
 	if (ret < 0)
 		return ret;
-	resp = etcd_kv_range(ctx, key);
+	ret = etcd_kv_get(ctx, key, ana_state);
 	free(key);
-	if (!resp)
-		return -errno;
-
-	json_object_object_foreach(resp, key_obj, val_obj) {
-		const char *value;
-
-		if (!strcmp(key_obj, "ana_state")) {
-			value = json_object_get_string(val_obj);
-			if (!strcmp(value, "optimized")) {
-				*ana_state = NVME_ANA_OPTIMIZED;
-				ret = 0;
-			} else if (!strcmp(value, "non-optimized")) {
-				*ana_state = NVME_ANA_NONOPTIMIZED;
-				ret = 0;
-			} else if (!strcmp(value, "inaccessible")) {
-				*ana_state = NVME_ANA_INACCESSIBLE;
-				ret = 0;
-			} else if (!strcmp(value, "persistent-loss")) {
-				*ana_state = NVME_ANA_PERSISTENT_LOSS;
-				ret = 0;
-			} else if (!strcmp(value, "change")) {
-				*ana_state = NVME_ANA_CHANGE;
-				ret = 0;
-			}
-			break;
-		}
-	}
-	json_object_put(resp);
 	return ret;
 }
 
-int etcd_set_ana_group(int portid, const char *ana_grp, int ana_state)
+int etcd_set_ana_group(int portid, const char *ana_grp, char *ana_state)
 {
-	char *key, *value;
+	char *key;
 	int ret;
 
 	ret = asprintf(&key, "%s/ports/%d/ana_groups/%s/ana_state",
 		       ctx->prefix, portid, ana_grp);
 	if (ret < 0)
 		return ret;
-	switch(ana_state) {
-	case NVME_ANA_OPTIMIZED:
-		value = "optimized";
-		break;
-	case NVME_ANA_NONOPTIMIZED:
-		value = "non-optimized";
-		break;
-	case NVME_ANA_INACCESSIBLE:
-		value = "inaccessible";
-		break;
-	case NVME_ANA_PERSISTENT_LOSS:
-		value = "persistent-loss";
-		break;
-	case NVME_ANA_CHANGE:
-		value = "change";
-		break;
-	default:
+
+	if (strcmp(ana_state, "optimized") &&
+	    strcmp(ana_state, "non-optimized") &&
+	    strcmp(ana_state, "inaccessible") &&
+	    strcmp(ana_state, "persistent-loss") &&
+	    strcmp(ana_state, "change"))
 		return -EINVAL;
-	}
-	ret = etcd_kv_put(ctx, key, value, false);
+
+	ret = etcd_kv_put(ctx, key, ana_state, false);
 	free(key);
 	return ret;
 }

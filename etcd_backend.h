@@ -27,8 +27,8 @@ int etcd_del_port(unsigned int id);
 
 int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler);
 int etcd_add_ana_group(int portid, int ana_grpid, int ana_state);
-int etcd_get_ana_group(int portid, const char *ana_grp, int *ana_state);
-int etcd_set_ana_group(int portid, const char *ana_grp, int ana_state);
+int etcd_get_ana_group(int portid, const char *ana_grp, char *ana_state);
+int etcd_set_ana_group(int portid, const char *ana_grp, char *ana_state);
 int etcd_del_ana_group(int portid, int ana_grpid);
 
 int etcd_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
