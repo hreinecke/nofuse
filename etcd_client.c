@@ -49,52 +49,6 @@ static char *__b64dec(const char *encoded_str)
 	return str;
 }
 
-struct etcd_ctx *etcd_init(void)
-{
-	struct etcd_ctx *ctx;
-
-	ctx = malloc(sizeof(struct etcd_ctx));
-	if (!ctx) {
-		fprintf(stderr, "cannot allocate context\n");
-		return NULL;
-	}
-	memset(ctx, 0, sizeof(struct etcd_ctx));
-	ctx->host = default_etcd_host;
-	ctx->proto = default_etcd_proto;
-	ctx->port = default_etcd_port;
-	ctx->lease = -1;
-	ctx->ttl = 240;
-
-	return ctx;
-}
-
-struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx)
-{
-	struct etcd_ctx *new_ctx;
-
-	new_ctx = malloc(sizeof(struct etcd_ctx));
-	if (!new_ctx) {
-		fprintf(stderr, "cannot allocate context\n");
-		return NULL;
-	}
-	memset(new_ctx, 0, sizeof(struct etcd_ctx));
-	new_ctx->host = ctx->host;
-	new_ctx->proto = ctx->proto;
-	new_ctx->port = ctx->port;
-	new_ctx->lease = -1;
-	new_ctx->ttl = ctx->ttl;
-
-	return new_ctx;
-}
-
-void etcd_exit(struct etcd_ctx *ctx)
-{
-	if (!ctx)
-		return;
-	json_object_put(ctx->resp_obj);
-	free(ctx);
-}
-
 static size_t
 etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
@@ -220,21 +174,24 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 		printf("POST:\n%s\n", json_object_to_json_string_ext(post_obj,
 					JSON_C_TO_STRING_PRETTY));
 
-	post_data = json_object_to_json_string(post_obj);
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfields failed, %s\n",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
+	if (post_obj) {
+		post_data = json_object_to_json_string(post_obj);
+		err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
+		if (err != CURLE_OK) {
+			fprintf(stderr, "curl setop postfields failed, %s\n",
+				curl_easy_strerror(err));
+			errno = EINVAL;
+			goto err_out;
+		}
 
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfieldsize failed, %s\n",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
+		err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,
+				       strlen(post_data));
+		if (err != CURLE_OK) {
+			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
+				curl_easy_strerror(err));
+			errno = EINVAL;
+			goto err_out;
+		}
 	}
 
 	err = curl_easy_perform(curl);
@@ -1045,4 +1002,160 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	json_object_put(ctx->resp_obj);
 	ctx->resp_obj = NULL;
 	return ret;
+}
+
+static size_t
+etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct json_object *etcd_resp, *hdr_obj, *mbs_obj;
+	struct etcd_ctx *ctx = arg;
+	char default_url[PATH_MAX];
+	int i;
+
+	sprintf(default_url, "%s://%s:%d",
+		ctx->proto, ctx->host, ctx->port);
+
+	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
+					  size * nmemb);
+	if (!etcd_resp) {
+		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
+			/* Partial / chunked response; continue */
+			return size * nmemb;
+		}
+		if (etcd_debug)
+			printf("ERROR:\n%s\n", ptr);
+
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		return 0;
+	}
+
+	if (etcd_debug)
+		printf("DATA:\n%s\n", json_object_to_json_string_ext(etcd_resp,
+					JSON_C_TO_STRING_PRETTY));
+	hdr_obj = json_object_object_get(etcd_resp, "header");
+	if (!hdr_obj) {
+		char *err_str = "invalid response, 'header' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+	mbs_obj = json_object_object_get(etcd_resp, "members");
+	if (!mbs_obj) {
+		char *err_str = "invalid response, 'members' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+
+	for (i = 0; i < json_object_array_length(mbs_obj); i++) {
+		struct json_object *mb_obj, *name_obj, *urls_obj;
+		const char *node_name;
+		int j;
+
+		mb_obj = json_object_array_get_idx(mbs_obj, i);
+		if (!mb_obj)
+			continue;
+		name_obj = json_object_object_get(mb_obj, "name");
+		if (!name_obj)
+			continue;
+		node_name = json_object_get_string(name_obj);
+		urls_obj = json_object_object_get(mb_obj, "clientURLs");
+		for (j = 0; j < json_object_array_length(urls_obj); j++) {
+			struct json_object *url_obj;
+			const char *url;
+
+			url_obj = json_object_array_get_idx(urls_obj, j);
+			url = json_object_get_string(url_obj);
+
+			if (!strcmp(url, default_url)) {
+				ctx->node = strdup(node_name);
+				printf("%s: using node name %s\n", __func__,
+				       ctx->node);
+			}
+		}
+	}
+out:
+	json_object_put(etcd_resp);
+	return size * nmemb;
+}
+
+int etcd_member_id(struct etcd_ctx *ctx)
+{
+	struct json_object *post_obj;
+	char url[1024];
+	int ret;
+
+	sprintf(url, "%s://%s:%u/v3/cluster/member/list",
+		ctx->proto, ctx->host, ctx->port);
+
+	ctx->tokener = json_tokener_new_ex(5);
+	ctx->resp_obj = json_object_new_object();
+	post_obj = json_object_new_object();
+	json_object_object_add(post_obj, "linearizable",
+			       json_object_new_boolean(true));
+
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_member_response);
+	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
+	return ret;
+}
+
+struct etcd_ctx *etcd_init(void)
+{
+	struct etcd_ctx *ctx;
+	int ret;
+
+	ctx = malloc(sizeof(struct etcd_ctx));
+	if (!ctx) {
+		fprintf(stderr, "cannot allocate context\n");
+		return NULL;
+	}
+	memset(ctx, 0, sizeof(struct etcd_ctx));
+	ctx->host = default_etcd_host;
+	ctx->proto = default_etcd_proto;
+	ctx->port = default_etcd_port;
+	ctx->lease = -1;
+	ctx->ttl = 240;
+
+	ret = etcd_member_id(ctx);
+	if (ret < 0) {
+		free(ctx);
+		return NULL;
+	}
+	return ctx;
+}
+
+struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx)
+{
+	struct etcd_ctx *new_ctx;
+
+	new_ctx = malloc(sizeof(struct etcd_ctx));
+	if (!new_ctx) {
+		fprintf(stderr, "cannot allocate context\n");
+		return NULL;
+	}
+	memset(new_ctx, 0, sizeof(struct etcd_ctx));
+	new_ctx->host = ctx->host;
+	new_ctx->proto = ctx->proto;
+	new_ctx->port = ctx->port;
+	new_ctx->lease = -1;
+	new_ctx->ttl = ctx->ttl;
+
+	return new_ctx;
+}
+
+void etcd_exit(struct etcd_ctx *ctx)
+{
+	if (!ctx)
+		return;
+	json_object_put(ctx->resp_obj);
+	free(ctx);
 }

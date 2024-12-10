@@ -20,6 +20,7 @@ struct etcd_ctx {
 	const char *prefix;
 	char *proto;
 	char *host;
+	char *node;
 	int port;
 	int64_t lease;
 	int ttl;

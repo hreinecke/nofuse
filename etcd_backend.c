@@ -259,7 +259,7 @@ int etcd_del_host(const char *nqn)
 	return ret;
 }
 
-#define NUM_PORT_ATTRS 6
+#define NUM_PORT_ATTRS 7
 static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trtype", .value = "tcp" },
 	{ .key = "addr_adrfam", .value = "ipv4" },
@@ -267,6 +267,7 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trsvcid", .value = "" },
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
+	{ .key = "addr_node", .value = "" },
 };
 
 int etcd_fill_port_dir(void *buf, fuse_fill_dir_t filler)
@@ -301,7 +302,11 @@ int etcd_add_port(unsigned int id)
 			       ctx->prefix, id, kv->key);
 		if (ret < 0)
 			return ret;
-		ret = etcd_kv_put(ctx, key, kv->value, true);
+		if (!strcmp(kv->key, "addr_node")) {
+			if (ctx->node)
+				ret = etcd_kv_put(ctx, key, ctx->node, true);
+		} else
+			ret = etcd_kv_put(ctx, key, kv->value, true);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -847,12 +852,13 @@ int etcd_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 	return ret;
 }
 
-#define NUM_NS_ATTRS 6
+#define NUM_NS_ATTRS 7
 static struct key_value_template ns_template[NUM_NS_ATTRS] = {
 	{ .key = "device_eui64", .value = "" },
 	{ .key = "device_nguid", .value = "" },
 	{ .key = "device_uuid", .value = "" },
 	{ .key = "device_path", .value = "" },
+	{ .key = "device_node", .value = "" },
 	{ .key = "ana_group_id", .value = "1" },
 	{ .key = "enable", .value = "0" },
 };
@@ -954,9 +960,12 @@ int etcd_add_namespace(const char *subsysnqn, int nsid)
 			value = eui64_str;
 		else if (!strcmp(kv->key, "device_uuid"))
 			value = uuid_str;
+		else if (!strcmp(kv->key, "device_node"))
+			value = ctx->node;
 		else
 			value = kv->value;
-		ret = etcd_kv_put(ctx, key, value, true);
+		if (value)
+			ret = etcd_kv_put(ctx, key, value, true);
 		free(key);
 	}
 	return ret;
