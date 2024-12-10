@@ -14,11 +14,13 @@ int etcd_fill_subsys_dir(void *buf, fuse_fill_dir_t filler);
 
 int etcd_fill_host(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int etcd_add_host(const char *nqn);
+int etcd_test_host(const char *nqn);
 int etcd_get_host_attr(const char *nqn, const char *attr, char *value);
 int etcd_del_host(const char *nqn);
 
 int etcd_fill_port(unsigned int id, void *buf, fuse_fill_dir_t filler);
 int etcd_add_port(unsigned int id);
+int etcd_test_port(unsigned int id);
 int etcd_set_port_attr(unsigned int id, const char *attr, const char *value);
 int etcd_get_port_attr(unsigned int id, const char *attr, char *value);
 int etcd_del_port(unsigned int id);
@@ -33,20 +35,21 @@ int etcd_del_ana_group(int portid, int ana_grpid);
 
 int etcd_fill_subsys(const char *nqn, void *buf, fuse_fill_dir_t filler);
 int etcd_add_subsys(const char *nqn, int type);
+int etcd_test_subsys(const char *nqn);
 int etcd_set_subsys_attr(const char *nqn, const char *attr, const char *value);
 int etcd_get_subsys_attr(const char *nqn, const char *attr, char *value);
 int etcd_del_subsys(const char *nqn);
 
 int etcd_fill_subsys_port(int id, void *buf, fuse_fill_dir_t filler);
 int etcd_add_subsys_port(const char *subsysnqn, int id);
-int etcd_stat_subsys_port(const char *subsysnqn, int id, struct stat *stbuf);
+int etcd_get_subsys_port(const char *subsysnqn, int id, char *value);
 int etcd_del_subsys_port(const char *subsysnqn, int id);
 
 int etcd_fill_host_subsys(const char *subsysnqn, void *buf,
 			  fuse_fill_dir_t filler);
 int etcd_add_host_subsys(const char *hostnqn, const char *subsysnqn);
-int etcd_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
-			  struct stat *stbuf);
+int etcd_get_host_subsys(const char *hostnqn, const char *subsysnqn,
+			 char *value);
 int etcd_del_host_subsys(const char *hostnqn, const char *subsysnqn);
 
 int etcd_count_namespaces(const char *subsysnqn, int *nns);

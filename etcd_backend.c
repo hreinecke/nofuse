@@ -59,7 +59,10 @@ static int _count_key_range(char *key, int *num)
 	ite = json_object_iter_end(resp);
  
 	while (!json_object_iter_equal(&its, &ite)) {
-		val++;
+		const char *key_name = json_object_iter_peek_name(&its);
+
+		if (!strncmp(key_name, key, strlen(key)))
+			val++;
 		json_object_iter_next(&its);
 	}
 	json_object_put(resp);
@@ -157,7 +160,7 @@ int etcd_fill_root(const char *root, void *buf, fuse_fill_dir_t filler)
 #define NUM_HOST_ATTRS 4
 static struct key_value_template host_template[NUM_HOST_ATTRS] = {
 	{ .key = "dhchap_key", .value = "" },
-	{ .key = "dhchap_hash", .value = "" },
+	{ .key = "dhchap_hash", .value = "sha(256)" },
 	{ .key = "dhchap_dhgroup", .value = "" },
 	{ .key = "dhchap_ctrl_key", .value = "" },
 };
@@ -199,6 +202,21 @@ int etcd_add_host(const char *nqn)
 	return 0;
 }
 
+int etcd_test_host(const char *nqn)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/hosts/%s/dhchap_hash",
+		       ctx->prefix, nqn);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_get(ctx, key, NULL);
+	free(key);
+	return ret;
+}
+
 int etcd_get_host_attr(const char *nqn, const char *attr, char *value)
 {
 	char *key;
@@ -211,6 +229,19 @@ int etcd_get_host_attr(const char *nqn, const char *attr, char *value)
 
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
+	if (ret == -ENOENT) {
+		int i;
+
+		for (i = 0; i < NUM_HOST_ATTRS; i++) {
+			struct key_value_template *kv = &host_template[i];
+
+			if (!strcmp(kv->key, attr)) {
+				if (value)
+					*value = '\0';
+				return 0;
+			}
+		}
+	}
 	return ret;
 }
 
@@ -232,7 +263,7 @@ int etcd_del_host(const char *nqn)
 static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trtype", .value = "tcp" },
 	{ .key = "addr_adrfam", .value = "ipv4" },
-	{ .key = "addr_traddr", .value = "" },
+	{ .key = "addr_traddr", .value = "127.0.0.1" },
 	{ .key = "addr_trsvcid", .value = "" },
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
@@ -278,6 +309,20 @@ int etcd_add_port(unsigned int id)
 	return 0;
 }
 
+int etcd_test_port(unsigned int id)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/ports/%d/addr_trtype",
+		       ctx->prefix, id);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, NULL);
+	free(key);
+	return ret;
+}
+
 int etcd_set_port_attr(unsigned int id, const char *attr, const char *value)
 {
 	char *key;
@@ -316,6 +361,19 @@ int etcd_get_port_attr(unsigned int id, const char *attr, char *value)
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
+	if (ret == -ENOENT) {
+		int i;
+
+		for (i = 0; i < NUM_PORT_ATTRS; i++) {
+			struct key_value_template *kv = &port_template[i];
+
+			if (!strcmp(kv->key, attr)) {
+				if (value)
+					*value = '\0';
+				return 0;
+			}
+		}
+	}
 	return ret;
 }
 
@@ -542,6 +600,20 @@ int etcd_add_subsys(const char *nqn, int type)
 	return 0;
 }
 
+int etcd_test_subsys(const char *nqn)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/subsystems/%s/attr_type",
+		       ctx->prefix, nqn);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, NULL);
+	free(key);
+	return ret;
+}
+
 int etcd_set_subsys_attr(const char *subsysnqn, const char *attr,
 			 const char *value)
 {
@@ -587,8 +659,11 @@ int etcd_get_subsys_attr(const char *nqn, const char *attr, char *value)
 		for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
 			struct key_value_template *kv = &subsys_template[i];
 
-			if (!strcmp(kv->key, attr))
+			if (!strcmp(kv->key, attr)) {
+				if (value)
+					*value = '\0';
 				return 0;
+			}
 		}
 	}
 	return ret;
@@ -610,7 +685,33 @@ int etcd_del_subsys(const char *nqn)
 
 int etcd_fill_subsys_port(int id, void *buf, fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	struct json_object *resp;
+	char *key, *val;
+	int ret, num = 0;
+
+	ret = asprintf(&key, "%s/ports/%d/subsystems",
+		       ctx->prefix, id);
+	if (ret < 0)
+		return ret;
+
+	resp = etcd_kv_range(ctx, key);
+	if (!resp) {
+		free(key);
+		return -errno;
+	}
+	json_object_object_foreach(resp, key_obj, val_obj) {
+		if (strncmp(key_obj, key, strlen(key)))
+			continue;
+		val = strrchr(key_obj, '/');
+		if (!val)
+			continue;
+		val++;
+		filler(buf, val, NULL, 0, FUSE_FILL_DIR_PLUS);
+		num++;
+	}
+	json_object_put(resp);
+	printf("%s: %d elements\n", __func__, num);
+	return 0;
 }
 
 int etcd_add_subsys_port(const char *subsysnqn, int id)
@@ -635,9 +736,18 @@ int etcd_add_subsys_port(const char *subsysnqn, int id)
 	return 0;
 }
 
-int etcd_stat_subsys_port(const char *subsysnqn, int id, struct stat *stbuf)
+int etcd_get_subsys_port(const char *subsysnqn, int id, char *value)
 {
-	return -ENOTSUP;
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/ports/%d/subsystems/%s",
+		       ctx->prefix, id, subsysnqn);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	free(key);
+	return ret;
 }
 
 int etcd_del_subsys_port(const char *subsysnqn, int id)
@@ -657,7 +767,33 @@ int etcd_del_subsys_port(const char *subsysnqn, int id)
 int etcd_fill_host_subsys(const char *subsysnqn, void *buf,
 			  fuse_fill_dir_t filler)
 {
-	return -ENOTSUP;
+	struct json_object *resp;
+	char *key, *val;
+	int ret, num = 0;
+
+	ret = asprintf(&key, "%s/subsystems/%s/allowed_hosts",
+		       ctx->prefix, subsysnqn);
+	if (ret < 0)
+		return ret;
+
+	resp = etcd_kv_range(ctx, key);
+	if (!resp) {
+		free(key);
+		return -errno;
+	}
+	json_object_object_foreach(resp, key_obj, val_obj) {
+		if (strncmp(key_obj, key, strlen(key)))
+			continue;
+		val = strrchr(key_obj, '/');
+		if (!val)
+			continue;
+		val++;
+		filler(buf, val, NULL, 0, FUSE_FILL_DIR_PLUS);
+		num++;
+	}
+	json_object_put(resp);
+	printf("%s: %d elements\n", __func__, num);
+	return 0;
 }
 
 int etcd_count_host_subsys(const char *subsysnqn, int *nhosts)
@@ -697,10 +833,19 @@ int etcd_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 	return 0;
 }
 
-int etcd_stat_host_subsys(const char *hostnqn, const char *subsysnqn,
-			  struct stat *stbuf)
+int etcd_get_host_subsys(const char *hostnqn, const char *subsysnqn,
+			 char *value)
 {
-	return -ENOTSUP;
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/subsystems/%s/allowed_hosts/%s",
+		       ctx->prefix, subsysnqn, hostnqn);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	free(key);
+	return ret;
 }
 
 int etcd_del_host_subsys(const char *hostnqn, const char *subsysnqn)
@@ -793,42 +938,43 @@ int etcd_count_namespaces(const char *subsysnqn, int *nns)
 int etcd_add_namespace(const char *subsysnqn, int nsid)
 {
 	char *key;
-	int ret;
+	int ret, i;
 	uuid_t uuid;
 	char uuid_str[65], nguid_str[33], eui64_str[33];
 	unsigned int nguid1, nguid2;
 
 	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_uuid",
-		       ctx->prefix, subsysnqn, nsid);
-	if (ret < 0)
-		return ret;
-	ret = etcd_kv_put(ctx, key, uuid_str, true);
-	free(key);
-	if (ret < 0)
-		return ret;
 
 	memcpy(&nguid1, &uuid[8], 4);
 	memcpy(&nguid2, &uuid[12], 4);
 	sprintf(nguid_str, "%08x%08x%s",
 		nguid1, nguid2, NOFUSE_NGUID_PREFIX);
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_nguid",
-		       ctx->prefix, subsysnqn, nsid);
-	if (!ret) {
-		ret = etcd_kv_put(ctx, key, nguid_str, true);
-		free(key);
-	}
 
 	sprintf(eui64_str, "0efd37%hhx%08x",
 		uuid[11], nguid2);
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_eui64",
-		       ctx->prefix, subsysnqn, nsid);
-	if (!ret) {
-		ret = etcd_kv_put(ctx, key, nguid_str, true);
+
+	for (i = 0; i < NUM_NS_ATTRS; i++) {
+		struct key_value_template *kv = &ns_template[i];
+		const char *value;
+
+		ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/%s",
+			       ctx->prefix, subsysnqn, nsid, kv->key);
+		if (ret < 0)
+			continue;
+
+		if (!strcmp(kv->key, "device_nguid"))
+			value = nguid_str;
+		else if (!strcmp(kv->key, "device_eui64"))
+			value = eui64_str;
+		else if (!strcmp(kv->key, "device_uuid"))
+			value = uuid_str;
+		else
+			value = kv->value;
+		ret = etcd_kv_put(ctx, key, value, true);
 		free(key);
 	}
-	return 0;
+	return ret;
 }
 
 int etcd_set_namespace_attr(const char *subsysnqn, int nsid,
@@ -871,6 +1017,19 @@ int etcd_get_namespace_attr(const char *subsysnqn, int nsid,
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
+	if (ret == -ENOENT) {
+		int i;
+
+		for (i = 0; i < NUM_NS_ATTRS; i++) {
+			struct key_value_template *kv = &ns_template[i];
+
+			if (!strcmp(kv->key, attr)) {
+				if (value)
+					*value = '\0';
+				return 0;
+			}
+		}
+	}
 	return ret;
 }
 

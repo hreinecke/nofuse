@@ -62,7 +62,7 @@ struct etcd_ctx *etcd_init(void)
 	ctx->proto = default_etcd_proto;
 	ctx->port = default_etcd_port;
 	ctx->lease = -1;
-	ctx->ttl = 30;
+	ctx->ttl = 240;
 
 	return ctx;
 }

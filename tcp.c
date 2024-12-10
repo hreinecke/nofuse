@@ -295,8 +295,8 @@ static int tcp_init_listener(struct nofuse_port *port)
 
 	ret = getaddrinfo(traddr, trsvcid, &hints, &ai);
 	if (ret != 0) {
-		port_err(port, "getaddrinfo() failed: %s",
-			  gai_strerror(ret));
+		port_err(port, "getaddrinfo() on %s:%s failed: %s",
+			 traddr, trsvcid, gai_strerror(ret));
 		return -EINVAL;
 	}
 	if (!ai) {

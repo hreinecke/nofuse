@@ -53,18 +53,29 @@ static void *nofuse_init(struct fuse_conn_info *conn,
 static int host_getattr(char *hostnqn, struct stat *stbuf)
 {
 	int ret;
-	char *p;
+	char *attr, *p;
 
-	p = strtok(NULL, "/");
-	if (p)
-		return -ENOENT;
-
-	ret = etcd_get_host_attr(hostnqn, "dhchap_hash", NULL);
+	ret = etcd_test_host(hostnqn);
 	if (ret < 0)
 		return -ENOENT;
 
-	stbuf->st_mode = S_IFDIR | 0755;
-	stbuf->st_nlink = 2;
+	p = strtok(NULL, "/");
+	if (!p) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+	attr = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	ret = etcd_get_host_attr(hostnqn, attr, NULL);
+	if (ret < 0)
+		return -ENOENT;
+
+	stbuf->st_mode = S_IFREG | 0644;
+	stbuf->st_nlink = 1;
+	stbuf->st_size = 256;
 	return 0;
 }
 
@@ -90,11 +101,12 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	ret = etcd_stat_subsys_port(subsys, portid, stbuf);
+	ret = etcd_get_subsys_port(subsys, portid, NULL);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFLNK | 0755;
 	stbuf->st_nlink = 1;
+	stbuf->st_size = PATH_MAX;
 	return 0;
 }
 
@@ -146,7 +158,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	portid = strtoul(port, &eptr, 10);
 	if (port == eptr)
 		return -ENOENT;
-	ret = etcd_get_port_attr(portid, "attr_traddr", NULL);
+	ret = etcd_test_port(portid);
 	if (ret < 0)
 		return -ENOENT;
 
@@ -209,11 +221,12 @@ static int subsys_allowed_hosts_getattr(const char *subsysnqn,
 	if (p)
 		return -ENOENT;
 	fuse_info("%s: subsys %s host %s", __func__, subsysnqn, hostnqn);
-	ret = etcd_stat_host_subsys(hostnqn, subsysnqn, stbuf);
+	ret = etcd_get_host_subsys(hostnqn, subsysnqn, NULL);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFLNK | 0755;
 	stbuf->st_nlink = 1;
+	stbuf->st_size = PATH_MAX;
 	return 0;
 }
 
@@ -270,17 +283,17 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 	char *p, *attr;
 	int ret;
 
-	ret = etcd_get_subsys_attr(subsysnqn, "attr_type", NULL);
-	if (ret)
+	ret = etcd_test_subsys(subsysnqn);
+	if (ret < 0)
 		return -ENOENT;
 
 	p = strtok(NULL, "/");
+	fuse_info("%s: subsys %s attr %s", __func__, subsysnqn, p);
 	if (!p) {
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 4;
 		return 0;
 	}
-	fuse_info("%s: subsys %s attr %s", __func__, subsysnqn, p);
 
 	attr = p;
 	p = strtok(NULL, "/");
@@ -421,7 +434,7 @@ static int fill_port(const char *port,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (subsys) {
-			if (etcd_stat_subsys_port(subsys, portid, NULL) < 0)
+			if (etcd_get_subsys_port(subsys, portid, NULL) < 0)
 				return -ENOENT;
 			return 0;
 		}
@@ -504,10 +517,11 @@ static int fill_subsys(const char *subsys,
 		p = strtok(NULL, "/");
 		if (p)
 			return -ENOENT;
+		fuse_info("%s: subsys %s host %s", __func__, subsys, host);
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (host) {
-			if (etcd_stat_host_subsys(host, subsys, NULL) < 0)
+			if (etcd_get_host_subsys(host, subsys, NULL) < 0)
 				return -ENOENT;
 			return 0;
 		}
@@ -668,11 +682,9 @@ static int nofuse_mkdir(const char *path, mode_t mode)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
 		ret = port_mkdir(s);
-	}
-	if (!strcmp(root, subsys_dir)) {
+	} else if (!strcmp(root, subsys_dir)) {
 		ret = subsys_mkdir(s);
-	}
-	if (!strcmp(root, hosts_dir)) {
+	} else if (!strcmp(root, hosts_dir)) {
 		ret = host_mkdir(s);
 	}
 out_free:
@@ -879,10 +891,9 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		ret = parse_port_link(s, &portid, &subsys);
 		if (ret < 0)
 			goto out_free;
-		ret = etcd_stat_subsys_port(subsys, portid, NULL);
+		ret = etcd_get_subsys_port(subsys, portid, buf);
 		if (ret < 0)
 			goto out_free;
-		sprintf(buf, "../../../subsystems/%s", subsys);
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
@@ -890,10 +901,9 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		ret = parse_subsys_link(s, &subsys, &host);
 		if (ret < 0)
 			goto out_free;
-		ret = etcd_stat_host_subsys(host, subsys, NULL);
+		ret = etcd_get_host_subsys(host, subsys, buf);
 		if (ret < 0)
 			goto out_free;
-		sprintf(buf, "../../../hosts/%s", host);
 		ret = 0;
 	}
 out_free:
