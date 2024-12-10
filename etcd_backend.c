@@ -581,6 +581,16 @@ int etcd_get_subsys_attr(const char *nqn, const char *attr, char *value)
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
+	if (ret == -ENOENT) {
+		int i;
+
+		for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
+			struct key_value_template *kv = &subsys_template[i];
+
+			if (!strcmp(kv->key, attr))
+				return 0;
+		}
+	}
 	return ret;
 }
 
