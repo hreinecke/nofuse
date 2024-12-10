@@ -583,17 +583,26 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL;
-	char *encoded_key = NULL;
+	char *encoded_key = NULL, *end_key, *encoded_end, end;
 	int ret;
 
 	sprintf(url, "%s://%s:%u/v3/kv/deleterange",
 		ctx->proto, ctx->host, ctx->port);
 
+	end_key = strdup(key);
+	end = key[strlen(key) - 1];
+	end++;
+	end_key[strlen(key) - 1] = end;
 	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
+	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
+	json_object_object_add(post_obj, "range_end",
+			       json_object_new_string(encoded_end));
+	json_object_object_add(post_obj, "prev_kv",
+			       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_delete_response);
 	if (!ret) {
@@ -612,6 +621,7 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 			ret = -1;
 		}
 	}
+	free(encoded_end);
 	free(encoded_key);
 	json_object_put(post_obj);
 	json_object_put(ctx->resp_obj);
