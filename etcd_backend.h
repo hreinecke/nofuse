@@ -4,7 +4,7 @@
 #define FUSE_USE_VERSION 31
 #include <fuse.h>
 
-int etcd_set_discovery_nqn(char *buf);
+int etcd_set_discovery_nqn(const char *buf);
 int etcd_get_discovery_nqn(char *buf);
 
 int etcd_count_root(const char *root, int *nlinks);

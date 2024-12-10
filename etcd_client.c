@@ -386,8 +386,8 @@ struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL, *resp = NULL;
-	char *encoded_key = NULL;
-	char *encoded_range = NULL;
+	char *encoded_key = NULL, end;
+	char *encoded_range = NULL, *range;
 	int ret;
 
 	ctx->resp_obj = json_object_new_object();
@@ -396,10 +396,14 @@ struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key)
 
 	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
+	range = strdup(key);
+	end = range[strlen(range) - 1];
+	end++;
+	range[strlen(range) - 1] = end;
 	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
-	encoded_range = __b64enc("\0", 1);
+	encoded_range = __b64enc(range, strlen(range));
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
 

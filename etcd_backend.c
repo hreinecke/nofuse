@@ -17,7 +17,7 @@ struct key_value_template {
 
 static struct etcd_ctx *ctx;
 
-int etcd_set_discovery_nqn(char *buf)
+int etcd_set_discovery_nqn(const char *buf)
 {
 	char *key;
 	int ret;

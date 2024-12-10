@@ -274,6 +274,10 @@ static int init_subsys(struct nofuse_context *ctx)
 	struct nofuse_port *port;
 	int ret;
 
+	ret = etcd_set_discovery_nqn(ctx->subsysnqn);
+	if (ret)
+		return ret;
+
 	ret = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
 	if (ret)
 		return ret;
