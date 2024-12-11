@@ -45,59 +45,14 @@ int del_ana_group(int portid, int ana_grpid)
 int add_port(unsigned int id, const char *ifaddr, int portnum)
 {
 	struct nofuse_port *port;
-	int ret;
 
 	port = malloc(sizeof(*port));
 	if (!port)
 		return -ENOMEM;
 	memset(port, 0, sizeof(*port));
-	uatomic_set(&port->ref, 1);
+	port->ref  = 1;
 	port->listenfd = -1;
 	port->portid = id;
-#ifdef NOFUSE_ETCD
-	ret = etcd_add_port(id);
-#else
-	ret = configdb_add_port(id);
-#endif
-	if (ret < 0) {
-		port_err(port, "cannot register port, error %d", ret);
-		free(port);
-		return ret;
-	}
-	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
-#ifdef NOFUSE_ETCD
-		if (!strchr(ifaddr, ','))
-			etcd_set_port_attr(port->portid, "addr_adrfam",
-					   "ipv6");
-		etcd_set_port_attr(port->portid, "addr_traddr", ifaddr);
-#else
-		if (!strchr(ifaddr, ','))
-			configdb_set_port_attr(port->portid, "addr_adrfam",
-					    "ipv6");
-		configdb_set_port_attr(port->portid, "addr_traddr", ifaddr);
-#endif
-	}
-	if (portnum) {
-		char trsvcid[5];
-
-		sprintf(trsvcid, "%d", portnum);
-#ifdef NOFUSE_ETCD
-		etcd_set_port_attr(port->portid, "addr_trsvcid", trsvcid);
-#else
-		configdb_set_port_attr(port->portid, "addr_trsvcid", trsvcid);
-#endif
-	}
-	ret = add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
-	if (ret < 0) {
-		port_err(port, "cannot add ana group to port, error %d", ret);
-#ifdef NOFUSE_ETCD
-		etcd_del_port(port->portid);
-#else
-		configdb_del_port(port->portid);
-#endif
-		free(port);
-		return ret;
-	}
 	pthread_mutex_init(&port->ep_mutex, NULL);
 	INIT_LINKED_LIST(&port->ep_list);
 	INIT_LINKED_LIST(&port->node);
@@ -175,28 +130,11 @@ int stop_port(struct nofuse_port *port)
 
 int del_port(struct nofuse_port *port)
 {
-	int ret;
-
 	port->ref--;
 	port_info(port, "deleting, refcount %d", port->ref);
 	if (port->pthread) {
 		port_err(port, "port still running");
 		return -EBUSY;
-	}
-	ret = del_ana_group(port->portid, 1);
-	if (ret < 0) {
-		port_err(port, "cannot delete ana group from port, error %d",
-			  ret);
-		return ret;
-	}
-#ifdef NOFUSE_ETCD
-	ret = etcd_del_port(port->portid);
-#else
-	ret = configdb_del_port(port->portid);
-#endif
-	if (ret < 0) {
-		add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
-		return ret;
 	}
 	pthread_mutex_destroy(&port->ep_mutex);
 	list_del(&port->node);

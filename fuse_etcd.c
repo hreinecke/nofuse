@@ -590,10 +590,18 @@ static int port_mkdir(char *s)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		ret = find_and_add_port(portid);
-		if (ret < 0)
+		ret = etcd_add_port("nofuse", portid, 0);
+		if (ret < 0) {
 			fuse_err("%s: cannot add port %d, error %d",
 				 __func__, portid, ret);
+			return ret;
+		}
+		ret = add_ana_group(portid, 1, NVME_ANA_OPTIMIZED);
+		if (ret < 0) {
+			fuse_err("%s: cannot add group 1 to port %d, error %d\n",
+				 __func__, portid, ret);
+			etcd_del_port(portid);
+		}
 		return ret;
 	}
 	if (strcmp(p, "ana_groups"))
@@ -712,10 +720,17 @@ static int port_rmdir(char *s)
 	if (!p) {
 		int ret;
 
-		ret = find_and_del_port(portid);
+		ret = del_ana_group(portid, 1);
+		if (ret < 0) {
+			fuse_err("%s: cannot remove group 1 from port %d, "
+				 "error %d", __func__, portid, ret);
+			return ret;
+		}
+		ret = etcd_del_port(portid);
 		if (ret < 0) {
 			fuse_err("%s: cannot remove port %d, error %d",
 			       __func__, portid, ret);
+			add_ana_group(portid, 1, NVME_ANA_OPTIMIZED);
 		}
 		return ret;
 	}

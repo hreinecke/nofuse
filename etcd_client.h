@@ -22,6 +22,7 @@ struct etcd_ctx {
 	char *host;
 	char *node;
 	int port;
+	bool tls;
 	int64_t lease;
 	int ttl;
 	struct json_tokener *tokener;

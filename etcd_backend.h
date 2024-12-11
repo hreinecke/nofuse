@@ -19,7 +19,7 @@ int etcd_get_host_attr(const char *nqn, const char *attr, char *value);
 int etcd_del_host(const char *nqn);
 
 int etcd_fill_port(unsigned int id, void *buf, fuse_fill_dir_t filler);
-int etcd_add_port(unsigned int id);
+int etcd_add_port(const char *origin, unsigned int id, unsigned int port);
 int etcd_test_port(unsigned int id);
 int etcd_set_port_attr(unsigned int id, const char *attr, const char *value);
 int etcd_get_port_attr(unsigned int id, const char *attr, char *value);

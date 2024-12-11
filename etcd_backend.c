@@ -259,7 +259,7 @@ int etcd_del_host(const char *nqn)
 	return ret;
 }
 
-#define NUM_PORT_ATTRS 7
+#define NUM_PORT_ATTRS 8
 static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trtype", .value = "tcp" },
 	{ .key = "addr_adrfam", .value = "ipv4" },
@@ -268,6 +268,7 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
 	{ .key = "addr_node", .value = "" },
+	{ .key = "addr_origin", .value = "" },
 };
 
 int etcd_fill_port_dir(void *buf, fuse_fill_dir_t filler)
@@ -290,7 +291,7 @@ int etcd_fill_port(unsigned int id, void *buf, fuse_fill_dir_t filler)
 	return 0;
 }
 
-int etcd_add_port(unsigned int id)
+int etcd_add_port(const char *origin, unsigned int id, unsigned int port)
 {
 	int ret, i;
 
@@ -305,6 +306,15 @@ int etcd_add_port(unsigned int id)
 		if (!strcmp(kv->key, "addr_node")) {
 			if (ctx->node)
 				ret = etcd_kv_put(ctx, key, ctx->node, true);
+		} else if (!strcmp(kv->key, "addr_trsvcid")) {
+			char portnum[16];
+			if (port > 0) {
+				sprintf(portnum, "%d", port);
+				ret = etcd_kv_put(ctx, key, portnum, true);
+			}
+		} else if (!strcmp(kv->key, "addr_origin")) {
+			if (origin)
+				ret = etcd_kv_put(ctx, key, origin, true);
 		} else
 			ret = etcd_kv_put(ctx, key, kv->value, true);
 		free(key);

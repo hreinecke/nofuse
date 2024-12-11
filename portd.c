@@ -16,6 +16,7 @@
 
 #include <json-c/json.h>
 
+#include "common.h"
 #include "etcd_client.h"
 
 static char *default_host = "localhost";
@@ -23,7 +24,13 @@ static char *default_proto = "http";
 static char *default_prefix = "nofuse";
 static int default_port = 2379;
 
-int etcd_debug;
+bool ep_debug;
+bool cmd_debug;
+bool port_debug;
+bool tcp_debug;
+bool etcd_debug;
+
+int stopped = 0;
 
 static int parse_port_key(char *key, unsigned int *portid,
 			  char **attr, char **subsys, unsigned int *ana_grpid)
@@ -116,6 +123,8 @@ static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 static void parse_ports(struct etcd_ctx *ctx,
 			struct json_object *resp_obj)
 {
+	struct nofuse_port *port;
+
 	json_object_object_foreach(resp_obj, key, val_obj) {
 		char *path, *attr = NULL, *subsys = NULL;
 		unsigned int portid, ana_grpid = 0;
@@ -127,15 +136,24 @@ static void parse_ports(struct etcd_ctx *ctx,
 		ret = parse_port_key(path, &portid, &attr, &subsys, &ana_grpid);
 		if (ret < 0)
 			continue;
-		if (subsys)
-			printf("add port %d subsys %s\n",
+		port = find_port(portid);
+		if (subsys) {
+			if (!port)
+				continue;
+			printf("start port %d subsys %s\n",
 			       portid, subsys);
-		else if (ana_grpid)
+			start_port(port);
+		} else if (ana_grpid)
 			printf("add port %d ana group %d\n",
 			       portid, ana_grpid);
-		else
+		else {
+			if (!port)
+				find_and_add_port(portid);
 			printf("add port %d attr %s\n",
 			       portid, attr);
+		}
+		if (port)
+			put_port(port);
 		free(path);
 	}
 }
@@ -159,7 +177,6 @@ void usage(void) {
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
-		{"disconnect", no_argument, 0, 'd'},
 		{"port", required_argument, 0, 'p'},
 		{"host", required_argument, 0, 'h'},
 		{"ssl", no_argument, 0, 's'},
@@ -202,7 +219,7 @@ int main(int argc, char **argv)
 			ctx->proto = "https";
 			break;
 		case 'v':
-			etcd_debug = 1;
+			etcd_debug = true;
 			break;
 		case '?':
 			usage();
@@ -223,7 +240,7 @@ int main(int argc, char **argv)
 
 	ctx->resp_obj = json_object_new_object();
 	ctx->watch_cb = update_ports;
-	etcd_kv_watch(ctx, prefix);
+	ret = etcd_kv_watch(ctx, prefix);
 	if (!ret) {
 		json_object_object_foreach(ctx->resp_obj,
 					   key_obj, val_obj)
