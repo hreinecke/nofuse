@@ -25,6 +25,9 @@ all: nofuse xdp_drop_port.o base64_test
 nofuse: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
+portd: portd.o etcd_client.o base64.o
+	$(CC) $(CFLAGS) -o $@ $^ $(ETCD_LIBS)
+
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
 

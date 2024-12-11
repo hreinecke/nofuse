@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
- * interface.c
- * Interface handling for NVMe-over-TCP userspace daemon.
+ * port.c
+ * Port handling for NVMe-over-TCP userspace daemon.
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
  */
