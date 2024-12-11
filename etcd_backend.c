@@ -1142,9 +1142,18 @@ int etcd_subsys_identify_ctrl(const char *subsysnqn,
 
 int etcd_backend_init(const char *prefix)
 {
+	int ret;
+
 	ctx = etcd_init();
+	if (!ctx)
+		return -errno;
 	ctx->prefix = prefix;
-	return etcd_lease_grant(ctx);
+	ret = etcd_lease_grant(ctx);
+	if (ret < 0) {
+		etcd_exit(ctx);
+		free(ctx);
+	}
+	return ret;
 }
 
 void etcd_backend_exit(void)

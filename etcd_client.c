@@ -1127,6 +1127,7 @@ struct etcd_ctx *etcd_init(void)
 
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
+		errno = -ret;
 		free(ctx);
 		return NULL;
 	}
