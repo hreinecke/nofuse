@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <urcu/uatomic.h>
 
 #include "common.h"
 #include "ops.h"
@@ -19,6 +20,7 @@
 #endif
 
 LINKED_LIST(port_linked_list);
+pthread_mutex_t port_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void *run_port(void *arg);
 
@@ -49,6 +51,7 @@ int add_port(unsigned int id, const char *ifaddr, int portnum)
 	if (!port)
 		return -ENOMEM;
 	memset(port, 0, sizeof(*port));
+	uatomic_set(&port->ref, 1);
 	port->listenfd = -1;
 	port->portid = id;
 #ifdef NOFUSE_ETCD
@@ -104,16 +107,30 @@ int add_port(unsigned int id, const char *ifaddr, int portnum)
 	return 0;
 }
 
-struct nofuse_port *find_port(unsigned int id)
+struct nofuse_port *_find_port(unsigned int id)
 {
 	struct nofuse_port *port;
 
 	list_for_each_entry(port, &port_linked_list, node) {
-		if (port->portid == id) {
+		if (port->portid == id)
 			return port;
-		}
 	}
 	return NULL;
+}
+
+struct nofuse_port *find_port(unsigned int id)
+{
+	struct nofuse_port *port;
+
+	pthread_mutex_lock(&port_list_mutex);
+	port = _find_port(id);
+	if (port) {
+		if (!port->ref)
+			port_err(port, "refcount already released");
+		port->ref++;
+	}
+	pthread_mutex_unlock(&port_list_mutex);
+	return port;
 }
 
 int start_port(struct nofuse_port *port)
@@ -160,7 +177,8 @@ int del_port(struct nofuse_port *port)
 {
 	int ret;
 
-	port_info(port, "deleting");
+	port->ref--;
+	port_info(port, "deleting, refcount %d", port->ref);
 	if (port->pthread) {
 		port_err(port, "port still running");
 		return -EBUSY;
@@ -184,6 +202,45 @@ int del_port(struct nofuse_port *port)
 	list_del(&port->node);
 	free(port);
 	return 0;
+}
+
+int find_and_add_port(unsigned int portid)
+{
+	struct nofuse_port *port;
+	int ret;
+
+	pthread_mutex_lock(&port_list_mutex);
+	port = _find_port(portid);
+	if (port)
+		ret = -EAGAIN;
+	else
+		ret = add_port(portid, NULL, 0);
+	pthread_mutex_unlock(&port_list_mutex);
+	return ret;
+}
+
+int find_and_del_port(unsigned int portid)
+{
+	struct nofuse_port *port;
+	int ret = -ENOENT;
+
+	pthread_mutex_lock(&port_list_mutex);
+	port = _find_port(portid);
+	if (port)
+		ret = del_port(port);
+	else
+		fprintf(stderr, "port %d: no port to delete\n", portid);
+	pthread_mutex_unlock(&port_list_mutex);
+	return ret;
+}
+
+void put_port(struct nofuse_port *port)
+{
+	pthread_mutex_lock(&port_list_mutex);
+	port->ref--;
+	if (!port->ref)
+		port_err(port, "refcount dropped");
+	pthread_mutex_unlock(&port_list_mutex);
 }
 
 static int start_listener(struct nofuse_port *port)

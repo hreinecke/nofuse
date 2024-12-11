@@ -161,6 +161,7 @@ struct nofuse_namespace {
 struct nofuse_port {
 	struct linked_list node;
 	pthread_t pthread;
+	unsigned int ref;
 	struct xp_ops *ops;
 	struct linked_list ep_list;
 	pthread_mutex_t ep_mutex;
@@ -270,6 +271,9 @@ int del_subsys(const char *nqn);
 int add_port(unsigned int id, const char *ifaddr, int portnum);
 struct nofuse_port *find_port(unsigned int id);
 int del_port(struct nofuse_port *port);
+int find_and_add_port(unsigned int portid);
+int find_and_del_port(unsigned int portid);
+void put_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
 int add_ana_group(int portid, int ana_grpid, int ana_state);

@@ -590,7 +590,7 @@ static int port_mkdir(char *s)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		ret = add_port(portid, NULL, 0);
+		ret = find_and_add_port(portid);
 		if (ret < 0)
 			fuse_err("%s: cannot add port %d, error %d",
 				 __func__, portid, ret);
@@ -710,20 +710,14 @@ static int port_rmdir(char *s)
 		return -EINVAL;
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
-		struct nofuse_port *port = find_port(portid);
 		int ret;
 
-		if (!port) {
-			fuse_err("%s: port %d not found",
-			       __func__, portid);
-			return -ENOENT;
-		}
-		ret = del_port(port);
+		ret = find_and_del_port(portid);
 		if (ret < 0) {
 			fuse_err("%s: cannot remove port %d, error %d",
 			       __func__, portid, ret);
 		}
-		return ret;;
+		return ret;
 	}
 	if (strcmp(p, "ana_groups"))
 		return -ENOENT;
@@ -961,6 +955,7 @@ static int nofuse_symlink(const char *from, const char *to)
 				goto out_free;
 			}
 			ret = start_port(port);
+			put_port(port);
 			if (ret) {
 				etcd_del_subsys_port(subsys, portid);
 				goto out_free;
@@ -1016,23 +1011,29 @@ static int nofuse_unlink(const char *path)
 			goto out_free;
 		}
 		ret = etcd_del_subsys_port(subsys, portid);
-		if (ret < 0)
+		if (ret < 0) {
+			put_port(port);
 			goto out_free;
+		}
 		terminate_queues(port, subsys);
 		ret = etcd_count_subsys_port(portid, &subsysnum);
-		if (ret < 0)
+		if (ret < 0) {
+			put_port(port);
 			goto out_free;
+		}
 		fuse_info("%s: subsys %s portid %d num %d",
 		       __func__, subsys, portid, subsysnum);
 		if (subsysnum == 0) {
 			ret = stop_port(port);
+			put_port(port);
 			if (ret) {
 				fuse_err("%s: failed to stop port %d",
 				   __func__, portid);
 				etcd_add_subsys_port(subsys, portid);
 				goto out_free;
 			}
-		}
+		} else
+			put_port(port);
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
