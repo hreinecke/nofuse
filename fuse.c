@@ -638,7 +638,7 @@ static int host_mkdir(char *s)
 	p = strtok_r(NULL, "/", &s);
 	if (p)
 		return -ENOENT;
-	return add_host(hostnqn);
+	return configdb_add_host(hostnqn);
 }
 
 static int nofuse_mkdir(const char *path, mode_t mode)
@@ -757,7 +757,7 @@ static int host_rmdir(char *s)
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	return del_host(hostnqn);
+	return configdb_del_host(hostnqn);
 }
 
 static int nofuse_rmdir(const char *path)

@@ -262,9 +262,6 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
 int default_subsys_type(const char *nqn);
 
-int add_host(const char *nqn);
-int del_host(const char *nqn);
-
 int add_subsys(const char *nqn, int type);
 int del_subsys(const char *nqn);
 

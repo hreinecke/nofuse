@@ -50,24 +50,6 @@ char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
 extern int run_fuse(struct fuse_args *args);
 
-int add_host(const char *nqn)
-{
-#ifdef NOFUSE_ETCD
-	return etcd_add_host(nqn);
-#else
-	return configdb_add_host(nqn);
-#endif
-}
-
-int del_host(const char *nqn)
-{
-#ifdef NOFUSE_ETCD
-	return etcd_del_host(nqn);
-#else
-	return configdb_del_host(nqn);
-#endif
-}
-
 int default_subsys_type(const char *nqn)
 {
 	if (!strcmp(nqn, discovery_nqn))
