@@ -58,7 +58,7 @@ int default_subsys_type(const char *nqn)
 		return NVME_NQN_NVM;
 }
 
-int add_subsys(const char *subsysnqn, int type)
+static int add_subsys(const char *subsysnqn, int type)
 {
 	int ret;
 
@@ -68,15 +68,6 @@ int add_subsys(const char *subsysnqn, int type)
 	ret = configdb_add_subsys(subsysnqn, type);
 #endif
 	return ret;
-}
-
-int del_subsys(const char *subsysnqn)
-{
-#ifdef NOFUSE_ETCD
-	return etcd_del_subsys(subsysnqn);
-#else
-	return configdb_del_subsys(subsysnqn);
-#endif
 }
 
 static int init_subsys(struct nofuse_context *ctx)

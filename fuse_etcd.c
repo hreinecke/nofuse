@@ -638,12 +638,17 @@ static int subsys_mkdir(char *s)
 		return -ENOENT;
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
-		int type = default_subsys_type(subsysnqn);
+		char nqn[MAX_NQN_SIZE];
+		int type = NVME_NQN_NVM, ret;
+
+		ret = etcd_get_discovery_nqn(nqn);
+		if (!ret && !strcmp(nqn, subsysnqn))
+			type = NVME_NQN_CUR;
 
 		printf("creating %s subsys %s\n",
 		       type == NVME_NQN_NVM ? "nvm" : "cur",
 		       subsysnqn);
-		return add_subsys(subsysnqn, type);
+		return etcd_add_subsys(subsysnqn, type);
 	}
 
 	if (strcmp(p, "namespaces"))
@@ -764,7 +769,7 @@ static int subsys_rmdir(char *s)
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		printf("deleting subsys %s\n", subsysnqn);
-		return del_subsys(subsysnqn);
+		return etcd_del_subsys(subsysnqn);
 	}
 	if (strcmp(p, "namespaces"))
 		return -ENOENT;

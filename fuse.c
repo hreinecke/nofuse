@@ -729,7 +729,7 @@ static int subsys_rmdir(char *s)
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		printf("deleting subsys %s\n", subsysnqn);
-		return del_subsys(subsysnqn);
+		return configdb_del_subsys(subsysnqn);
 	}
 	if (strcmp(p, "namespaces"))
 		return -ENOENT;
