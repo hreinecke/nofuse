@@ -73,8 +73,9 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("DATA:\n%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s: DATA:\n%s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
 	if (!kvs_obj)
 		goto out;
@@ -93,8 +94,8 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		key_str = __b64dec(json_object_get_string(key_obj));
 		value_str = __b64dec(json_object_get_string(value_obj));
 		if (etcd_debug)
-			fprintf(stderr, "key '%s', val '%s'\n",
-				key_str, value_str);
+			fprintf(stderr, "%s: key '%s', val '%s'\n",
+				__func__, key_str, value_str);
 		json_object_object_add(ctx->resp_obj, key_str,
 				       json_object_new_string(value_str));
 		free(value_str);
@@ -171,8 +172,9 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 	}
 
 	if (etcd_debug)
-		printf("POST:\n%s\n", json_object_to_json_string_ext(post_obj,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s: POST:\n%s\n", __func__,
+		       json_object_to_json_string_ext(post_obj,
+						      JSON_C_TO_STRING_PRETTY));
 
 	if (post_obj) {
 		post_data = json_object_to_json_string(post_obj);
@@ -219,8 +221,9 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		json_object_object_add(ctx->resp_obj, "errno",
 				       json_object_new_int(EBADMSG));
 	} else if (etcd_debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s: %s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 	json_object_put(etcd_resp);
 	return size * nmemb;
 }
@@ -418,8 +421,9 @@ etcd_parse_revision_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("DATA:\n%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s: DATA:\n%s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 	hdr_obj = json_object_object_get(etcd_resp, "header");
 	if (!hdr_obj) {
 		char *err_str = "invalid response, 'header' not found";
@@ -515,8 +519,9 @@ etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 	}
 	if (etcd_debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-				JSON_C_TO_STRING_PRETTY));
+		printf("%s: %s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 
 	deleted_obj = json_object_object_get(etcd_resp, "deleted");
 	if (!deleted_obj) {
@@ -611,8 +616,9 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s: %s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
 		char *err_str = "invalid response, 'result' not found";
@@ -729,8 +735,9 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 	}
 	if (etcd_debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s: %s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 	if (ctx->ttl == -1) {
 		struct json_object *error_obj;
 
