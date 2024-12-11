@@ -258,7 +258,8 @@ static int tcp_init_listener(struct nofuse_port *port)
 	sa_family_t adrfam = AF_INET;
 
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_port_attr(port->portid, "addr_traddr", traddr);
+	ret = etcd_get_port_attr(port->ctx, port->portid,
+				 "addr_traddr", traddr);
 #else
 	ret = configdb_get_port_attr(port->portid, "addr_traddr", traddr);
 #endif
@@ -267,7 +268,8 @@ static int tcp_init_listener(struct nofuse_port *port)
 		return ret;
 	}
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
+	ret = etcd_get_port_attr(port->ctx, port->portid,
+				 "addr_trsvcid", trsvcid);
 #else
 	ret = configdb_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
 #endif
@@ -276,7 +278,8 @@ static int tcp_init_listener(struct nofuse_port *port)
 		return ret;
 	}
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
+	ret = etcd_get_port_attr(port->ctx, port->portid,
+				 "addr_adrfam", adrfam_str);
 #else
 	ret = configdb_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
 #endif

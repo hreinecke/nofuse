@@ -64,7 +64,7 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			return size * nmemb;
 		}
 		if (etcd_debug)
-			printf("ERROR:\n%s\n", ptr);
+			printf("%s: ERROR:\n%s\n", __func__, ptr);
 
 		json_object_object_add(ctx->resp_obj, "error",
 				       json_object_new_string(ptr));
@@ -409,7 +409,7 @@ etcd_parse_revision_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			return size * nmemb;
 		}
 		if (etcd_debug)
-			printf("ERROR:\n%s\n", ptr);
+			printf("%s: ERROR:\n%s\n", __func__, ptr);
 
 		json_object_object_add(ctx->resp_obj, "error",
 				       json_object_new_string(ptr));
@@ -1023,7 +1023,7 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			return size * nmemb;
 		}
 		if (etcd_debug)
-			printf("ERROR:\n%s\n", ptr);
+			printf("%s: ERROR:\n%s\n", __func__, ptr);
 
 		json_object_object_add(ctx->resp_obj, "error",
 				       json_object_new_string(ptr));
@@ -1108,7 +1108,7 @@ int etcd_member_id(struct etcd_ctx *ctx)
 	return ret;
 }
 
-struct etcd_ctx *etcd_init(void)
+struct etcd_ctx *etcd_init(const char *prefix)
 {
 	struct etcd_ctx *ctx;
 	int ret;
@@ -1122,12 +1122,14 @@ struct etcd_ctx *etcd_init(void)
 	ctx->host = default_etcd_host;
 	ctx->proto = default_etcd_proto;
 	ctx->port = default_etcd_port;
+	ctx->prefix = strdup(prefix);
 	ctx->lease = -1;
 	ctx->ttl = 240;
 
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
 		errno = -ret;
+		free(ctx->prefix);
 		free(ctx);
 		return NULL;
 	}
@@ -1158,5 +1160,6 @@ void etcd_exit(struct etcd_ctx *ctx)
 	if (!ctx)
 		return;
 	json_object_put(ctx->resp_obj);
+	free(ctx->prefix);
 	free(ctx);
 }

@@ -120,20 +120,20 @@ int tls_handshake(struct nofuse_queue *ep)
 	long ssl_opts;
 	int ret, ssl_err;
 
-	ep->ctx = SSL_CTX_new(TLS_server_method());
-	if (!ep->ctx) {
+	ep->ssl_ctx = SSL_CTX_new(TLS_server_method());
+	if (!ep->ssl_ctx) {
 		ret = -ENOMEM;
 		goto out_bio_free;
 	}
 
-	SSL_CTX_set_psk_server_callback(ep->ctx, NULL);
-	SSL_CTX_set_psk_find_session_callback(ep->ctx, psk_find_session_cb);
-	ssl_opts = SSL_CTX_get_options(ep->ctx);
+	SSL_CTX_set_psk_server_callback(ep->ssl_ctx, NULL);
+	SSL_CTX_set_psk_find_session_callback(ep->ssl_ctx, psk_find_session_cb);
+	ssl_opts = SSL_CTX_get_options(ep->ssl_ctx);
 	ssl_opts |= SSL_OP_ALLOW_NO_DHE_KEX;
-	SSL_CTX_set_options(ep->ctx, ssl_opts);
-	SSL_CTX_set_num_tickets(ep->ctx, 0);
+	SSL_CTX_set_options(ep->ssl_ctx, ssl_opts);
+	SSL_CTX_set_num_tickets(ep->ssl_ctx, 0);
 
-	ep->ssl = SSL_new(ep->ctx);
+	ep->ssl = SSL_new(ep->ssl_ctx);
 	if (!ep->ssl) {
 		fprintf(stderr, "ssl initialisation failed\n");
 		ret = -ENOPROTOOPT;
@@ -201,8 +201,8 @@ retry_handshake:
 	SSL_free(ep->ssl);
 	ep->ssl = NULL;
 out_ctx_free:
-	SSL_CTX_free(ep->ctx);
-	ep->ctx = NULL;
+	SSL_CTX_free(ep->ssl_ctx);
+	ep->ssl_ctx = NULL;
 out_bio_free:
 	return ret;
 }
@@ -301,7 +301,7 @@ void tls_free_queue(struct nofuse_queue *ep)
 	if (ep->ssl)
 		SSL_free(ep->ssl);
 	ep->ssl = NULL;
-	if (ep->ctx)
-		SSL_CTX_free(ep->ctx);
-	ep->ctx = NULL;
+	if (ep->ssl_ctx)
+		SSL_CTX_free(ep->ssl_ctx);
+	ep->ssl_ctx = NULL;
 }

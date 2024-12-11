@@ -17,7 +17,7 @@ enum kv_key_op {
 };
 
 struct etcd_ctx {
-	const char *prefix;
+	char *prefix;
 	char *proto;
 	char *host;
 	char *node;
@@ -31,7 +31,7 @@ struct etcd_ctx {
 			 char *, const char *);
 };
 
-struct etcd_ctx *etcd_init(void);
+struct etcd_ctx *etcd_init(const char *prefix);
 struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);
 int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,

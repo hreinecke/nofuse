@@ -124,7 +124,7 @@ struct nofuse_queue {
 	gnutls_session_t session;
 	gnutls_psk_server_credentials_t psk_cred;
 #else
-	SSL_CTX *ctx;
+	SSL_CTX *ssl_ctx;
 	SSL *ssl;
 #endif
 };
@@ -160,6 +160,7 @@ struct nofuse_namespace {
 
 struct nofuse_port {
 	struct linked_list node;
+	struct etcd_ctx *ctx;
 	pthread_t pthread;
 	unsigned int ref;
 	struct xp_ops *ops;
@@ -262,21 +263,20 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
 int default_subsys_type(const char *nqn);
 
-int add_port(unsigned int id, const char *ifaddr, int portnum);
+int add_port(struct etcd_ctx *ctx, unsigned int id,
+	     const char *ifaddr, int portnum);
 struct nofuse_port *find_port(unsigned int id);
 int del_port(struct nofuse_port *port);
-int find_and_add_port(unsigned int portid);
+int find_and_add_port(struct etcd_ctx *ctx, unsigned int portid);
 int find_and_del_port(unsigned int portid);
 void put_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
-int add_ana_group(int portid, int ana_grpid, int ana_state);
-int del_ana_group(int portid, int ana_grpid);
 
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid);
-int add_namespace(const char *subsysnqn, u32 nsid);
-int del_namespace(const char *subsysnqn, u32 nsid);
-int enable_namespace(const char *subsysnqn, u32 nsid);
-int disable_namespace(const char *subsysnqn, u32 nsid);
+int add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
+int del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
+int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
+int disable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
 
 #endif

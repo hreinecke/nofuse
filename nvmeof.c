@@ -377,8 +377,8 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_namespace_anagrp(ep->ctrl->subsysnqn, nsid,
-					&anagrp);
+	ret = etcd_get_namespace_anagrp(ep->port->ctx, ep->ctrl->subsysnqn,
+					nsid, &anagrp);
 #else
 	ret = configdb_get_namespace_anagrp(ep->ctrl->subsysnqn, nsid,
 					    &anagrp);

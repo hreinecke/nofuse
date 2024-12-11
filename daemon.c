@@ -26,6 +26,7 @@
 #include "ops.h"
 #include "tls.h"
 #ifdef NOFUSE_ETCD
+#include "etcd_client.h"
 #include "etcd_backend.h"
 #else
 #include "configdb.h"
@@ -38,17 +39,17 @@ bool ep_debug;
 bool port_debug;
 
 struct nofuse_context {
+	struct etcd_ctx *etcd;
 	const char *subsysnqn;
 	const char *traddr;
 	const char *dbname;
-	const char *prefix;
 	int debug;
 	int help;
 };
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
-extern int run_fuse(struct fuse_args *args);
+extern int run_fuse(struct fuse_args *args, struct etcd_ctx *ctx);
 
 int default_subsys_type(const char *nqn)
 {
@@ -58,14 +59,14 @@ int default_subsys_type(const char *nqn)
 		return NVME_NQN_NVM;
 }
 
-static int add_subsys(const char *subsysnqn, int type)
+static int add_subsys(struct nofuse_context *ctx, int type)
 {
 	int ret;
 
 #ifdef NOFUSE_ETCD
-	ret = etcd_add_subsys(subsysnqn, type);
+	ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn, type);
 #else
-	ret = configdb_add_subsys(subsysnqn, type);
+	ret = configdb_add_subsys(ctx->subsysnqn, type);
 #endif
 	return ret;
 }
@@ -74,15 +75,15 @@ static int init_subsys(struct nofuse_context *ctx)
 {
 	int ret;
 
-	ret = etcd_set_discovery_nqn(ctx->subsysnqn);
+	ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn);
 	if (ret)
 		return ret;
 
-	ret = add_subsys(ctx->subsysnqn, NVME_NQN_CUR);
+	ret = add_subsys(ctx, NVME_NQN_CUR);
 	if (ret)
 		return ret;
 
-	etcd_add_subsys_port(ctx->subsysnqn, 1);
+	etcd_add_subsys_port(ctx->etcd, ctx->subsysnqn, 1);
 
 	return 0;
 }
@@ -95,9 +96,7 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--help", help),
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
-#ifdef NOFUSE_ETCD
-	OPTION("--prefix=%s", prefix),
-#else
+#ifndef NOFUSE_ETCD
 	OPTION("--dbname=%s", dbname),
 #endif
 	FUSE_OPT_END,
@@ -142,16 +141,16 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = etcd_add_port("nofuse", 1, 8009);
+	ret = etcd_add_port(ctx->etcd, "nofuse", 1, 8009);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add port for %s\n",
 			ctx->traddr);
 		return 1;
 	}
-	ret = etcd_add_ana_group(1, 1, NVME_ANA_OPTIMIZED);
+	ret = etcd_add_ana_group(ctx->etcd, 1, 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add ana group to port\n");
-		etcd_del_port(1);
+		etcd_del_port(ctx->etcd, 1);
 		return 1;
 	}
 
@@ -171,9 +170,7 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
-#ifdef NOFUSE_ETCD
-	ctx->prefix = strdup("nofuse");
-#else
+#ifndef NOFUSE_ETCD
 	ctx->dbname = strdup("nofuse.sqlite");
 #endif
 
@@ -181,7 +178,8 @@ int main(int argc, char *argv[])
 		return 1;
 
 #ifdef NOFUSE_ETCD
-	ret = etcd_backend_init(ctx->prefix);
+	ctx->etcd = etcd_init("nofuse");
+	ret = etcd_lease_grant(ctx->etcd);
 #else
 	ret = configdb_open(ctx->dbname);
 #endif
@@ -194,13 +192,14 @@ int main(int argc, char *argv[])
 
 	stopped = 0;
 
-	run_fuse(&args);
+	run_fuse(&args, ctx->etcd);
 
 	stopped = 1;
 
 out_close:
 #ifdef NOFUSE_ETCD
-	etcd_backend_exit();
+	etcd_lease_revoke(ctx->etcd);
+	etcd_exit(ctx->etcd);
 #else
 	configdb_close(ctx->dbname);
 #endif

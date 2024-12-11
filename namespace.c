@@ -22,7 +22,7 @@ struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid)
 	return NULL;
 }
 
-int add_namespace(const char *subsysnqn, u32 nsid)
+int add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret;
@@ -35,7 +35,7 @@ int add_namespace(const char *subsysnqn, u32 nsid)
 	strcpy(ns->subsysnqn, subsysnqn);
 	ns->nsid = nsid;
 #ifdef NOFUSE_ETCD
-	ret = etcd_add_namespace(subsysnqn, ns->nsid);
+	ret = etcd_add_namespace(ctx, subsysnqn, ns->nsid);
 #else
 	ret = configdb_add_namespace(subsysnqn, ns->nsid);
 #endif
@@ -51,7 +51,7 @@ int add_namespace(const char *subsysnqn, u32 nsid)
 	return 0;
 }
 
-int enable_namespace(const char *subsysnqn, u32 nsid)
+int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	char path[PATH_MAX + 1], *eptr = NULL;
@@ -64,7 +64,8 @@ int enable_namespace(const char *subsysnqn, u32 nsid)
 		return -ENOENT;
 
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_namespace_attr(subsysnqn, nsid, "device_path", path);
+	ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
+				      "device_path", path);
 #else
 	ret = configdb_get_namespace_attr(subsysnqn, nsid, "device_path", path);
 #endif
@@ -104,7 +105,7 @@ int enable_namespace(const char *subsysnqn, u32 nsid)
 		ns->ops = uring_register_ops();
 	}
 #ifdef NOFUSE_ETCD
-	ret = etcd_set_namespace_attr(subsysnqn, nsid,
+	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_enable", "1");
 #else
 	ret = configdb_set_namespace_attr(subsysnqn, nsid,
@@ -126,7 +127,7 @@ int enable_namespace(const char *subsysnqn, u32 nsid)
 	return ret;
 }
 
-int disable_namespace(const char *subsysnqn, u32 nsid)
+int disable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret;
@@ -137,7 +138,7 @@ int disable_namespace(const char *subsysnqn, u32 nsid)
 	if (!ns)
 		return -ENOENT;
 #ifdef NOFUSE_ETCD
-	ret = etcd_set_namespace_attr(subsysnqn, nsid,
+	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_enable", "0");
 #else
 	ret = configdb_set_namespace_attr(subsysnqn, nsid,
@@ -156,7 +157,7 @@ int disable_namespace(const char *subsysnqn, u32 nsid)
 	return 0;
 }
 
-int del_namespace(const char *subsysnqn, u32 nsid)
+int del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 {
 	struct nofuse_namespace *ns;
 	int ret = -ENOENT;
@@ -167,7 +168,7 @@ int del_namespace(const char *subsysnqn, u32 nsid)
 	printf("%s: subsys %s nsid %d\n",
 	       __func__, subsysnqn, nsid);
 #ifdef NOFUSE_ETCD
-	ret = etcd_del_namespace(subsysnqn, ns->nsid);
+	ret = etcd_del_namespace(ctx, subsysnqn, ns->nsid);
 #else
 	ret = configdb_del_namespace(subsysnqn, ns->nsid);
 #endif

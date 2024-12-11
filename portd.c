@@ -136,24 +136,22 @@ static void parse_ports(struct etcd_ctx *ctx,
 		ret = parse_port_key(path, &portid, &attr, &subsys, &ana_grpid);
 		if (ret < 0)
 			continue;
-		port = find_port(portid);
 		if (subsys) {
+			port = find_port(portid);
 			if (!port)
 				continue;
 			printf("start port %d subsys %s\n",
 			       portid, subsys);
 			start_port(port);
+			put_port(port);
 		} else if (ana_grpid)
 			printf("add port %d ana group %d\n",
 			       portid, ana_grpid);
 		else {
-			if (!port)
-				find_and_add_port(portid);
+			find_and_add_port(ctx, portid);
 			printf("add port %d attr %s\n",
 			       portid, attr);
 		}
-		if (port)
-			put_port(port);
 		free(path);
 	}
 }
@@ -197,7 +195,6 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 	memset(ctx, 0, sizeof(struct etcd_ctx));
-	ctx->prefix = default_prefix;
 	ctx->host = default_host;
 	ctx->proto = default_proto;
 	ctx->port = default_port;
@@ -207,7 +204,7 @@ int main(int argc, char **argv)
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'e':
-			ctx->prefix = optarg;
+			ctx->prefix = strdup(optarg);
 			break;
 		case 'h':
 			ctx->host = optarg;
@@ -220,12 +217,17 @@ int main(int argc, char **argv)
 			break;
 		case 'v':
 			etcd_debug = true;
+			port_debug = true;
+			ep_debug = true;
 			break;
 		case '?':
 			usage();
 			return 0;
 		}
 	}
+
+	if (!ctx->prefix)
+		ctx->prefix = strdup(default_prefix);
 
 	asprintf(&prefix, "%s/ports", ctx->prefix);
 	printf("Using key %s\n", prefix);

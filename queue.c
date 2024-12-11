@@ -33,7 +33,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 
 	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME)) {
 #ifdef NOFUSE_ETCD
-		ret = etcd_get_discovery_nqn(nqn);
+		ret = etcd_get_discovery_nqn(ep->port->ctx, nqn);
 #else
 		ret = configdb_get_discovery_nqn(nqn);
 #endif
@@ -97,7 +97,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_cntlid(nqn, &cntlid);
+	ret = etcd_get_cntlid(ep->port->ctx, nqn, &cntlid);
 #else
 	ret = configdb_get_cntlid(nqn, &cntlid);
 #endif
@@ -115,7 +115,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	}
 #endif
 #ifdef NOFUSE_ETCD
-	ret = etcd_get_subsys_attr(nqn, "attr_gid_max", value);
+	ret = etcd_get_subsys_attr(ep->port->ctx, nqn, "attr_gid_max", value);
 #else
 	ret = configdb_get_subsys_attr(nqn, "attr_qid_max", value);
 #endif

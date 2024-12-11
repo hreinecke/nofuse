@@ -15,9 +15,7 @@ struct key_value_template {
 	const char *value;
 };
 
-static struct etcd_ctx *ctx;
-
-int etcd_set_discovery_nqn(const char *buf)
+int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 {
 	char *key;
 	int ret;
@@ -31,7 +29,7 @@ int etcd_set_discovery_nqn(const char *buf)
 	return ret;
 }
 
-int etcd_get_discovery_nqn(char *buf)
+int etcd_get_discovery_nqn(struct etcd_ctx *ctx, char *buf)
 {
 	char *key;
 	int ret;
@@ -45,7 +43,7 @@ int etcd_get_discovery_nqn(char *buf)
 	return ret;
 }
 
-static int _count_key_range(char *key, int *num)
+static int _count_key_range(struct etcd_ctx *ctx, char *key, int *num)
 {
 	struct json_object *resp;
 	struct json_object_iterator its, ite;
@@ -70,7 +68,7 @@ static int _count_key_range(char *key, int *num)
 	return 0;
 }
 
-int etcd_count_root(const char *root, int *nlinks)
+int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 {
 	struct json_object *resp;
 	struct json_object_iterator its, ite;
@@ -115,7 +113,8 @@ int etcd_count_root(const char *root, int *nlinks)
 	return 0;
 }
 
-int etcd_fill_root(const char *root, void *buf, fuse_fill_dir_t filler)
+int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
+		   void *buf, fuse_fill_dir_t filler)
 {
 	struct json_object *resp;
 	char *key, *val, *attr, *p;
@@ -165,12 +164,13 @@ static struct key_value_template host_template[NUM_HOST_ATTRS] = {
 	{ .key = "dhchap_ctrl_key", .value = "" },
 };
 
-int etcd_fill_host_dir(void *buf, fuse_fill_dir_t filler)
+int etcd_fill_host_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
 {
-	return etcd_fill_root("hosts", buf, filler);
+	return etcd_fill_root(ctx, "hosts", buf, filler);
 }
 
-int etcd_fill_host(const char *nqn, void *buf, fuse_fill_dir_t filler)
+int etcd_fill_host(struct etcd_ctx *ctx, const char *nqn,
+		   void *buf, fuse_fill_dir_t filler)
 {
 	int i;
 
@@ -182,7 +182,7 @@ int etcd_fill_host(const char *nqn, void *buf, fuse_fill_dir_t filler)
 	return 0;
 }
 
-int etcd_add_host(const char *nqn)
+int etcd_add_host(struct etcd_ctx *ctx, const char *nqn)
 {
 	int ret, i;
 
@@ -202,7 +202,7 @@ int etcd_add_host(const char *nqn)
 	return 0;
 }
 
-int etcd_test_host(const char *nqn)
+int etcd_test_host(struct etcd_ctx *ctx, const char *nqn)
 {
 	char *key;
 	int ret;
@@ -217,7 +217,8 @@ int etcd_test_host(const char *nqn)
 	return ret;
 }
 
-int etcd_get_host_attr(const char *nqn, const char *attr, char *value)
+int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
+		       const char *attr, char *value)
 {
 	char *key;
 	int ret;
@@ -245,7 +246,7 @@ int etcd_get_host_attr(const char *nqn, const char *attr, char *value)
 	return ret;
 }
 
-int etcd_del_host(const char *nqn)
+int etcd_del_host(struct etcd_ctx *ctx, const char *nqn)
 {
 	char *key;
 	int ret;
@@ -271,12 +272,13 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_origin", .value = "" },
 };
 
-int etcd_fill_port_dir(void *buf, fuse_fill_dir_t filler)
+int etcd_fill_port_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
 {
-	return etcd_fill_root("ports", buf, filler);
+	return etcd_fill_root(ctx, "ports", buf, filler);
 }
 
-int etcd_fill_port(unsigned int id, void *buf, fuse_fill_dir_t filler)
+int etcd_fill_port(struct etcd_ctx *ctx, unsigned int id,
+		   void *buf, fuse_fill_dir_t filler)
 {
 	int i;
 
@@ -291,7 +293,8 @@ int etcd_fill_port(unsigned int id, void *buf, fuse_fill_dir_t filler)
 	return 0;
 }
 
-int etcd_add_port(const char *origin, unsigned int id, unsigned int port)
+int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
+		  unsigned int id, unsigned int port)
 {
 	int ret, i;
 
@@ -324,7 +327,7 @@ int etcd_add_port(const char *origin, unsigned int id, unsigned int port)
 	return 0;
 }
 
-int etcd_test_port(unsigned int id)
+int etcd_test_port(struct etcd_ctx *ctx, unsigned int id)
 {
 	char *key;
 	int ret;
@@ -338,7 +341,8 @@ int etcd_test_port(unsigned int id)
 	return ret;
 }
 
-int etcd_set_port_attr(unsigned int id, const char *attr, const char *value)
+int etcd_set_port_attr(struct etcd_ctx *ctx, unsigned int id,
+		       const char *attr, const char *value)
 {
 	char *key;
 	int ret = -ENOENT, i;
@@ -365,7 +369,8 @@ int etcd_set_port_attr(unsigned int id, const char *attr, const char *value)
 	return 0;
 }
 
-int etcd_get_port_attr(unsigned int id, const char *attr, char *value)
+int etcd_get_port_attr(struct etcd_ctx *ctx, unsigned int id,
+		       const char *attr, char *value)
 {
 	char *key;
 	int ret;
@@ -392,7 +397,7 @@ int etcd_get_port_attr(unsigned int id, const char *attr, char *value)
 	return ret;
 }
 
-int etcd_del_port(unsigned int id)
+int etcd_del_port(struct etcd_ctx *ctx, unsigned int id)
 {
 	char *key;
 	int ret;
@@ -406,7 +411,7 @@ int etcd_del_port(unsigned int id)
 	return ret;
 }
 
-int etcd_count_ana_groups(int id, int *ngrps)
+int etcd_count_ana_groups(struct etcd_ctx *ctx, int id, int *ngrps)
 {
 	char *key;
 	int ret;
@@ -416,12 +421,13 @@ int etcd_count_ana_groups(int id, int *ngrps)
 	if (ret < 0)
 		return ret;
 
-	ret = _count_key_range(key, ngrps);
+	ret = _count_key_range(ctx, key, ngrps);
 	free(key);
 	return ret;
 }
 
-int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler)
+int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
+			 void *buf, fuse_fill_dir_t filler)
 {
 	struct json_object *resp;
 	char *key, *val, *p;
@@ -457,7 +463,8 @@ int etcd_fill_ana_groups(const char *port, void *buf, fuse_fill_dir_t filler)
 	return 0;
 }
 
-int etcd_add_ana_group(int portid, int ana_grpid, int ana_state)
+int etcd_add_ana_group(struct etcd_ctx *ctx, int portid,
+		       int ana_grpid, int ana_state)
 {
 	char *key, *value;
 	int ret;
@@ -490,7 +497,8 @@ int etcd_add_ana_group(int portid, int ana_grpid, int ana_state)
 	return ret;
 }
 
-int etcd_get_ana_group(int portid, const char *ana_grp, char *ana_state)
+int etcd_get_ana_group(struct etcd_ctx *ctx, int portid,
+		       const char *ana_grp, char *ana_state)
 {
 	int ret = -ENOENT;
 	char *key;
@@ -504,7 +512,8 @@ int etcd_get_ana_group(int portid, const char *ana_grp, char *ana_state)
 	return ret;
 }
 
-int etcd_set_ana_group(int portid, const char *ana_grp, char *ana_state)
+int etcd_set_ana_group(struct etcd_ctx *ctx, int portid,
+		       const char *ana_grp, char *ana_state)
 {
 	char *key;
 	int ret;
@@ -526,7 +535,7 @@ int etcd_set_ana_group(int portid, const char *ana_grp, char *ana_state)
 	return ret;
 }
 
-int etcd_del_ana_group(int portid, int ana_grpid)
+int etcd_del_ana_group(struct etcd_ctx *ctx, int portid, int ana_grpid)
 {
 	char *key;
 	int ret;
@@ -553,12 +562,14 @@ static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_pi_enable", .value = "0" },
 };
 
-int etcd_fill_subsys_dir(void *buf, fuse_fill_dir_t filler)
+int etcd_fill_subsys_dir(struct etcd_ctx *ctx, void *buf,
+			 fuse_fill_dir_t filler)
 {
-	return etcd_fill_root("subsystems", buf, filler);
+	return etcd_fill_root(ctx, "subsystems", buf, filler);
 }
 
-int etcd_fill_subsys(const char *subsys, void *buf, fuse_fill_dir_t filler)
+int etcd_fill_subsys(struct etcd_ctx *ctx, const char *subsys,
+		     void *buf, fuse_fill_dir_t filler)
 {
 	int i;
 
@@ -572,7 +583,7 @@ int etcd_fill_subsys(const char *subsys, void *buf, fuse_fill_dir_t filler)
 	return 0;
 }
 
-int etcd_add_subsys(const char *nqn, int type)
+int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
 {
 	int ret, i;
 
@@ -600,7 +611,7 @@ int etcd_add_subsys(const char *nqn, int type)
 	return 0;
 }
 
-int etcd_test_subsys(const char *nqn)
+int etcd_test_subsys(struct etcd_ctx *ctx, const char *nqn)
 {
 	char *key;
 	int ret;
@@ -614,8 +625,8 @@ int etcd_test_subsys(const char *nqn)
 	return ret;
 }
 
-int etcd_set_subsys_attr(const char *subsysnqn, const char *attr,
-			 const char *value)
+int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
+			 const char *attr, const char *value)
 {
 	char *key;
 	int ret = -ENOENT, i;
@@ -642,7 +653,8 @@ int etcd_set_subsys_attr(const char *subsysnqn, const char *attr,
 	return 0;
 }
 
-int etcd_get_subsys_attr(const char *nqn, const char *attr, char *value)
+int etcd_get_subsys_attr(struct etcd_ctx *ctx, const char *nqn,
+			 const char *attr, char *value)
 {
 	char *key;
 	int ret;
@@ -669,7 +681,7 @@ int etcd_get_subsys_attr(const char *nqn, const char *attr, char *value)
 	return ret;
 }
 
-int etcd_del_subsys(const char *nqn)
+int etcd_del_subsys(struct etcd_ctx *ctx, const char *nqn)
 {
 	char *key;
 	int ret;
@@ -683,7 +695,8 @@ int etcd_del_subsys(const char *nqn)
 	return ret;
 }
 
-int etcd_fill_subsys_port(int id, void *buf, fuse_fill_dir_t filler)
+int etcd_fill_subsys_port(struct etcd_ctx *ctx, int id,
+			  void *buf, fuse_fill_dir_t filler)
 {
 	struct json_object *resp;
 	char *key, *val;
@@ -714,7 +727,7 @@ int etcd_fill_subsys_port(int id, void *buf, fuse_fill_dir_t filler)
 	return 0;
 }
 
-int etcd_add_subsys_port(const char *subsysnqn, int id)
+int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn, int id)
 {
 	char *key, *value;
 	int ret;
@@ -736,7 +749,8 @@ int etcd_add_subsys_port(const char *subsysnqn, int id)
 	return 0;
 }
 
-int etcd_get_subsys_port(const char *subsysnqn, int id, char *value)
+int etcd_get_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
+			 int id, char *value)
 {
 	char *key;
 	int ret;
@@ -750,7 +764,7 @@ int etcd_get_subsys_port(const char *subsysnqn, int id, char *value)
 	return ret;
 }
 
-int etcd_del_subsys_port(const char *subsysnqn, int id)
+int etcd_del_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn, int id)
 {
 	char *key;
 	int ret;
@@ -764,8 +778,8 @@ int etcd_del_subsys_port(const char *subsysnqn, int id)
 	return ret;
 }
 
-int etcd_fill_host_subsys(const char *subsysnqn, void *buf,
-			  fuse_fill_dir_t filler)
+int etcd_fill_host_subsys(struct etcd_ctx *ctx, const char *subsysnqn,
+			  void *buf, fuse_fill_dir_t filler)
 {
 	struct json_object *resp;
 	char *key, *val;
@@ -796,7 +810,8 @@ int etcd_fill_host_subsys(const char *subsysnqn, void *buf,
 	return 0;
 }
 
-int etcd_count_host_subsys(const char *subsysnqn, int *nhosts)
+int etcd_count_host_subsys(struct etcd_ctx *ctx, const char *subsysnqn,
+			   int *nhosts)
 {
 	char *key;
 	int ret;
@@ -806,12 +821,13 @@ int etcd_count_host_subsys(const char *subsysnqn, int *nhosts)
 	if (ret < 0)
 		return ret;
 
-	ret = _count_key_range(key, nhosts);
+	ret = _count_key_range(ctx, key, nhosts);
 	free(key);
 	return ret;
 }
 
-int etcd_add_host_subsys(const char *hostnqn, const char *subsysnqn)
+int etcd_add_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
+			 const char *subsysnqn)
 {
 	char *key, *value;
 	int ret;
@@ -833,8 +849,8 @@ int etcd_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 	return 0;
 }
 
-int etcd_get_host_subsys(const char *hostnqn, const char *subsysnqn,
-			 char *value)
+int etcd_get_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
+			 const char *subsysnqn, char *value)
 {
 	char *key;
 	int ret;
@@ -848,7 +864,8 @@ int etcd_get_host_subsys(const char *hostnqn, const char *subsysnqn,
 	return ret;
 }
 
-int etcd_del_host_subsys(const char *hostnqn, const char *subsysnqn)
+int etcd_del_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
+			 const char *subsysnqn)
 {
 	char *key;
 	int ret;
@@ -873,7 +890,7 @@ static struct key_value_template ns_template[NUM_NS_ATTRS] = {
 	{ .key = "enable", .value = "0" },
 };
 
-int etcd_fill_namespace_dir(const char *subsysnqn,
+int etcd_fill_namespace_dir(struct etcd_ctx *ctx, const char *subsysnqn,
 			    void *buf, fuse_fill_dir_t filler)
 {
 	struct json_object *resp;
@@ -908,7 +925,7 @@ int etcd_fill_namespace_dir(const char *subsysnqn,
 	return 0;
 }
 
-int etcd_fill_namespace(const char *subsysnqn, int nsid,
+int etcd_fill_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid,
 			void *buf, fuse_fill_dir_t filler)
 {
 	int i;
@@ -921,7 +938,7 @@ int etcd_fill_namespace(const char *subsysnqn, int nsid,
 	return 0;
 }
 
-int etcd_count_namespaces(const char *subsysnqn, int *nns)
+int etcd_count_namespaces(struct etcd_ctx *ctx, const char *subsysnqn, int *nns)
 {
 	char *key;
 	int ret;
@@ -931,12 +948,12 @@ int etcd_count_namespaces(const char *subsysnqn, int *nns)
 	if (ret < 0)
 		return ret;
 
-	ret = _count_key_range(key, nns);
+	ret = _count_key_range(ctx, key, nns);
 	free(key);
 	return ret;
 }
 
-int etcd_add_namespace(const char *subsysnqn, int nsid)
+int etcd_add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 {
 	char *key;
 	int ret, i;
@@ -981,7 +998,7 @@ int etcd_add_namespace(const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int etcd_test_namespace(const char *subsysnqn, int nsid)
+int etcd_test_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 {
 	char *key;
 	int ret;
@@ -995,8 +1012,8 @@ int etcd_test_namespace(const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int etcd_set_namespace_attr(const char *subsysnqn, int nsid,
-			    const char *attr, const char *value)
+int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
+			    int nsid, const char *attr, const char *value)
 {
 	char *key;
 	int ret = -ENOENT, i;
@@ -1023,8 +1040,8 @@ int etcd_set_namespace_attr(const char *subsysnqn, int nsid,
 	return 0;
 }
 
-int etcd_get_namespace_attr(const char *subsysnqn, int nsid,
-			    const char *attr, char *value)
+int etcd_get_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
+			    int nsid, const char *attr, char *value)
 {
 	char *key;
 	int ret;
@@ -1051,7 +1068,8 @@ int etcd_get_namespace_attr(const char *subsysnqn, int nsid,
 	return ret;
 }
 
-int etcd_set_namespace_anagrp(const char *subsysnqn, int nsid, int ana_grpid)
+int etcd_set_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
+			      int nsid, int ana_grpid)
 {
 	char *key, *value;
 	int ret;
@@ -1073,7 +1091,8 @@ int etcd_set_namespace_anagrp(const char *subsysnqn, int nsid, int ana_grpid)
 	return 0;
 }
 
-int etcd_get_namespace_anagrp(const char *subsysnqn, int nsid, int *ana_grpid)
+int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
+			      int nsid, int *ana_grpid)
 {
 	struct json_object *resp;
 	int ret = -ENOENT;
@@ -1099,7 +1118,7 @@ int etcd_get_namespace_anagrp(const char *subsysnqn, int nsid, int *ana_grpid)
 	return ret;
 }
 
-int etcd_del_namespace(const char *subsysnqn, int nsid)
+int etcd_del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 {
 	char *key;
 	int ret;
@@ -1114,7 +1133,7 @@ int etcd_del_namespace(const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int etcd_count_subsys_port(int portid, int *nsubsys)
+int etcd_count_subsys_port(struct etcd_ctx *ctx, int portid, int *nsubsys)
 {
 	char *key;
 	int ret;
@@ -1124,12 +1143,12 @@ int etcd_count_subsys_port(int portid, int *nsubsys)
 	if (ret < 0)
 		return ret;
 
-	ret = _count_key_range(key, nsubsys);
+	ret = _count_key_range(ctx, key, nsubsys);
 	free(key);
 	return ret;
 }
 
-int etcd_get_cntlid(const char *subsysnqn, u16 *cntlid)
+int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid)
 {
 	return -ENOTSUP;
 }
@@ -1148,26 +1167,4 @@ int etcd_subsys_identify_ctrl(const char *subsysnqn,
 			      struct nvme_id_ctrl *id)
 {
 	return -ENOTSUP;
-}
-
-int etcd_backend_init(const char *prefix)
-{
-	int ret;
-
-	ctx = etcd_init();
-	if (!ctx)
-		return -errno;
-	ctx->prefix = prefix;
-	ret = etcd_lease_grant(ctx);
-	if (ret < 0) {
-		etcd_exit(ctx);
-		free(ctx);
-	}
-	return ret;
-}
-
-void etcd_backend_exit(void)
-{
-	etcd_lease_revoke(ctx);
-	etcd_exit(ctx);
 }

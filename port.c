@@ -24,25 +24,8 @@ pthread_mutex_t port_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void *run_port(void *arg);
 
-int add_ana_group(int portid, int ana_grpid, int ana_state)
-{
-#ifdef NOFUSE_ETCD
-	return etcd_add_ana_group(portid, ana_grpid, ana_state);
-#else
-	return configdb_add_ana_group(portid, ana_grpid, ana_state);
-#endif
-}
-
-int del_ana_group(int portid, int ana_grpid)
-{
-#ifdef NOFUSE_ETCD
-	return etcd_del_ana_group(portid, ana_grpid);
-#else
-	return configdb_del_ana_group(portid, ana_grpid);
-#endif
-}
-
-int add_port(unsigned int id, const char *ifaddr, int portnum)
+int add_port(struct etcd_ctx *ctx, unsigned int id,
+	     const char *ifaddr, int portnum)
 {
 	struct nofuse_port *port;
 
@@ -53,6 +36,7 @@ int add_port(unsigned int id, const char *ifaddr, int portnum)
 	port->ref  = 1;
 	port->listenfd = -1;
 	port->portid = id;
+	port->ctx = ctx;
 	pthread_mutex_init(&port->ep_mutex, NULL);
 	INIT_LINKED_LIST(&port->ep_list);
 	INIT_LINKED_LIST(&port->node);
@@ -142,7 +126,7 @@ int del_port(struct nofuse_port *port)
 	return 0;
 }
 
-int find_and_add_port(unsigned int portid)
+int find_and_add_port(struct etcd_ctx *ctx, unsigned int portid)
 {
 	struct nofuse_port *port;
 	int ret;
@@ -152,7 +136,7 @@ int find_and_add_port(unsigned int portid)
 	if (port)
 		ret = -EAGAIN;
 	else
-		ret = add_port(portid, NULL, 0);
+		ret = add_port(ctx, portid, NULL, 0);
 	pthread_mutex_unlock(&port_list_mutex);
 	return ret;
 }
