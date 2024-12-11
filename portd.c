@@ -26,7 +26,7 @@ static int default_port = 2379;
 int etcd_debug;
 
 static int parse_port_key(char *key, unsigned int *portid,
-			  char **attr, char **subsys, char **ana_grp)
+			  char **attr, char **subsys, unsigned int *ana_grpid)
 {
 	char *p, *s, *port, *eptr = NULL;
 	unsigned long id;
@@ -61,28 +61,27 @@ static int parse_port_key(char *key, unsigned int *portid,
 			return -EINVAL;
 		}
 		*attr = NULL;
-		printf("updating port %d subsys %s\n",
-		       *portid, *subsys);
 	} else if (!strcmp(*attr, "ana_groups")) {
-		*ana_grp = strtok_r(NULL, "/", &s);
-		if (!*ana_grp)
+		char *ana_grp;
+
+		ana_grp = strtok_r(NULL, "/", &s);
+		if (!ana_grp)
 			return -EINVAL;
+		id = strtoul(ana_grp, &eptr, 10);
+		if (id == ULONG_MAX || ana_grp == eptr)
+			return -EINVAL;
+		*ana_grpid = id;
 		p = strtok_r(NULL, "/", &s);
 		if (!p) {
-			*ana_grp = NULL;
+			*ana_grpid = 0;
 			return -EINVAL;
 		}
 		p = strtok_r(NULL, "/", &s);
 		if (p) {
-			*ana_grp = NULL;
+			*ana_grpid = 0;
 			return -EINVAL;
 		}
 		*attr = NULL;
-		printf("updating port %d ana group %s\n",
-		       *portid, *ana_grp);
-	} else {
-		printf("updating port %d attr %s\n",
-		       *portid, *attr);
 	}
 	return 0;
 }
@@ -90,8 +89,8 @@ static int parse_port_key(char *key, unsigned int *portid,
 static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 			 char *key, const char *value)
 {
-	char *key_save, *attr, *subsys, *ana_grp;
-	unsigned int portid;
+	char *key_save, *attr, *subsys = NULL;
+	unsigned int portid, ana_grpid = 0;
 	int ret;
 
 	key_save = strdup(key);
@@ -106,7 +105,7 @@ static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 		return;
 	}
 	ret = parse_port_key(key_save, &portid, &attr,
-			     &subsys, &ana_grp);
+			     &subsys, &ana_grpid);
 	if (!ret) {
 		printf("op %s port %d\n",
 		       op == KV_KEY_OP_ADD ? "add" : "delete", portid);
@@ -118,16 +117,25 @@ static void parse_ports(struct etcd_ctx *ctx,
 			struct json_object *resp_obj)
 {
 	json_object_object_foreach(resp_obj, key, val_obj) {
-		char *path, *attr, *subsys, *ana_grp;
-		unsigned int portid;
+		char *path, *attr = NULL, *subsys = NULL;
+		unsigned int portid, ana_grpid = 0;
 		int ret;
 
 		if (!json_object_is_type(val_obj, json_type_string))
 			continue;
 		path = strdup(key);
-		ret = parse_port_key(path, &portid, &attr, &subsys, &ana_grp);
+		ret = parse_port_key(path, &portid, &attr, &subsys, &ana_grpid);
 		if (ret < 0)
 			continue;
+		if (subsys)
+			printf("add port %d subsys %s\n",
+			       portid, subsys);
+		else if (ana_grpid)
+			printf("add port %d ana group %d\n",
+			       portid, ana_grpid);
+		else
+			printf("add port %d attr %s\n",
+			       portid, attr);
 		free(path);
 	}
 }
