@@ -18,6 +18,7 @@
 #include "common.h"
 #include "etcd_client.h"
 
+static char *default_etcd_prefix = "nofuse";
 static char *default_etcd_host = "localhost";
 static char *default_etcd_proto = "http";
 static int default_etcd_port = 2379;
@@ -1129,7 +1130,10 @@ struct etcd_ctx *etcd_init(const char *prefix)
 	ctx->host = default_etcd_host;
 	ctx->proto = default_etcd_proto;
 	ctx->port = default_etcd_port;
-	ctx->prefix = strdup(prefix);
+	if (prefix)
+		ctx->prefix = strdup(prefix);
+	else
+		ctx->prefix = strdup(default_etcd_prefix);
 	ctx->lease = -1;
 	ctx->ttl = 240;
 
@@ -1156,8 +1160,10 @@ struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx)
 	new_ctx->host = ctx->host;
 	new_ctx->proto = ctx->proto;
 	new_ctx->port = ctx->port;
+	new_ctx->prefix = strdup(ctx->prefix);
 	new_ctx->lease = -1;
 	new_ctx->ttl = ctx->ttl;
+	new_ctx->node = strdup(ctx->node);
 
 	return new_ctx;
 }

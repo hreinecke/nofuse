@@ -19,11 +19,6 @@
 #include "common.h"
 #include "etcd_client.h"
 
-static char *default_host = "localhost";
-static char *default_proto = "http";
-static char *default_prefix = "nofuse";
-static int default_port = 2379;
-
 bool ep_debug;
 bool cmd_debug;
 bool port_debug;
@@ -160,14 +155,10 @@ void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
 	printf("Arguments are:\n");
-	printf("\t[-h|--host] <host-or-ip>\tHost to connect to (default: %s)\n",
-	       default_host);
-	printf("\t[-p|--port] <portnum>\tetcd client port (default: %d)\n",
-	       default_port);
-	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix (default: %s)\n",
-	       default_prefix);
+	printf("\t[-h|--host] <host-or-ip>\tHost to connect to\n");
+	printf("\t[-p|--port] <portnum>\tetcd client port\n");
+	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-s|--ssl]\tUse SSL connections\n");
-	printf("\t[-d|--disconnect]\tDisconnect NVMe connections when keys are deleted\n");
 	printf("\t[-v|--verbose]\tVerbose output\n");
 	printf("\t[-h|--help]\tThis help text\n");
 }
@@ -189,21 +180,18 @@ int main(int argc, char **argv)
 	char *prefix;
 	int ret = 0;
 
-	ctx = malloc(sizeof(struct etcd_ctx));
+	ctx = etcd_init(NULL);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		exit(1);
 	}
-	memset(ctx, 0, sizeof(struct etcd_ctx));
-	ctx->host = default_host;
-	ctx->proto = default_proto;
-	ctx->port = default_port;
 	ctx->resp_obj = json_object_new_object();
 
 	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'e':
+			free(ctx->prefix);
 			ctx->prefix = strdup(optarg);
 			break;
 		case 'h':
@@ -225,9 +213,6 @@ int main(int argc, char **argv)
 			return 0;
 		}
 	}
-
-	if (!ctx->prefix)
-		ctx->prefix = strdup(default_prefix);
 
 	asprintf(&prefix, "%s/ports", ctx->prefix);
 	printf("Using key %s\n", prefix);

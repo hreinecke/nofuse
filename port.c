@@ -36,7 +36,7 @@ int add_port(struct etcd_ctx *ctx, unsigned int id,
 	port->ref  = 1;
 	port->listenfd = -1;
 	port->portid = id;
-	port->ctx = ctx;
+	port->ctx = etcd_dup(ctx);
 	pthread_mutex_init(&port->ep_mutex, NULL);
 	INIT_LINKED_LIST(&port->ep_list);
 	INIT_LINKED_LIST(&port->node);

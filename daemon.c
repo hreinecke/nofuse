@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
 		return 1;
 
 #ifdef NOFUSE_ETCD
-	ctx->etcd = etcd_init("nofuse");
+	ctx->etcd = etcd_init(NULL);
 	ret = etcd_lease_grant(ctx->etcd);
 #else
 	ret = configdb_open(ctx->dbname);
