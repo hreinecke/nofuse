@@ -132,6 +132,10 @@ static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 	err = curl_easy_setopt(curl, opt, ctx);
 	if (err != CURLE_OK)
 		goto out_err_opt;
+	opt = CURLOPT_TIMEOUT;
+	err = curl_easy_setopt(curl, opt, ctx->ttl);
+	if (err != CURLE_OK)
+		goto out_err_opt;
 	if (curl_debug)
 		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	return curl;
@@ -151,20 +155,20 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 
 	ctx->curl_ctx = etcd_curl_init(ctx);
 	if (!ctx->curl_ctx)
-		return -1;
+		return -ENOMEM;
 
 	err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt url failed, %s\n",
 			curl_easy_strerror(err));
-		errno = EINVAL;
+		err = EINVAL;
 		goto err_out;
 	}
 	err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_WRITEFUNCTION, write_cb);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s\n",
 			curl_easy_strerror(err));
-		errno = EINVAL;
+		err = EINVAL;
 		goto err_out;
 	}
 
@@ -180,7 +184,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfields failed, %s\n",
 				curl_easy_strerror(err));
-			errno = EINVAL;
+			err = EINVAL;
 			goto err_out;
 		}
 
@@ -189,7 +193,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
 				curl_easy_strerror(err));
-			errno = EINVAL;
+			err = EINVAL;
 			goto err_out;
 		}
 	}
@@ -198,13 +202,16 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl perform failed, %d (%s)\n",
 			err, curl_easy_strerror(err));
-		errno = EIO;
+		if (err == CURLE_OPERATION_TIMEDOUT)
+			err = -ETIME;
+		else
+			err = -EIO;
 	}
 
 err_out:
 	curl_easy_cleanup(ctx->curl_ctx);
 	ctx->curl_ctx = NULL;
-	return err ? -1 : 0;
+	return err;
 }
 
 static size_t
