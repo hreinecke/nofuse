@@ -31,6 +31,9 @@ nofuse: $(DAEMON_OBJS) $(OBJS)
 portd: portd.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
+nvmetd: nvmetd.o
+	$(CC) $(CFLAGS) -o $@ $^
+
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
 
