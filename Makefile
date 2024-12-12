@@ -31,7 +31,7 @@ nofuse: $(DAEMON_OBJS) $(OBJS)
 portd: portd.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-nvmetd: nvmetd.o
+nvmetd: nvmetd.o inotify.o
 	$(CC) $(CFLAGS) -o $@ $^
 
 xdp_drop_port.o: xdp_drop_port.c

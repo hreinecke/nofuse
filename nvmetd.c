@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <sys/fanotify.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <limits.h>
 #include <string.h>
 #include <signal.h>
@@ -24,6 +25,9 @@ sigset_t mask;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wait = PTHREAD_COND_INITIALIZER;
+
+void start_inotify(void);
+void stop_inotify(void);
 
 struct watcher_ctx {
 	char *pathname;
@@ -136,29 +140,31 @@ static void *watch_fanotify(void * arg)
 				resp.response = FAN_ALLOW;
 			}
 
-			if (write(ctx->fanotify_fd, &resp, sizeof(resp)) < 0) {
-				fprintf(stderr, "failed write response, error %d\n",
-					errno);
+			if (fa->mask & FAN_ACCESS_PERM ||
+			    fa->mask & FAN_OPEN_PERM ||
+			    fa->mask & FAN_OPEN_EXEC_PERM) {
+				if (write(ctx->fanotify_fd, &resp,
+					  sizeof(resp)) < 0) {
+					fprintf(stderr,
+						"failed write response, error %d\n",
+						errno);
+					break;
+				}
 			}
 		}
-	}
-	if (!stopped) {
-		pthread_mutex_lock(&lock);
-		stopped = 1;
-		pthread_mutex_unlock(&lock);
-		pthread_cond_signal(&wait);
 	}
 	pthread_exit(NULL);
 	return NULL;
 }
 
-int monitor_configfs(struct watcher_ctx *ctx)
+int monitor_configfs(struct watcher_ctx *ctx, const char *pathname)
 {
 	int ret;
 
-	ret = fanotify_mark(ctx->fanotify_fd, FAN_MARK_ADD | FAN_MARK_MOUNT,
+	ret = fanotify_mark(ctx->fanotify_fd,
+			    FAN_MARK_ADD | FAN_MARK_DONT_FOLLOW,
 			    FAN_OPEN_PERM|FAN_ACCESS_PERM|FAN_ONDIR,
-			    AT_FDCWD, ctx->pathname);
+			    AT_FDCWD, pathname);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add fanotify mark "
 			"to %s, error %d\n", ctx->pathname, errno);
@@ -167,9 +173,38 @@ int monitor_configfs(struct watcher_ctx *ctx)
 	return ret;
 }
 
+int mark_files(struct watcher_ctx *ctx, char *dirname)
+{
+	DIR *d;
+	struct dirent *de;
+
+	d = opendir(dirname);
+	if (d < 0)
+		return -errno;
+	while ((de = readdir(d))) {
+		char pathname[PATH_MAX];
+
+		if (!strcmp(de->d_name, ".") ||
+		    !strcmp(de->d_name, ".."))
+			continue;
+		sprintf(pathname, "%s/%s", dirname, de->d_name);
+		if (de->d_type  == DT_DIR)
+			mark_files(ctx, pathname);
+		else {
+			printf("mark %s\n", pathname);
+			monitor_configfs(ctx, pathname);
+		}
+	}
+	closedir(d);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
-	static pthread_t watcher_thr, signal_thr;
+#if 0
+	pthread_t watcher_thr;
+#endif
+	pthread_t signal_thr;
 	sigset_t oldmask;
 	struct watcher_ctx *ctx;
 	int ret = 0;
@@ -189,10 +224,6 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ret = monitor_configfs(ctx);
-	if (ret < 0)
-		goto out_free;
-
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 	sigaddset(&mask, SIGTERM);
@@ -204,6 +235,7 @@ int main(int argc, char **argv)
 		goto out_restore;
 	}
 
+#if 0
 	ret = pthread_create(&watcher_thr, NULL, watch_fanotify, ctx);
 	if (ret) {
 		watcher_thr = 0;
@@ -211,17 +243,22 @@ int main(int argc, char **argv)
 			ret);
 		goto out_cancel;
 	}
+#endif
+
+	start_inotify();
 
 	pthread_mutex_lock(&lock);
 	while (!stopped)
 		pthread_cond_wait(&wait, &lock);
 	pthread_mutex_unlock(&lock);
 
+	stop_inotify();
+#if 0
 	printf("cancelling watcher\n");
 	pthread_cancel(watcher_thr);
-
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
+#endif
 
 out_cancel:
 	pthread_cancel(signal_thr);
@@ -229,7 +266,7 @@ out_cancel:
 
 out_restore:
 	sigprocmask(SIG_SETMASK, &oldmask, NULL);
-out_free:
+
 	close(ctx->fanotify_fd);
 	free(ctx->pathname);
 	free(ctx);
