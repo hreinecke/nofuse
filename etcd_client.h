@@ -25,6 +25,7 @@ struct etcd_ctx {
 	bool tls;
 	int64_t lease;
 	int ttl;
+	CURL *curl_ctx;
 	struct json_tokener *tokener;
 	struct json_object *resp_obj;
 	void (*watch_cb)(struct etcd_ctx *, enum kv_key_op,
@@ -44,6 +45,7 @@ struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_revision(struct etcd_ctx *ctx, const char *key);
+void etcd_kv_watch_stop(struct etcd_ctx *ctx);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);
 int etcd_lease_keepalive(struct etcd_ctx *ctx);

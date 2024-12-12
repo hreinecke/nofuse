@@ -148,22 +148,21 @@ out_err_opt:
 int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 		 struct json_object *post_obj, curl_write_callback write_cb)
 {
-	CURL *curl;
 	CURLcode err;
 	const char *post_data;
 
-	curl = etcd_curl_init(ctx);
-	if (!curl)
+	ctx->curl_ctx = etcd_curl_init(ctx);
+	if (!ctx->curl_ctx)
 		return -1;
 
-	err = curl_easy_setopt(curl, CURLOPT_URL, url);
+	err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt url failed, %s\n",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
 	}
-	err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+	err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_WRITEFUNCTION, write_cb);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s\n",
 			curl_easy_strerror(err));
@@ -178,7 +177,8 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 
 	if (post_obj) {
 		post_data = json_object_to_json_string(post_obj);
-		err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
+		err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_POSTFIELDS,
+				       post_data);
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfields failed, %s\n",
 				curl_easy_strerror(err));
@@ -186,7 +186,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 			goto err_out;
 		}
 
-		err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,
+		err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_POSTFIELDSIZE,
 				       strlen(post_data));
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
@@ -196,7 +196,7 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 		}
 	}
 
-	err = curl_easy_perform(curl);
+	err = curl_easy_perform(ctx->curl_ctx);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl perform failed, %d (%s)\n",
 			err, curl_easy_strerror(err));
@@ -204,7 +204,8 @@ int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
 	}
 
 err_out:
-	curl_easy_cleanup(curl);
+	curl_easy_cleanup(ctx->curl_ctx);
+	ctx->curl_ctx = NULL;
 	return err ? -1 : 0;
 }
 
@@ -723,6 +724,12 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 	json_object_put(ctx->resp_obj);
 	ctx->resp_obj = NULL;
 	return ret;
+}
+
+void etcd_kv_watch_stop(struct etcd_ctx *ctx)
+{
+	if (ctx->curl_ctx)
+		curl_easy_reset(ctx->curl_ctx);
 }
 
 static size_t
