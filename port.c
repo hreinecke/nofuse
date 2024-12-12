@@ -120,7 +120,7 @@ int del_port(struct nofuse_port *port)
 		return -EBUSY;
 	}
 	pthread_mutex_destroy(&port->ep_mutex);
-	list_del(&port->node);
+	list_del_init(&port->node);
 	free(port);
 	return 0;
 }
@@ -157,10 +157,10 @@ int find_and_del_port(unsigned int portid)
 
 void cleanup_ports(void)
 {
-	struct nofuse_port *port;
+	struct nofuse_port *port, *tmp;
 
 	pthread_mutex_lock(&port_list_mutex);
-	list_for_each_entry(port, &port_linked_list, node) {
+	list_for_each_entry_safe(port, tmp, &port_linked_list, node) {
 		stop_port(port);
 		del_port(port);
 	}
@@ -204,15 +204,9 @@ static void *run_port(void *arg)
 {
 	struct nofuse_port *port = arg;
 	struct nofuse_queue *ep;
-	sigset_t set;
 	int conn;
 	pthread_attr_t pthread_attr;
 	int ret;
-
-	sigemptyset(&set);
-	sigaddset(&set, SIGPIPE);
-	sigaddset(&set, SIGTERM);
-	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
 	ret = start_listener(port);
 	if (ret) {

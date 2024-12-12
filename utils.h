@@ -80,6 +80,12 @@ static inline void list_del(struct linked_list *entry)
 	entry->prev->next = entry->next;
 }
 
+static inline void list_del_init(struct linked_list *entry)
+{
+	list_del(entry);
+	INIT_LINKED_LIST(entry);
+}
+
 static inline int list_empty(const struct linked_list *list)
 {
 	return list->next == list;

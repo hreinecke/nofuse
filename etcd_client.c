@@ -726,8 +726,10 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 
 void etcd_kv_watch_stop(struct etcd_ctx *ctx)
 {
-	if (ctx->curl_ctx)
-		curl_easy_reset(ctx->curl_ctx);
+	if (ctx->curl_ctx) {
+		curl_easy_cleanup(ctx->curl_ctx);
+		ctx->curl_ctx = NULL;
+	}
 }
 
 static size_t

@@ -27,13 +27,30 @@ bool etcd_debug;
 bool curl_debug;
 
 int stopped = 0;
+sigset_t mask;
 
-pthread_t watcher_thread;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wait = PTHREAD_COND_INITIALIZER;
 
-static void signal_handler(int sig_num)
+static void *signal_handler(void *arg)
 {
-	stopped = 1;
-	pthread_cancel(watcher_thread);
+	int ret, signo;
+
+	for (;;) {
+		ret = sigwait(&mask, &signo);
+		if (ret != 0) {
+			fprintf(stderr, "sigwait failed with %d\n", ret);
+			break;
+		}
+		printf("signal %d, terminating\n", signo);
+		pthread_mutex_lock(&lock);
+		stopped = 1;
+		pthread_mutex_unlock(&lock);
+		pthread_cond_signal(&wait);
+		return NULL;
+	}
+	pthread_exit(NULL);
+	return NULL;
 }
 
 static int parse_port_key(char *key, unsigned int *portid,
@@ -238,20 +255,30 @@ int main(int argc, char **argv)
 		{"verbose", no_argument, 0, 'v'},
 		{"help", no_argument, 0, '?'},
 	};
+	static pthread_t watcher_thr, signal_thr;
 	struct json_object *resp;
+	sigset_t oldmask;
 	char c;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
 	char *prefix;
 	int ret = 0;
 
-	signal(SIGINT, signal_handler);
-	signal(SIGTERM, signal_handler);
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGTERM);
+	pthread_sigmask(SIG_BLOCK, &mask, &oldmask);
+
+	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
+	if (ret) {
+		fprintf(stderr, "cannot start signal handler\n");
+		exit(1);
+	}
 
 	ctx = etcd_init(NULL);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
-		exit(1);
+		goto out_restore_sig;
 	}
 
 	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
@@ -277,6 +304,7 @@ int main(int argc, char **argv)
 			break;
 		case '?':
 			usage();
+			sigprocmask(SIG_SETMASK, &oldmask, NULL);
 			return 0;
 		}
 	}
@@ -293,19 +321,37 @@ int main(int argc, char **argv)
 	parse_ports(ctx, resp);
 	json_object_put(resp);
 
-	ret = pthread_create(&watcher_thread, NULL, etcd_watcher, ctx);
+	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
-		watcher_thread = 0;
+		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
 		goto out_free;
 	}
 
-	pthread_join(watcher_thread, NULL);
+	pthread_mutex_lock(&lock);
+	while (!stopped)
+		pthread_cond_wait(&wait, &lock);
+	pthread_mutex_unlock(&lock);
+
+	etcd_kv_watch_stop(ctx);
+
+	printf("cancelling watcher\n");
+	pthread_cancel(watcher_thr);
+
+	printf("waiting for watcher to terminate\n");
+	pthread_join(watcher_thr, NULL);
 
 	cleanup_ports();
 out_free:
 	free(prefix);
 	etcd_exit(ctx);
+
+out_restore_sig:
+	pthread_cancel(signal_thr);
+	pthread_join(signal_thr, NULL);
+
+	sigprocmask(SIG_SETMASK, &oldmask, NULL);
+
 	return ret < 0 ? 1 : 0;
 }
