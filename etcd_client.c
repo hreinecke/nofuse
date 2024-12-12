@@ -1106,8 +1106,8 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 	}
 
 	for (i = 0; i < json_object_array_length(mbs_obj); i++) {
-		struct json_object *mb_obj, *name_obj, *urls_obj;
-		const char *node_name;
+		struct json_object *mb_obj, *name_obj, *id_obj, *urls_obj;
+		const char *node_name, *node_id;
 		int j;
 
 		mb_obj = json_object_array_get_idx(mbs_obj, i);
@@ -1117,6 +1117,12 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		if (!name_obj)
 			continue;
 		node_name = json_object_get_string(name_obj);
+
+		id_obj = json_object_object_get(mb_obj, "ID");
+		if (!id_obj)
+			continue;
+		node_id = json_object_get_string(id_obj);
+
 		urls_obj = json_object_object_get(mb_obj, "clientURLs");
 		for (j = 0; j < json_object_array_length(urls_obj); j++) {
 			struct json_object *url_obj;
@@ -1126,9 +1132,11 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			url = json_object_get_string(url_obj);
 
 			if (!strcmp(url, default_url)) {
-				ctx->node = strdup(node_name);
-				printf("%s: using node name %s\n", __func__,
-				       ctx->node);
+				ctx->node_name = strdup(node_name);
+				ctx->node_id = strdup(node_id);
+				printf("%s: using node name %s (id %s)\n",
+				       __func__, ctx->node_name,
+				       ctx->node_id);
 			}
 		}
 	}
@@ -1206,7 +1214,10 @@ struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx)
 	new_ctx->prefix = strdup(ctx->prefix);
 	new_ctx->lease = -1;
 	new_ctx->ttl = ctx->ttl;
-	new_ctx->node = strdup(ctx->node);
+	if (ctx->node_name) {
+		new_ctx->node_name = strdup(ctx->node_name);
+		new_ctx->node_id = ctx->node_id;
+	}
 
 	return new_ctx;
 }
@@ -1216,6 +1227,8 @@ void etcd_exit(struct etcd_ctx *ctx)
 	if (!ctx)
 		return;
 	json_object_put(ctx->resp_obj);
+	if (ctx->node_name)
+		free(ctx->node_name);
 	free(ctx->prefix);
 	free(ctx);
 }

@@ -23,7 +23,8 @@ struct etcd_ctx {
 	char *prefix;
 	char *proto;
 	char *host;
-	char *node;
+	char *node_name;
+	char *node_id;
 	int port;
 	bool tls;
 	int64_t lease;
