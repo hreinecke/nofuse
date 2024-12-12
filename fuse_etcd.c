@@ -950,7 +950,6 @@ static int nofuse_symlink(const char *from, const char *to)
 	if (!strcmp(root, ports_dir)) {
 		const char *subsys;
 		unsigned int portid;
-		int subsysnum = 0;
 
 		ret = parse_port_link(s, &portid, &subsys);
 		if (ret < 0)
@@ -963,29 +962,6 @@ static int nofuse_symlink(const char *from, const char *to)
 			       __func__, ret);
 			goto out_free;
 		}
-		ret = etcd_count_subsys_port(ctx, portid, &subsysnum);
-		if (ret < 0) {
-			etcd_del_subsys_port(ctx, subsys, portid);
-			goto out_free;
-		}
-		if (subsysnum == 1) {
-			struct nofuse_port *port = find_port(portid);
-
-			if (!port) {
-				fuse_err("%s: port %d not founde",
-				       __func__, portid);
-				etcd_del_subsys_port(ctx, subsys, portid);
-				ret = -EINVAL;
-				goto out_free;
-			}
-			ret = start_port(port);
-			put_port(port);
-			if (ret) {
-				etcd_del_subsys_port(ctx, subsys, portid);
-				goto out_free;
-			}
-		}
-		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
 
@@ -1022,42 +998,13 @@ static int nofuse_unlink(const char *path)
 	if (!strcmp(root, ports_dir)) {
 		const char *subsys;
 		unsigned int portid;
-		int subsysnum = 0;
-		struct nofuse_port *port;
 
 		ret = parse_port_link(s, &portid, &subsys);
 		if (ret < 0)
 			goto out_free;
-		port = find_port(portid);
-		if (!port) {
-			fuse_err("%s: port %d not found",
-			       __func__, portid);
-			goto out_free;
-		}
 		ret = etcd_del_subsys_port(ctx, subsys, portid);
-		if (ret < 0) {
-			put_port(port);
+		if (ret < 0)
 			goto out_free;
-		}
-		terminate_queues(port, subsys);
-		ret = etcd_count_subsys_port(ctx, portid, &subsysnum);
-		if (ret < 0) {
-			put_port(port);
-			goto out_free;
-		}
-		fuse_info("%s: subsys %s portid %d num %d",
-		       __func__, subsys, portid, subsysnum);
-		if (subsysnum == 0) {
-			ret = stop_port(port);
-			put_port(port);
-			if (ret) {
-				fuse_err("%s: failed to stop port %d",
-				   __func__, portid);
-				etcd_add_subsys_port(ctx, subsys, portid);
-				goto out_free;
-			}
-		} else
-			put_port(port);
 		ret = 0;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsys, *host;
