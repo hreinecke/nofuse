@@ -31,6 +31,9 @@ struct etcd_ctx {
 			 char *, const char *);
 };
 
+extern bool etcd_debug;
+extern bool curl_debug;
+
 struct etcd_ctx *etcd_init(const char *prefix);
 struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);

@@ -24,6 +24,7 @@ bool cmd_debug;
 bool port_debug;
 bool tcp_debug;
 bool etcd_debug;
+bool curl_debug;
 
 int stopped = 0;
 
@@ -108,10 +109,33 @@ static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 	}
 	ret = parse_port_key(key_save, &portid, &attr,
 			     &subsys, &ana_grpid);
-	if (!ret) {
-		printf("op %s port %d\n",
-		       op == KV_KEY_OP_ADD ? "add" : "delete", portid);
+	if (ret < 0)
+		goto out_free;
+
+	if (attr) {
+		if (op == KV_KEY_OP_ADD)
+			find_and_add_port(ctx, portid);
+		else if (!strcmp(attr, "addr_traddr"))
+			find_and_del_port(portid);
+		else
+			printf("%s: skip op %s port %d attr %s\n", __func__,
+			       op == KV_KEY_OP_ADD ? "add" : "delete",
+			       portid, attr);
+	} else if (subsys) {
+		struct nofuse_port *port;
+
+		port = find_port(portid);
+		if (!port) {
+			printf("%s: skip op %s port %d subsys %s, not found\n",
+			       __func__, op == KV_KEY_OP_ADD ? "add" : "delete",
+			       portid, subsys);
+		} else if (op == KV_KEY_OP_ADD) {
+			start_port(port);
+		} else {
+			stop_port(port);
+		}
 	}
+out_free:
 	free(key_save);
 }
 

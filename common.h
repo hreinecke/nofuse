@@ -41,7 +41,6 @@ extern bool cmd_debug;
 extern bool ep_debug;
 extern bool port_debug;
 extern bool fuse_debug;
-extern bool etcd_debug;
 
 extern struct linked_list device_linked_list;
 extern struct linked_list port_linked_list;

@@ -15,7 +15,6 @@
 
 #include "base64.h"
 
-#include "common.h"
 #include "etcd_client.h"
 
 static char *default_etcd_prefix = "nofuse";
@@ -135,7 +134,7 @@ static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 	err = curl_easy_setopt(curl, opt, ctx);
 	if (err != CURLE_OK)
 		goto out_err_opt;
-	if (etcd_debug)
+	if (curl_debug)
 		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	return curl;
 
@@ -678,7 +677,7 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 {
 	char url[1024];
 	struct json_object *post_obj, *req_obj;
-	char *encoded_key, *encoded_range;
+	char *encoded_key, *end_key, *encoded_end, end;
 	int ret;
 
 	sprintf(url, "%s://%s:%u/v3/watch",
@@ -691,9 +690,13 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(req_obj, "key",
 			       json_object_new_string(encoded_key));
-	encoded_range = __b64enc("\0", 1);
+	end_key = strdup(key);
+	end = end_key[strlen(end_key) - 1];
+	end++;
+	end_key[strlen(end_key) - 1] = end;
+	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
-			       json_object_new_string(encoded_range));
+			       json_object_new_string(encoded_end));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_watch_response);
@@ -714,7 +717,8 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 		}
 	}
 	free(encoded_key);
-	free(encoded_range);
+	free(encoded_end);
+	free(end_key);
 	json_object_put(post_obj);
 	json_object_put(ctx->resp_obj);
 	ctx->resp_obj = NULL;
