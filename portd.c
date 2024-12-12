@@ -28,6 +28,14 @@ bool curl_debug;
 
 int stopped = 0;
 
+pthread_t watcher_thread;
+
+static void signal_handler(int sig_num)
+{
+	stopped = 1;
+	pthread_cancel(watcher_thread);
+}
+
 static int parse_port_key(char *key, unsigned int *portid,
 			  char **attr, char **subsys, unsigned int *ana_grpid)
 {
@@ -178,6 +186,36 @@ static void parse_ports(struct etcd_ctx *ctx,
 	}
 }
 
+static void cleanup_ctx(void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+
+	etcd_exit(ctx);
+}
+
+static void *etcd_watcher(void *arg)
+{
+	struct etcd_ctx *ctx = etcd_dup(arg);
+	char prefix[PATH_MAX];
+	int ret;
+
+	pthread_cleanup_push(cleanup_ctx, ctx);
+
+	sprintf(prefix, "%s/ports", ctx->prefix);
+	ctx->resp_obj = json_object_new_object();
+	ctx->watch_cb = update_ports;
+
+	ret = etcd_kv_watch(ctx, prefix);
+	if (ret < 0)
+		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
+			__func__, ret);
+
+	pthread_cleanup_pop(1);
+
+	pthread_exit(NULL);
+	return NULL;
+}
+
 void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
@@ -207,12 +245,14 @@ int main(int argc, char **argv)
 	char *prefix;
 	int ret = 0;
 
+	signal(SIGINT, signal_handler);
+	signal(SIGTERM, signal_handler);
+
 	ctx = etcd_init(NULL);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		exit(1);
 	}
-	ctx->resp_obj = json_object_new_object();
 
 	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
 				getopt_arg, &getopt_ind)) != -1) {
@@ -245,25 +285,26 @@ int main(int argc, char **argv)
 	printf("Using key %s\n", prefix);
 
 	resp = etcd_kv_range(ctx, prefix);
-	if (!resp)
+	if (!resp) {
 		fprintf(stderr, "Failed to retrieve port information\n");
-	else {
-		parse_ports(ctx, resp);
-		json_object_put(resp);
+		goto out_free;
 	}
 
-	ctx->resp_obj = json_object_new_object();
-	ctx->watch_cb = update_ports;
-	ret = etcd_kv_watch(ctx, prefix);
-	if (!ret) {
-		json_object_object_foreach(ctx->resp_obj,
-					   key_obj, val_obj)
-			printf("%s: %s\n", key_obj,
-			       json_object_get_string(val_obj));
+	parse_ports(ctx, resp);
+	json_object_put(resp);
+
+	ret = pthread_create(&watcher_thread, NULL, etcd_watcher, ctx);
+	if (ret) {
+		watcher_thread = 0;
+		fprintf(stderr, "failed to start etcd watcher, error %d\n",
+			ret);
+		goto out_free;
 	}
+
+	pthread_join(watcher_thread, NULL);
 
 	cleanup_ports();
-
+out_free:
 	free(prefix);
 	etcd_exit(ctx);
 	return ret < 0 ? 1 : 0;

@@ -8,6 +8,9 @@
 #ifndef _ETCD_CLIENT_H
 #define _ETCD_CLIENT_H
 
+#include <curl/curl.h>
+#include <curl/easy.h>
+
 enum kv_key_op {
 	KV_KEY_OP_ADD,
 	KV_KEY_OP_DELETE,

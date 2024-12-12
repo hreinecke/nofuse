@@ -9,8 +9,6 @@
 #include <getopt.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <curl/curl.h>
-#include <curl/easy.h>
 #include <json-c/json.h>
 
 #include "base64.h"
