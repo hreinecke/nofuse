@@ -94,7 +94,7 @@ int start_port(struct nofuse_port *port)
 	return ret;
 }
 
-int stop_port(struct nofuse_port *port)
+void stop_port(struct nofuse_port *port)
 {
 	struct nofuse_queue *ep, *_ep;
 
@@ -109,7 +109,6 @@ int stop_port(struct nofuse_port *port)
 	list_for_each_entry_safe(ep, _ep, &port->ep_list, node)
 		destroy_queue(ep);
 	pthread_mutex_unlock(&port->ep_mutex);
-	return 0;
 }
 
 int del_port(struct nofuse_port *port)
@@ -154,6 +153,18 @@ int find_and_del_port(unsigned int portid)
 		fprintf(stderr, "port %d: no port to delete\n", portid);
 	pthread_mutex_unlock(&port_list_mutex);
 	return ret;
+}
+
+void cleanup_ports(void)
+{
+	struct nofuse_port *port;
+
+	pthread_mutex_lock(&port_list_mutex);
+	list_for_each_entry(port, &port_linked_list, node) {
+		stop_port(port);
+		del_port(port);
+	}
+	pthread_mutex_unlock(&port_list_mutex);
 }
 
 void put_port(struct nofuse_port *port)

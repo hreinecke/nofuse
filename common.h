@@ -270,7 +270,8 @@ int find_and_add_port(struct etcd_ctx *ctx, unsigned int portid);
 int find_and_del_port(unsigned int portid);
 void put_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
-int stop_port(struct nofuse_port *port);
+void stop_port(struct nofuse_port *port);
+void cleanup_ports(void);
 
 struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid);
 int add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);

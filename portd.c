@@ -262,7 +262,9 @@ int main(int argc, char **argv)
 			       json_object_get_string(val_obj));
 	}
 
+	cleanup_ports();
+
 	free(prefix);
-	free(ctx);
+	etcd_exit(ctx);
 	return ret < 0 ? 1 : 0;
 }
