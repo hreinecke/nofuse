@@ -1134,9 +1134,10 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			if (!strcmp(url, default_url)) {
 				ctx->node_name = strdup(node_name);
 				ctx->node_id = strdup(node_id);
-				printf("%s: using node name %s (id %s)\n",
-				       __func__, ctx->node_name,
-				       ctx->node_id);
+				if (etcd_debug)
+					printf("%s: using node name %s (id %s)\n",
+					       __func__, ctx->node_name,
+					       ctx->node_id);
 			}
 		}
 	}
@@ -1187,6 +1188,9 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		ctx->prefix = strdup(default_etcd_prefix);
 	ctx->lease = -1;
 	ctx->ttl = 240;
+
+	if (etcd_debug)
+		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
 
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {

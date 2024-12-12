@@ -43,6 +43,7 @@ struct nofuse_context {
 	const char *subsysnqn;
 	const char *traddr;
 	const char *dbname;
+	const char *prefix;
 	int debug;
 	int help;
 };
@@ -96,7 +97,9 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--help", help),
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
-#ifndef NOFUSE_ETCD
+#ifdef NOFUSE_ETCD
+	OPTION("--prefix=%s", prefix),
+#else
 	OPTION("--dbname=%s", dbname),
 #endif
 	FUSE_OPT_END,
@@ -121,13 +124,6 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	const char *traddr = "127.0.0.1";
 	int ret;
 
-	if (ctx->debug) {
-		tcp_debug = true;
-		cmd_debug = true;
-		ep_debug = true;
-		port_debug = true;
-	}
-
 	if (ctx->help) {
 		show_help();
 		return 1;
@@ -141,7 +137,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = etcd_add_port(ctx->etcd, "nofuse", 1, ctx->traddr, 8009);
+	ret = etcd_add_port(ctx->etcd, ctx->prefix, 1, ctx->traddr, 8009);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add port for %s\n",
 			ctx->traddr);
@@ -177,8 +173,16 @@ int main(int argc, char *argv[])
 	if (fuse_opt_parse(&args, ctx, nofuse_options, NULL) < 0)
 		return 1;
 
+	if (ctx->debug) {
+		tcp_debug = true;
+		cmd_debug = true;
+		ep_debug = true;
+		port_debug = true;
+		etcd_debug = true;
+	}
+
 #ifdef NOFUSE_ETCD
-	ctx->etcd = etcd_init(NULL);
+	ctx->etcd = etcd_init(ctx->prefix);
 	ret = etcd_lease_grant(ctx->etcd);
 #else
 	ret = configdb_open(ctx->dbname);
