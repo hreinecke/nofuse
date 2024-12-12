@@ -129,11 +129,14 @@ static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 			printf("%s: skip op %s port %d subsys %s, not found\n",
 			       __func__, op == KV_KEY_OP_ADD ? "add" : "delete",
 			       portid, subsys);
-		} else if (op == KV_KEY_OP_ADD) {
+			goto out_free;
+		}
+		if (op == KV_KEY_OP_ADD) {
 			start_port(port);
 		} else {
 			stop_port(port);
 		}
+		put_port(port);
 	}
 out_free:
 	free(key_save);
