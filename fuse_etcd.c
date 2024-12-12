@@ -594,7 +594,7 @@ static int port_mkdir(char *s)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		ret = etcd_add_port(ctx, "nofuse", portid, 0);
+		ret = etcd_add_port(ctx, "nofuse", portid, NULL, 0);
 		if (ret < 0) {
 			fuse_err("%s: cannot add port %d, error %d",
 				 __func__, portid, ret);

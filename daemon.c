@@ -141,7 +141,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = etcd_add_port(ctx->etcd, "nofuse", 1, 8009);
+	ret = etcd_add_port(ctx->etcd, "nofuse", 1, ctx->traddr, 8009);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add port for %s\n",
 			ctx->traddr);

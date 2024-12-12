@@ -294,32 +294,36 @@ int etcd_fill_port(struct etcd_ctx *ctx, unsigned int id,
 }
 
 int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
-		  unsigned int id, unsigned int port)
+		  unsigned int id, const char *traddr, unsigned int port)
 {
 	int ret, i;
 
 	for (i = 0; i < NUM_PORT_ATTRS; i++) {
 		struct key_value_template *kv = &port_template[i];
-		char *key;
+		char portnum[16], *key;
+		const char *value;
 
 		ret = asprintf(&key, "%s/ports/%d/%s",
 			       ctx->prefix, id, kv->key);
 		if (ret < 0)
 			return ret;
+		value = kv->value;
 		if (!strcmp(kv->key, "addr_node")) {
-			if (ctx->node)
-				ret = etcd_kv_put(ctx, key, ctx->node, true);
+			if (ctx->node_name)
+				value = ctx->node_name;
+		} else if (!strcmp(kv->key, "addr_traddr")) {
+			if (traddr)
+				value = traddr;
 		} else if (!strcmp(kv->key, "addr_trsvcid")) {
-			char portnum[16];
 			if (port > 0) {
 				sprintf(portnum, "%d", port);
-				ret = etcd_kv_put(ctx, key, portnum, true);
+				value = portnum;
 			}
 		} else if (!strcmp(kv->key, "addr_origin")) {
 			if (origin)
-				ret = etcd_kv_put(ctx, key, origin, true);
-		} else
-			ret = etcd_kv_put(ctx, key, kv->value, true);
+				value = origin;
+		}
+		ret = etcd_kv_put(ctx, key, value, true);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -988,7 +992,7 @@ int etcd_add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 		else if (!strcmp(kv->key, "device_uuid"))
 			value = uuid_str;
 		else if (!strcmp(kv->key, "device_node"))
-			value = ctx->node;
+			value = ctx->node_name;
 		else
 			value = kv->value;
 		if (value)

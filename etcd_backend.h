@@ -26,7 +26,7 @@ int etcd_del_host(struct etcd_ctx *ctx, const char *nqn);
 int etcd_fill_port(struct etcd_ctx *ctx, unsigned int id,
 		   void *buf, fuse_fill_dir_t filler);
 int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
-		  unsigned int id, unsigned int port);
+		  unsigned int id, const char *traddr, unsigned int port);
 int etcd_test_port(struct etcd_ctx *ctx, unsigned int id);
 int etcd_set_port_attr(struct etcd_ctx *ctx, unsigned int id,
 		       const char *attr, const char *value);
