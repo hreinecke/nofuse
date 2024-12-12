@@ -132,8 +132,10 @@ static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 	err = curl_easy_setopt(curl, opt, ctx);
 	if (err != CURLE_OK)
 		goto out_err_opt;
-	opt = CURLOPT_TIMEOUT;
-	err = curl_easy_setopt(curl, opt, ctx->ttl);
+	if (ctx->ttl > 0) {
+		opt = CURLOPT_TIMEOUT;
+		err = curl_easy_setopt(curl, opt, ctx->ttl);
+	}
 	if (err != CURLE_OK)
 		goto out_err_opt;
 	if (curl_debug)
@@ -605,6 +607,7 @@ static size_t
 etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *result_obj, *event_obj;
+	struct json_object *header_obj, *rev_obj;
 	struct etcd_ctx *ctx = arg;
 	int i;
 
@@ -615,6 +618,9 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 			/* Partial / chunked response; continue */
 			return size * nmemb;
 		}
+		if (etcd_debug)
+			printf("%s: invalid response\n'%s'\n",
+			       __func__, ptr);
 		json_object_object_add(ctx->resp_obj, "error",
 				       json_object_new_string(ptr));
 		json_object_object_add(ctx->resp_obj, "errno",
@@ -627,23 +633,39 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 						      JSON_C_TO_STRING_PRETTY));
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
-		char *err_str = "invalid response, 'result' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		if (etcd_debug)
+			printf("%s: invalid response, 'result' not found",
+			       __func__);
 		goto out;
 	}
 
-	event_obj = json_object_object_get(result_obj, "events");
-	if (!event_obj) {
-		char *err_str = "invalid response, 'events' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+	header_obj = json_object_object_get(result_obj, "header");
+	if (!header_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'header' not found",
+			       __func__);
 		goto out;
 	}
+	rev_obj = json_object_object_get(header_obj, "revision");
+	if (rev_obj) {
+		ctx->revision = json_object_get_int64(rev_obj);
+		if (etcd_debug)
+			printf("%s: new revision %ld\n",
+			       __func__, ctx->revision);
+	}
+
+	/* 'created' set in response to a 'WatchRequest', no data is pending */
+	if (json_object_object_get(result_obj, "created"))
+		goto out;
+
+	event_obj = json_object_object_get(result_obj, "events");
+	if (!event_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'events' not found",
+			       __func__);
+		goto out;
+	}
+
 	for (i = 0; i < json_object_array_length(event_obj); i++) {
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
 		struct json_object *type_obj, *value_obj;
@@ -703,6 +725,9 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key)
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
+	if (ctx->revision > 0)
+		json_object_object_add(req_obj, "start_revision",
+				       json_object_new_int64(ctx->revision));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_watch_response);

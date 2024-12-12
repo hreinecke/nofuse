@@ -138,22 +138,22 @@ static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 		goto out_free;
 
 	if (attr) {
+		printf("%s: op %s port %d attr %s\n", __func__,
+		       op == KV_KEY_OP_ADD ? "add" : "delete",
+		       portid, attr);
 		if (op == KV_KEY_OP_ADD)
 			find_and_add_port(ctx, portid);
 		else if (!strcmp(attr, "addr_traddr"))
 			find_and_del_port(portid);
-		else
-			printf("%s: skip op %s port %d attr %s\n", __func__,
-			       op == KV_KEY_OP_ADD ? "add" : "delete",
-			       portid, attr);
 	} else if (subsys) {
 		struct nofuse_port *port;
 
+		printf("%s: op %s port %d subsys %s\n",
+		       __func__, op == KV_KEY_OP_ADD ? "add" : "delete",
+		       portid, subsys);
 		port = find_port(portid);
 		if (!port) {
-			printf("%s: skip op %s port %d subsys %s, not found\n",
-			       __func__, op == KV_KEY_OP_ADD ? "add" : "delete",
-			       portid, subsys);
+			printf("%s: no port found\n", __func__);
 			goto out_free;
 		}
 		if (op == KV_KEY_OP_ADD) {
@@ -162,6 +162,10 @@ static void update_ports(struct etcd_ctx *ctx, enum kv_key_op op,
 			stop_port(port);
 		}
 		put_port(port);
+	} else {
+		printf("%s: op %s port %d ana group %d\n", __func__,
+		       op == KV_KEY_OP_ADD ? "add" : "delete",
+		       portid, ana_grpid);
 	}
 out_free:
 	free(key_save);

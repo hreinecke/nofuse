@@ -27,6 +27,7 @@ struct etcd_ctx {
 	int port;
 	bool tls;
 	int64_t lease;
+	int64_t revision;
 	int ttl;
 	CURL *curl_ctx;
 	struct json_tokener *tokener;
