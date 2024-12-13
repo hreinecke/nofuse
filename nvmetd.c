@@ -6,8 +6,10 @@
  * Copyright (c) 2024 Hannes Reinecke <hare@suse.de>
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/fanotify.h>
@@ -20,19 +22,22 @@
 #include <errno.h>
 #include <pthread.h>
 
+#include "etcd_client.h"
+#include "nvmetd.h"
+
 int stopped = 0;
 sigset_t mask;
 
+bool port_debug;
+bool ep_debug;
+bool etcd_debug;
+bool curl_debug;
+bool tcp_debug;
+bool cmd_debug;
+bool inotify_debug;
+
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wait = PTHREAD_COND_INITIALIZER;
-
-void start_inotify(void);
-void stop_inotify(void);
-
-struct watcher_ctx {
-	char *pathname;
-	int fanotify_fd;
-};
 
 static void *signal_handler(void *arg)
 {
@@ -55,134 +60,42 @@ static void *signal_handler(void *arg)
 	return NULL;
 }
 
-static int get_fname(int fd, char *fname)
+static int read_attr(char *attr_path, char *value, size_t value_len)
 {
-	int len;
-	char buf[FILENAME_MAX];
+	int fd, len;
+	char *p;
 
-	sprintf(buf, "/proc/self/fd/%d", fd); /* link to local path name */
-	len = readlink(buf, fname, FILENAME_MAX-1);
-	if (len <= 0) {
-		fname[0] = '\0';
-	} else {
-		fname[len] = '\0';
+	fd = open(attr_path, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "Failed to open '%s', error %d\n",
+			attr_path, errno);
+		return -1;
 	}
+	len = read(fd, value, value_len);
+	if (len < 0)
+		memset(value, 0, value_len);
+	else {
+		p = &value[len - 1];
+		if (*p == '\n')
+			*p = '\0';
+	}
+	close(fd);
 	return len;
-}
-
-static void *watch_fanotify(void * arg)
-{
-	struct watcher_ctx *ctx = arg;
-	fd_set rfd;
-	struct timeval tmo;
-	char buf[4096];
-
-	while (!stopped) {
-		struct fanotify_event_metadata *fa;
-		struct stat st;
-		char pathname[PATH_MAX];
-		int rlen, ret;
-
-		FD_ZERO(&rfd);
-		FD_SET(ctx->fanotify_fd, &rfd);
-		tmo.tv_sec = 5;
-		tmo.tv_usec = 0;
-		ret = select(ctx->fanotify_fd + 1, &rfd, NULL, NULL, &tmo);
-		if (ret < 0) {
-			if (errno == EINTR)
-				continue;
-			fprintf(stderr, "select returned %d\n", errno);
-			break;
-		}
-		if (ret == 0) {
-			printf("select timeout\n");
-			continue;
-		}
-		if (!FD_ISSET(ctx->fanotify_fd, &rfd)) {
-			fprintf(stderr, "select returned for invalid fd\n");
-			continue;
-		}
-		rlen = read(ctx->fanotify_fd, buf, sizeof(buf));
-		if (rlen < 0) {
-			fprintf(stderr,
-				"error %d on reading fanotify event\n", errno);
-			continue;
-		}
-
-		fa = (struct fanotify_event_metadata *)&buf;
-		for (; FAN_EVENT_OK(fa, rlen); FAN_EVENT_NEXT(fa, rlen)) {
-			struct fanotify_response resp;
-
-			if (fstat(fa->fd, &st) < 0) {
-				fprintf(stderr,
-					"stat() failed, error %d\n", errno);
-				continue;
-			}
-			resp.fd = fa->fd;
-			resp.fd = FAN_DENY;
-
-			if ((st.st_mode & S_IFMT) == S_IFDIR) {
-				fprintf(stderr, "directory, allow access\n");
-				resp.response = FAN_ALLOW;
-			}
-			if (get_fname(fa->fd, pathname) < 0) {
-				fprintf(stderr,
-					"cannot retrieve filename, allow access\n");
-				resp.response = FAN_ALLOW;
-			}
-
-			printf("fanotify event: mask 0x%02lX, fd %d (%s), pid %d\n",
-			       (unsigned long) fa->mask, fa->fd,
-			       pathname, fa->pid);
-			if (fa->pid == getpid()) {
-				/* Avoid deadlocking */
-				printf("Identical PID, allowing access\n");
-				resp.response = FAN_ALLOW;
-			}
-
-			if (fa->mask & FAN_ACCESS_PERM ||
-			    fa->mask & FAN_OPEN_PERM ||
-			    fa->mask & FAN_OPEN_EXEC_PERM) {
-				if (write(ctx->fanotify_fd, &resp,
-					  sizeof(resp)) < 0) {
-					fprintf(stderr,
-						"failed write response, error %d\n",
-						errno);
-					break;
-				}
-			}
-		}
-	}
-	pthread_exit(NULL);
-	return NULL;
-}
-
-int monitor_configfs(struct watcher_ctx *ctx, const char *pathname)
-{
-	int ret;
-
-	ret = fanotify_mark(ctx->fanotify_fd,
-			    FAN_MARK_ADD | FAN_MARK_DONT_FOLLOW,
-			    FAN_OPEN_PERM|FAN_ACCESS_PERM|FAN_ONDIR,
-			    AT_FDCWD, pathname);
-	if (ret < 0) {
-		fprintf(stderr, "failed to add fanotify mark "
-			"to %s, error %d\n", ctx->pathname, errno);
-		ret = -errno;
-	}
-	return ret;
 }
 
 int mark_files(struct watcher_ctx *ctx, char *dirname)
 {
 	DIR *d;
 	struct dirent *de;
+	int ret;
+	struct etcd_ctx *ectx = etcd_dup(ctx->etcd);
 
 	d = opendir(dirname);
 	if (d < 0)
 		return -errno;
 	while ((de = readdir(d))) {
 		char pathname[PATH_MAX];
+		char value[512];
 
 		if (!strcmp(de->d_name, ".") ||
 		    !strcmp(de->d_name, ".."))
@@ -190,24 +103,65 @@ int mark_files(struct watcher_ctx *ctx, char *dirname)
 		sprintf(pathname, "%s/%s", dirname, de->d_name);
 		if (de->d_type  == DT_DIR)
 			mark_files(ctx, pathname);
-		else {
-			printf("mark %s\n", pathname);
-			monitor_configfs(ctx, pathname);
+		else if (de->d_type == DT_LNK) {
+			char *p = pathname + strlen(ctx->pathname) + 1;
+
+			ret = readlink(pathname, value, sizeof(value));
+			if (ret > 0) {
+				printf("link %s\n", p);
+				ret = etcd_kv_put(ectx, p, value, true);
+				if (ret < 0)
+					fprintf(stderr,
+						"link %s put error %d\n",
+						p, ret);
+			}
+		} else {
+			char *p = pathname + strlen(ctx->pathname) + 1;
+
+			ret = read_attr(pathname, value, sizeof(value));
+			if (ret > 0 && strlen(value)) {
+				printf("attr %s value '%s'\n", p, value);
+				ret = etcd_kv_put(ectx, p, value, true);
+				if (ret < 0)
+					fprintf(stderr,
+						"attr %s put error %d\n",
+						p, ret);
+			}
 		}
 	}
 	closedir(d);
+	etcd_exit(ectx);
 	return 0;
+}
+
+void usage(void) {
+	printf("etcd_discovery - decentralized nvme discovery\n");
+	printf("usage: etcd_discovery <args>\n");
+	printf("Arguments are:\n");
+	printf("\t[-h|--host] <host-or-ip>\tHost to connect to\n");
+	printf("\t[-p|--port] <portnum>\tetcd client port\n");
+	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix\n");
+	printf("\t[-s|--ssl]\tUse SSL connections\n");
+	printf("\t[-v|--verbose]\tVerbose output\n");
+	printf("\t[-h|--help]\tThis help text\n");
 }
 
 int main(int argc, char **argv)
 {
-#if 0
+	struct option getopt_arg[] = {
+		{"port", required_argument, 0, 'p'},
+		{"host", required_argument, 0, 'h'},
+		{"ssl", no_argument, 0, 's'},
+		{"key_prefix", required_argument, 0, 'k'},
+		{"verbose", no_argument, 0, 'v'},
+		{"help", no_argument, 0, '?'},
+	};
 	pthread_t watcher_thr;
-#endif
 	pthread_t signal_thr;
 	sigset_t oldmask;
 	struct watcher_ctx *ctx;
-	int ret = 0;
+	int ret = 0, getopt_ind;
+	char c;
 
 	ctx = malloc(sizeof(*ctx));
 	if (!ctx)
@@ -215,13 +169,54 @@ int main(int argc, char **argv)
 
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->pathname = strdup("/sys/kernel/config/nvmet");
+	ctx->path_fd = open(ctx->pathname, O_DIRECTORY | O_RDONLY);
+	if (ctx->path_fd < 0) {
+		fprintf(stderr, "cannot open path '%s', error %d\n",
+			ctx->pathname, errno);
+		ret = errno;
+		goto out_free;
+	}
 
-	ctx->fanotify_fd = fanotify_init(FAN_CLASS_PRE_CONTENT, O_RDWR);
-	if (ctx->fanotify_fd < 0) {
-		fprintf(stderr, "fanotify_init() failed, error %d\n", errno);
-		free(ctx->pathname);
-		free(ctx);
-		exit(1);
+	ctx->etcd = etcd_init(NULL);
+	if (!ctx->etcd) {
+		ret = ENOMEM;
+		fprintf(stderr, "cannot allocate context\n");
+		goto out_close;
+	}
+
+	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
+				getopt_arg, &getopt_ind)) != -1) {
+		switch (c) {
+		case 'e':
+			free(ctx->etcd->prefix);
+			ctx->etcd->prefix = strdup(optarg);
+			break;
+		case 'h':
+			ctx->etcd->host = optarg;
+			break;
+		case 'p':
+			ctx->etcd->port = atoi(optarg);
+			break;
+		case 's':
+			ctx->etcd->proto = "https";
+			break;
+		case 'v':
+			etcd_debug = true;
+			port_debug = true;
+			ep_debug = true;
+			inotify_debug = true;
+			break;
+		case '?':
+			usage();
+			sigprocmask(SIG_SETMASK, &oldmask, NULL);
+			return 0;
+		}
+	}
+
+	ret = etcd_lease_grant(ctx->etcd);
+	if (ret < 0) {
+		fprintf(stderr, "failed to get etcd lease\n");
+		goto out_free_etcd;
 	}
 
 	sigemptyset(&mask);
@@ -235,39 +230,41 @@ int main(int argc, char **argv)
 		goto out_restore;
 	}
 
-#if 0
-	ret = pthread_create(&watcher_thr, NULL, watch_fanotify, ctx);
+	ret = pthread_create(&watcher_thr, NULL, inotify_loop, ctx);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
 		goto out_cancel;
 	}
-#endif
 
-	start_inotify();
+	mark_files(ctx, ctx->pathname);
+
+	start_inotify(ctx);
 
 	pthread_mutex_lock(&lock);
 	while (!stopped)
 		pthread_cond_wait(&wait, &lock);
 	pthread_mutex_unlock(&lock);
 
-	stop_inotify();
-#if 0
 	printf("cancelling watcher\n");
 	pthread_cancel(watcher_thr);
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
-#endif
 
+	stop_inotify(ctx);
 out_cancel:
 	pthread_cancel(signal_thr);
 	pthread_join(signal_thr, NULL);
 
 out_restore:
 	sigprocmask(SIG_SETMASK, &oldmask, NULL);
-
-	close(ctx->fanotify_fd);
+	etcd_lease_revoke(ctx->etcd);
+out_free_etcd:
+	etcd_exit(ctx->etcd);
+out_close:
+	close(ctx->path_fd);
+out_free:
 	free(ctx->pathname);
 	free(ctx);
 
