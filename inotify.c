@@ -33,7 +33,7 @@
 int debug_inotify = 1;
 LINKED_LIST(dir_watcher_list);
 
-#define NUM_WATCHER_TYPES 21
+#define NUM_WATCHER_TYPES 25
 
 enum watcher_type {
 	TYPE_UNKNOWN,
@@ -47,6 +47,8 @@ enum watcher_type {
 	TYPE_PORT_ANA_DIR,	/* ports/<port>/ana_groups */
 	TYPE_PORT_ANA,		/* ports/<port>/ana_groups/<anagrp> */
 	TYPE_PORT_ANA_ATTR,	/* ports/<port>/ana_groups/<anagrp>/<attr> */
+	TYPE_PORT_REF_DIR,	/* ports/<port>/referrals */
+	TYPE_PORT_REF,		/* ports/<port>/referrals/<traddr> */
 	TYPE_PORT_SUBSYS_DIR,	/* ports/<port>/subsystems */
 	TYPE_PORT_SUBSYS,	/* ports/<port>/subsystems/<subsys> */
 	TYPE_SUBSYS_DIR,	/* subsystems */
@@ -54,6 +56,8 @@ enum watcher_type {
 	TYPE_SUBSYS_ATTR,	/* subsystems/<subsys>/<attr> */
 	TYPE_SUBSYS_HOST_DIR,	/* subsystems/<subsys>/allowed_hosts */
 	TYPE_SUBSYS_HOST,	/* subsystems/<subsys>/allowed_hosts/<host> */
+	TYPE_SUBSYS_PT_DIR,	/* subsystems/<subsys>/passthru */
+	TYPE_SUBSYS_PT_ATTR,	/* subsystems/<subsys>/passthru/<attr> */
 	TYPE_SUBSYS_NS_DIR,	/* subsystems/<subsys>/namespaces */
 	TYPE_SUBSYS_NS,		/* subsystems/<subsys>/namespaces/<nsid> */
 	TYPE_SUBSYS_NS_ATTR	/* subsystems/<subsys>/namespaces/<nsid>/<attr> */
@@ -84,17 +88,25 @@ struct watcher_flags_t watcher_flags[NUM_WATCHER_TYPES] = {
 	{ .type = TYPE_PORT_ANA_ATTR, .name = "port_ana_attr",
 	  .flags = IN_MODIFY },
 	{ .type = TYPE_PORT_SUBSYS_DIR, .name = "port_subsys_dir",
-	  .flags = IN_CREATE | IN_DELETE },
+	  .flags = IN_CREATE },
 	{ .type = TYPE_PORT_SUBSYS, .name = "port_subsys",
-	  .flags = 0 },
+	  .flags = IN_DELETE_SELF },
+	{ .type = TYPE_PORT_REF_DIR, .name = "port_ref",
+	  .flags = IN_CREATE | IN_DELETE },
+	{ .type = TYPE_PORT_REF, .name = "referrals",
+	  .flags = IN_MODIFY },
 	{ .type = TYPE_SUBSYS_DIR, .name = "subsys_dir",
 	  .flags = IN_CREATE | IN_DELETE},
 	{ .type = TYPE_SUBSYS, .name = "subsys", .flags = 0 },
 	{ .type = TYPE_SUBSYS_ATTR, .name = "subsys_attr",
 	  .flags = IN_MODIFY },
 	{ .type = TYPE_SUBSYS_HOST_DIR, .name = "subsys_host_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_SUBSYS_HOST, .name = "subsys_host", .flags = 0 },
+	  .flags = IN_CREATE },
+	{ .type = TYPE_SUBSYS_HOST, .name = "subsys_host",
+	  .flags = IN_DELETE_SELF },
+	{ .type = TYPE_SUBSYS_PT_DIR, .name = "passthru_dir", .flags = 0 },
+	{ .type = TYPE_SUBSYS_PT_ATTR, .name = "passthru_attr",
+	  .flags = IN_MODIFY },
 	{ .type = TYPE_SUBSYS_NS_DIR, .name = "subsys_ns_dir",
 	  .flags = IN_CREATE },
 	{ .type = TYPE_SUBSYS_NS, .name = "subsys_ns",
@@ -227,6 +239,8 @@ enum watcher_type next_type(enum watcher_type type, const char *file)
 			next_type = TYPE_PORT_SUBSYS_DIR;
 		} else if (!strcmp(file, "ana_groups")) {
 			next_type = TYPE_PORT_ANA_DIR;
+		} else if (!strcmp(file, "referrals")) {
+			next_type = TYPE_PORT_REF_DIR;
 		} else {
 			next_type = TYPE_PORT_ATTR;
 		}
@@ -240,6 +254,9 @@ enum watcher_type next_type(enum watcher_type type, const char *file)
 	case TYPE_PORT_ANA:
 		next_type = TYPE_PORT_ANA_ATTR;
 		break;
+	case TYPE_PORT_REF_DIR:
+		next_type = TYPE_PORT_REF;
+		break;
 	case TYPE_SUBSYS_DIR:
 		next_type = TYPE_SUBSYS;
 		break;
@@ -248,12 +265,17 @@ enum watcher_type next_type(enum watcher_type type, const char *file)
 			next_type = TYPE_SUBSYS_HOST_DIR;
 		} else if (!strcmp(file, "namespaces")) {
 			next_type = TYPE_SUBSYS_NS_DIR;
+		} else if (!strcmp(file, "passthru")) {
+			next_type = TYPE_SUBSYS_PT_DIR;
 		} else {
 			next_type = TYPE_SUBSYS_ATTR;
 		}
 		break;
 	case TYPE_SUBSYS_HOST_DIR:
 		next_type = TYPE_SUBSYS_HOST;
+		break;
+	case TYPE_SUBSYS_PT_DIR:
+		next_type = TYPE_SUBSYS_PT_ATTR;
 		break;
 	case TYPE_SUBSYS_NS_DIR:
 		next_type = TYPE_SUBSYS_NS;
@@ -282,8 +304,6 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 		return new_type;
 	}
 	flags = get_flags(new_type, &type_name);
-	printf("%s: checking dir %s file %s flags %d\n",
-	       __func__, dirname, filename, flags);
 	if (flags > 0)
 		allocate_watch(ctx, dirname, filename,
 			       new_type, type_name, flags);
@@ -317,6 +337,9 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
+		if (inotify_debug)
+			printf("%s: checking %s %s\n",
+			       __func__, dirname, se->d_name);
 		new_type = mark_file(ctx, dirname, se->d_name, type);
 		if (new_type == TYPE_UNKNOWN)
 			continue;
