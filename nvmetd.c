@@ -213,12 +213,6 @@ int main(int argc, char **argv)
 		}
 	}
 
-	ret = etcd_lease_grant(ctx->etcd);
-	if (ret < 0) {
-		fprintf(stderr, "failed to get etcd lease\n");
-		goto out_free_etcd;
-	}
-
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 	sigaddset(&mask, SIGTERM);
@@ -238,10 +232,6 @@ int main(int argc, char **argv)
 		goto out_cancel;
 	}
 
-	mark_files(ctx, ctx->pathname);
-
-	start_inotify(ctx);
-
 	pthread_mutex_lock(&lock);
 	while (!stopped)
 		pthread_cond_wait(&wait, &lock);
@@ -252,15 +242,12 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
-	stop_inotify(ctx);
 out_cancel:
 	pthread_cancel(signal_thr);
 	pthread_join(signal_thr, NULL);
 
 out_restore:
 	sigprocmask(SIG_SETMASK, &oldmask, NULL);
-	etcd_lease_revoke(ctx->etcd);
-out_free_etcd:
 	etcd_exit(ctx->etcd);
 out_close:
 	close(ctx->path_fd);
