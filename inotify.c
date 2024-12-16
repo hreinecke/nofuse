@@ -88,7 +88,7 @@ struct watcher_flags_t watcher_flags[NUM_WATCHER_TYPES] = {
 	{ .type = TYPE_PORT_ANA_ATTR, .name = "port_ana_attr",
 	  .flags = IN_MODIFY },
 	{ .type = TYPE_PORT_SUBSYS_DIR, .name = "port_subsys_dir",
-	  .flags = IN_CREATE },
+	  .flags = IN_CREATE | IN_DELETE },
 	{ .type = TYPE_PORT_SUBSYS, .name = "port_subsys",
 	  .flags = IN_DELETE_SELF },
 	{ .type = TYPE_PORT_REF_DIR, .name = "port_ref",
@@ -101,7 +101,7 @@ struct watcher_flags_t watcher_flags[NUM_WATCHER_TYPES] = {
 	{ .type = TYPE_SUBSYS_ATTR, .name = "subsys_attr",
 	  .flags = IN_MODIFY },
 	{ .type = TYPE_SUBSYS_HOST_DIR, .name = "subsys_host_dir",
-	  .flags = IN_CREATE },
+	  .flags = IN_CREATE | IN_DELETE },
 	{ .type = TYPE_SUBSYS_HOST, .name = "subsys_host",
 	  .flags = IN_DELETE_SELF },
 	{ .type = TYPE_SUBSYS_PT_DIR, .name = "passthru_dir", .flags = 0 },
@@ -141,6 +141,7 @@ static int get_flags(enum watcher_type type, const char **name)
 static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 {
 	struct dir_watcher *tmp;
+	const char *p;
 
 	INIT_LINKED_LIST(&watcher->entry);
 	list_for_each_entry(tmp, &dir_watcher_list, entry) {
@@ -158,10 +159,12 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 			watcher->dirname, errno);
 		return watcher;
 	}
-	if (inotify_debug)
+	if (inotify_debug) {
+		p = watcher->dirname + strlen(watcher->ctx->pathname) + 1;
 		printf("add inotify watch %d type %s (%d) flags %d to %s\n",
 		       watcher->wd, watcher->type_name, watcher->type, flags,
-		       watcher->dirname);
+		       p);
+	}
 	list_add(&watcher->entry, &dir_watcher_list);
 	return 0;
 }
@@ -169,15 +172,18 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 static int remove_watch(struct dir_watcher *watcher)
 {
 	int ret;
+	const char *p;
 
 	ret = inotify_rm_watch(watcher->ctx->inotify_fd, watcher->wd);
 	if (ret < 0)
 		fprintf(stderr, "Failed to remove inotify watch on '%s'\n",
 			watcher->dirname);
-	if (inotify_debug)
+	if (inotify_debug) {
+		p = watcher->dirname + strlen(watcher->ctx->pathname) + 1;
 		printf("remove inotify watch %d type %s (%d) from '%s'\n",
 		       watcher->wd, watcher->type_name,
-		       watcher->type, watcher->dirname);
+		       watcher->type, p);
+	}
 	list_del_init(&watcher->entry);
 	return ret;
 }
@@ -294,7 +300,7 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 	  const char *filename, enum watcher_type type)
 {
 	enum watcher_type new_type;
-	const char *type_name;
+	const char *type_name, *p;
 	int flags = 0;
 
 	new_type = next_type(type, filename);
@@ -307,6 +313,11 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 	if (flags > 0)
 		allocate_watch(ctx, dirname, filename,
 			       new_type, type_name, flags);
+	else if (inotify_debug) {
+		p = dirname + strlen(ctx->pathname) + 1;
+		printf("skip inotify type %s (%d) flags %d on %s\n",
+		       type_name, new_type, flags, p);
+	}
 	return new_type;
 }
 
@@ -447,7 +458,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 		}
 		new_type = mark_file(watcher->ctx, watcher->dirname,
 				     ev->name, watcher->type);
-		if (new_type != TYPE_UNKNOWN)
+		if (new_type != TYPE_UNKNOWN && (ev->mask & IN_ISDIR))
 			mark_inotify(watcher->ctx, watcher->dirname,
 				     ev->name, new_type);
 	} else if (ev->mask & IN_DELETE_SELF) {
