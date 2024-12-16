@@ -1,3 +1,4 @@
+
 BACKEND = ETCD
 CFLAGS = -Wall -g -I/usr/include/fuse3
 DAEMON_OBJS := daemon.o
@@ -23,7 +24,7 @@ LIBS += $(SQL_LIBS)
 OBJS += $(SQL_OBJS)
 endif
 
-all: nofuse xdp_drop_port.o base64_test
+all: nofuse portd nvmetd xdp_drop_port.o base64_test
 
 nofuse: $(DAEMON_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
