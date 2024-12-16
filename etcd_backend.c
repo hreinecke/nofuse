@@ -86,7 +86,7 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 	if (!strcmp(root, "hosts"))
 		attr = "dhchap_key";
 	else if (!strcmp(root, "subsystems"))
-		attr = "attr_type";
+		attr = "attr_allow_any_host";
 	else if (!strcmp(root, "ports"))
 		attr = "addr_traddr";
 	else
@@ -127,7 +127,7 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 	if (!strcmp(root, "hosts"))
 		attr = "dhchap_hash";
 	else if (!strcmp(root, "subsystems"))
-		attr = "attr_type";
+		attr = "attr_allow_any_host";
 	else if (!strcmp(root, "ports"))
 		attr = "addr_traddr";
 	else
@@ -620,7 +620,7 @@ int etcd_test_subsys(struct etcd_ctx *ctx, const char *nqn)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/subsystems/%s/attr_type",
+	ret = asprintf(&key, "%s/subsystems/%s/attr_allow_any_host",
 		       ctx->prefix, nqn);
 	if (ret < 0)
 		return ret;
