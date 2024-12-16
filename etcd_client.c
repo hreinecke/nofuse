@@ -19,6 +19,7 @@ static char *default_etcd_prefix = "nofuse";
 static char *default_etcd_host = "localhost";
 static char *default_etcd_proto = "http";
 static int default_etcd_port = 2379;
+static int default_etcd_ttl = 60;
 
 static char *__b64enc(const char *str, int str_len)
 {
@@ -1186,8 +1187,8 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		ctx->prefix = strdup(prefix);
 	else
 		ctx->prefix = strdup(default_etcd_prefix);
-	ctx->lease = -1;
-	ctx->ttl = 240;
+	ctx->lease = 0;
+	ctx->ttl = default_etcd_ttl;
 
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
@@ -1216,7 +1217,7 @@ struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx)
 	new_ctx->proto = ctx->proto;
 	new_ctx->port = ctx->port;
 	new_ctx->prefix = strdup(ctx->prefix);
-	new_ctx->lease = -1;
+	new_ctx->lease = 0;
 	new_ctx->ttl = ctx->ttl;
 	if (ctx->node_name) {
 		new_ctx->node_name = strdup(ctx->node_name);
