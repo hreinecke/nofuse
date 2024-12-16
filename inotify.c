@@ -324,6 +324,7 @@ static int read_attr(char *attr_path, char *value, size_t value_len)
 static int update_value(struct dir_watcher *wd)
 {
 	char value[PATH_MAX + 1], *t, *p;
+	char key[PATH_MAX + 1];
 	int ret;
 
 	p = wd->dirname + strlen(wd->ctx->pathname) + 1;
@@ -334,16 +335,17 @@ static int update_value(struct dir_watcher *wd)
 		t = "attr";
 		ret = read_attr(wd->dirname, value, sizeof(value));
 	}
+	sprintf(key, "%s/%s", wd->ctx->etcd->prefix, p);
 	if (inotify_debug)
-		printf("%s: %s %s value '%s'\n", __func__,
-		       t, p, value);
+		printf("%s: %s key %s value '%s'\n", __func__,
+		       t, key, value);
 	if (ret > 0) {
 		pthread_mutex_lock(&wd->ctx->etcd_mutex);
-		ret = etcd_kv_put(wd->ctx->etcd, p, value, true);
+		ret = etcd_kv_put(wd->ctx->etcd, key, value, true);
 		pthread_mutex_unlock(&wd->ctx->etcd_mutex);
 		if (ret < 0)
-			fprintf(stderr, "%s %s put error %d\n",
-				t, p, ret);
+			fprintf(stderr, "%s: %s key %s put error %d\n",
+				__func__, t, key, ret);
 	} else {
 		fprintf(stderr, "%s: %s %s value error %d\n",
 			__func__, t, p, ret);
