@@ -188,16 +188,18 @@ static int remove_watch(struct dir_watcher *watcher)
 	return ret;
 }
 
-static int allocate_watch(struct watcher_ctx *ctx, const char *dirname,
-			  const char *filename, enum watcher_type type,
-			  const char *type_name, int flags)
+static struct dir_watcher *
+allocate_watch(struct watcher_ctx *ctx, const char *dirname,
+	       const char *filename, enum watcher_type type,
+	       const char *type_name, int flags)
 {
 	struct dir_watcher *watcher, *tmp;
 
 	watcher = malloc(sizeof(struct dir_watcher));
 	if (!watcher) {
 		fprintf(stderr, "Failed to allocate dirwatch\n");
-		return -ENOMEM;
+		errno = ENOMEM;
+		return NULL;
 	}
 	strcpy(watcher->dirname, dirname);
 	strcat(watcher->dirname, "/");
@@ -209,9 +211,10 @@ static int allocate_watch(struct watcher_ctx *ctx, const char *dirname,
 	if (tmp) {
 		if (tmp == watcher)
 			free(watcher);
-		return -EAGAIN;
+		errno = EAGAIN;
+		watcher = NULL;
 	}
- 	return 0;
+	return watcher;
 }
 
 enum watcher_type next_type(enum watcher_type type, const char *file)
@@ -295,11 +298,65 @@ enum watcher_type next_type(enum watcher_type type, const char *file)
 	return next_type;
 }
 
+static int read_attr(char *attr_path, char *value, size_t value_len)
+{
+	int fd, len;
+	char *p;
+
+	fd = open(attr_path, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "Failed to open '%s', error %d\n",
+			attr_path, errno);
+		return -1;
+	}
+	len = read(fd, value, value_len);
+	if (len < 0)
+		memset(value, 0, value_len);
+	else {
+		p = &value[len - 1];
+		if (*p == '\n')
+			*p = '\0';
+	}
+	close(fd);
+	return len;
+}
+
+static int update_value(struct dir_watcher *wd)
+{
+	char value[PATH_MAX + 1], *t, *p;
+	int ret;
+
+	p = wd->dirname + strlen(wd->ctx->pathname) + 1;
+	if (wd->type == TYPE_SUBSYS_HOST || wd->type == TYPE_PORT_SUBSYS) {
+		t = "link";
+		ret = readlink(wd->dirname, value, sizeof(value));
+	} else {
+		t = "attr";
+		ret = read_attr(wd->dirname, value, sizeof(value));
+	}
+	if (inotify_debug)
+		printf("%s: %s %s value '%s'\n", __func__,
+		       t, p, value);
+	if (ret > 0) {
+		pthread_mutex_lock(&wd->ctx->etcd_mutex);
+		ret = etcd_kv_put(wd->ctx->etcd, p, value, true);
+		pthread_mutex_unlock(&wd->ctx->etcd_mutex);
+		if (ret < 0)
+			fprintf(stderr, "%s %s put error %d\n",
+				t, p, ret);
+	} else {
+		fprintf(stderr, "%s: %s %s value error %d\n",
+			__func__, t, p, ret);
+	}
+	return ret;
+}
+
 static enum watcher_type
 mark_file(struct watcher_ctx *ctx, const char *dirname,
-	  const char *filename, enum watcher_type type)
+	  const char *filename, enum watcher_type type, bool isdir)
 {
 	enum watcher_type new_type;
+	struct dir_watcher *wd;
 	const char *type_name, *p;
 	int flags = 0;
 
@@ -310,10 +367,17 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 		return new_type;
 	}
 	flags = get_flags(new_type, &type_name);
-	if (flags > 0)
-		allocate_watch(ctx, dirname, filename,
-			       new_type, type_name, flags);
-	else if (inotify_debug) {
+	if (flags > 0) {
+		wd = allocate_watch(ctx, dirname, filename,
+				    new_type, type_name, flags);
+		if (!wd) {
+			fprintf(stderr, "%s/%s: failed to allocate watcher\n",
+				dirname, filename);
+			return TYPE_UNKNOWN;
+		}
+		if (!isdir)
+			update_value(wd);
+	} else if (inotify_debug) {
 		p = dirname + strlen(ctx->pathname) + 1;
 		printf("skip inotify type %s (%d) flags %d on %s\n",
 		       type_name, new_type, flags, p);
@@ -351,7 +415,8 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		if (inotify_debug)
 			printf("%s: checking %s %s\n",
 			       __func__, dirname, se->d_name);
-		new_type = mark_file(ctx, dirname, se->d_name, type);
+		new_type = mark_file(ctx, dirname, se->d_name, type,
+				     se->d_type == DT_DIR);
 		if (new_type == TYPE_UNKNOWN)
 			continue;
 		if (se->d_type == DT_DIR) {
@@ -457,7 +522,8 @@ int process_inotify_event(char *iev_buf, int iev_len)
 				printf("link %s\n", subdir);
 		}
 		new_type = mark_file(watcher->ctx, watcher->dirname,
-				     ev->name, watcher->type);
+				     ev->name, watcher->type,
+				     (ev->mask & IN_ISDIR));
 		if (new_type != TYPE_UNKNOWN && (ev->mask & IN_ISDIR))
 			mark_inotify(watcher->ctx, watcher->dirname,
 				     ev->name, new_type);
@@ -523,36 +589,20 @@ static void stop_inotify(void *arg)
 	ctx->inotify_fd = -1;
 }
 
-void inotify_revoke(void *arg)
-{
-	struct etcd_ctx *ctx = arg;
-
-	etcd_lease_revoke(ctx);
-}
-
 void *inotify_loop(void *arg)
 {
 	struct watcher_ctx *ctx = arg;
-	struct etcd_ctx *ectx = etcd_dup(ctx->etcd);
 	fd_set rfd;
 	struct timeval tmo;
 	int ret;
 	char event_buffer[INOTIFY_BUFFER_SIZE]
 		__attribute__ ((aligned(__alignof__(struct inotify_event))));
 
-	ret = etcd_lease_grant(ectx);
-	if (ret < 0) {
-		fprintf(stderr, "failed to get etcd lease\n");
-		pthread_exit(NULL);
-		return NULL;
-	}
-
-	pthread_cleanup_push(inotify_revoke, ectx);
-
 	ret = start_inotify(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "failed to start inotify\n");
-		goto out_pop;
+		pthread_exit(NULL);
+		return NULL;
 	}
 
 	pthread_cleanup_push(stop_inotify, ctx);
@@ -561,7 +611,9 @@ void *inotify_loop(void *arg)
 		int rlen, ret;
 		char *iev_buf;
 
-		ret = etcd_lease_keepalive(ectx);
+		pthread_mutex_lock(&ctx->etcd_mutex);
+		ret = etcd_lease_keepalive(ctx->etcd);
+		pthread_mutex_unlock(&ctx->etcd_mutex);
 		if (ret < 0) {
 			fprintf(stderr,
 				"failed to update lease, error %d\n", ret);
@@ -607,10 +659,8 @@ void *inotify_loop(void *arg)
 			iev_buf += iev_len;
 		}
 	}
-	pthread_cleanup_pop(1);
-out_pop:
-	pthread_cleanup_pop(1);
 
+	pthread_cleanup_pop(1);
 	pthread_exit(NULL);
 	return NULL;
 }

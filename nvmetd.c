@@ -60,80 +60,6 @@ static void *signal_handler(void *arg)
 	return NULL;
 }
 
-static int read_attr(char *attr_path, char *value, size_t value_len)
-{
-	int fd, len;
-	char *p;
-
-	fd = open(attr_path, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open '%s', error %d\n",
-			attr_path, errno);
-		return -1;
-	}
-	len = read(fd, value, value_len);
-	if (len < 0)
-		memset(value, 0, value_len);
-	else {
-		p = &value[len - 1];
-		if (*p == '\n')
-			*p = '\0';
-	}
-	close(fd);
-	return len;
-}
-
-int mark_files(struct watcher_ctx *ctx, char *dirname)
-{
-	DIR *d;
-	struct dirent *de;
-	int ret;
-	struct etcd_ctx *ectx = etcd_dup(ctx->etcd);
-
-	d = opendir(dirname);
-	if (d < 0)
-		return -errno;
-	while ((de = readdir(d))) {
-		char pathname[PATH_MAX];
-		char value[512];
-
-		if (!strcmp(de->d_name, ".") ||
-		    !strcmp(de->d_name, ".."))
-			continue;
-		sprintf(pathname, "%s/%s", dirname, de->d_name);
-		if (de->d_type  == DT_DIR)
-			mark_files(ctx, pathname);
-		else if (de->d_type == DT_LNK) {
-			char *p = pathname + strlen(ctx->pathname) + 1;
-
-			ret = readlink(pathname, value, sizeof(value));
-			if (ret > 0) {
-				printf("link %s\n", p);
-				ret = etcd_kv_put(ectx, p, value, true);
-				if (ret < 0)
-					fprintf(stderr,
-						"link %s put error %d\n",
-						p, ret);
-			}
-		} else {
-			char *p = pathname + strlen(ctx->pathname) + 1;
-
-			ret = read_attr(pathname, value, sizeof(value));
-			if (ret > 0 && strlen(value)) {
-				printf("attr %s value '%s'\n", p, value);
-				ret = etcd_kv_put(ectx, p, value, true);
-				if (ret < 0)
-					fprintf(stderr,
-						"attr %s put error %d\n",
-						p, ret);
-			}
-		}
-	}
-	closedir(d);
-	etcd_exit(ectx);
-	return 0;
-}
-
 void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
@@ -168,6 +94,7 @@ int main(int argc, char **argv)
 		exit(1);
 
 	memset(ctx, 0, sizeof(*ctx));
+	pthread_mutex_init(&ctx->etcd_mutex, NULL);
 	ctx->pathname = strdup("/sys/kernel/config/nvmet");
 	ctx->path_fd = open(ctx->pathname, O_DIRECTORY | O_RDONLY);
 	if (ctx->path_fd < 0) {
@@ -218,10 +145,16 @@ int main(int argc, char **argv)
 	sigaddset(&mask, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &mask, &oldmask);
 
+	ret = etcd_lease_grant(ctx->etcd);
+	if (ret < 0) {
+		fprintf(stderr, "failed to get etcd lease\n");
+		goto out_restore;
+	}
+
 	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
 	if (ret) {
 		fprintf(stderr, "cannot start signal handler\n");
-		goto out_restore;
+		goto out_revoke;
 	}
 
 	ret = pthread_create(&watcher_thr, NULL, inotify_loop, ctx);
@@ -246,6 +179,8 @@ out_cancel:
 	pthread_cancel(signal_thr);
 	pthread_join(signal_thr, NULL);
 
+out_revoke:
+	etcd_lease_revoke(ctx->etcd);
 out_restore:
 	sigprocmask(SIG_SETMASK, &oldmask, NULL);
 	etcd_exit(ctx->etcd);
