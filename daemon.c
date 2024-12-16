@@ -40,7 +40,7 @@ bool port_debug;
 
 struct nofuse_context {
 	struct etcd_ctx *etcd;
-	const char *subsysnqn;
+	char *subsysnqn;
 	const char *traddr;
 	const char *dbname;
 	const char *prefix;
@@ -60,15 +60,28 @@ int default_subsys_type(const char *nqn)
 		return NVME_NQN_NVM;
 }
 
-static int add_subsys(struct nofuse_context *ctx, int type)
+static int init_discovery(struct nofuse_context *ctx)
 {
 	int ret;
 
-#ifdef NOFUSE_ETCD
-	ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn, type);
-#else
-	ret = configdb_add_subsys(ctx->subsysnqn, type);
-#endif
+	ret = etcd_get_discovery_nqn(ctx->etcd, discovery_nqn);
+	if (!ret) {
+		if (ctx->subsysnqn)
+			free(ctx->subsysnqn);
+		printf("use existing discovery NQN %s\n", discovery_nqn);
+		ctx->subsysnqn = strdup(discovery_nqn);
+		return 0;
+	}
+	if (!ctx->subsysnqn)
+		ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
+	ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn);
+	if (ret < 0) {
+		fprintf(stderr, "failed to set discovery nqn\n");
+		return ret;
+	}
+	memcpy(discovery_nqn, ctx->subsysnqn,
+	       strlen(ctx->subsysnqn));
+	printf("set discovery NQN to %s\n", discovery_nqn);
 	return ret;
 }
 
@@ -76,11 +89,7 @@ static int init_subsys(struct nofuse_context *ctx)
 {
 	int ret;
 
-	ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn);
-	if (ret)
-		return ret;
-
-	ret = add_subsys(ctx, NVME_NQN_CUR);
+	ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn, NVME_NQN_CUR);
 	if (ret)
 		return ret;
 
@@ -129,10 +138,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		return 1;
 	}
 
-	if (!ctx->subsysnqn)
-		ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
-	memcpy(discovery_nqn, ctx->subsysnqn,
-	       strlen(ctx->subsysnqn));
+	init_discovery(ctx);
 
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);

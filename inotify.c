@@ -341,7 +341,7 @@ static int update_value(struct dir_watcher *wd)
 		       t, key, value);
 	if (ret > 0) {
 		pthread_mutex_lock(&wd->ctx->etcd_mutex);
-		ret = etcd_kv_put(wd->ctx->etcd, key, value, true);
+		ret = etcd_kv_put(wd->ctx->etcd, key, value, false, false);
 		pthread_mutex_unlock(&wd->ctx->etcd_mutex);
 		if (ret < 0)
 			fprintf(stderr, "%s: %s key %s put error %d\n",

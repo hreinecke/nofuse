@@ -238,7 +238,7 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 }
 
 int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
-		bool lease)
+		bool ignore_lease, bool no_lease)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL;
@@ -257,10 +257,14 @@ int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
 	encoded_value = __b64enc(value, strlen(value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
-	if (lease)
+	if (!ignore_lease) {
+		uint64_t lease = ctx->lease;
+
+		if (no_lease)
+			lease = 0;
 		json_object_object_add(post_obj, "lease",
-				       json_object_new_int64(ctx->lease));
-	else
+				       json_object_new_int64(lease));
+	} else
 		json_object_object_add(post_obj, "ignore_lease",
 				       json_object_new_boolean(true));
 

@@ -24,7 +24,7 @@ int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 	if (ret < 0)
 		return ret;
 
-	ret = etcd_kv_put(ctx, key, buf, true);
+	ret = etcd_kv_put(ctx, key, buf, false, true);
 	free(key);
 	return ret;
 }
@@ -194,7 +194,7 @@ int etcd_add_host(struct etcd_ctx *ctx, const char *nqn)
 			       ctx->prefix, nqn, kv->key);
 		if (ret < 0)
 			return ret;
-		ret = etcd_kv_put(ctx, key, kv->value, true);
+		ret = etcd_kv_new(ctx, key, kv->value);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -323,7 +323,7 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
 			if (origin)
 				value = origin;
 		}
-		ret = etcd_kv_put(ctx, key, value, true);
+		ret = etcd_kv_new(ctx, key, value);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -366,7 +366,7 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, unsigned int id,
 		       ctx->prefix, id, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_put(ctx, key, value, false);
+	ret = etcd_kv_update(ctx, key, value);
 	free(key);
 	if (ret < 0)
 		return -errno;
@@ -496,7 +496,7 @@ int etcd_add_ana_group(struct etcd_ctx *ctx, int portid,
 	default:
 		return -EINVAL;
 	}
-	ret = etcd_kv_put(ctx, key, value, true);
+	ret = etcd_kv_new(ctx, key, value);
 	free(key);
 	return ret;
 }
@@ -534,7 +534,7 @@ int etcd_set_ana_group(struct etcd_ctx *ctx, int portid,
 	    strcmp(ana_state, "change"))
 		return -EINVAL;
 
-	ret = etcd_kv_put(ctx, key, ana_state, false);
+	ret = etcd_kv_update(ctx, key, ana_state);
 	free(key);
 	return ret;
 }
@@ -603,11 +603,11 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
 			char type_str[3];
 
 			sprintf(type_str, "%d", type);
-			ret = etcd_kv_put(ctx, key, type_str, true);
-		} else if (!strcmp(kv->key, "attr_firmware")) {
-			ret = etcd_kv_put(ctx, key, firmware_rev, true);
-		} else
-			ret = etcd_kv_put(ctx, key, kv->value, true);
+			ret = etcd_kv_new(ctx, key, type_str);
+		} else if (!strcmp(kv->key, "attr_firmware"))
+			ret = etcd_kv_new(ctx, key, firmware_rev);
+		else
+			ret = etcd_kv_new(ctx, key, kv->value);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -650,7 +650,7 @@ int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_put(ctx, key, value, false);
+	ret = etcd_kv_update(ctx, key, value);
 	free(key);
 	if (ret < 0)
 		return -errno;
@@ -745,7 +745,7 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn, int id)
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_put(ctx, key, value, true);
+	ret = etcd_kv_new(ctx, key, value);
 	free(value);
 	free(key);
 	if (ret < 0)
@@ -845,7 +845,7 @@ int etcd_add_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_put(ctx, key, value, true);
+	ret = etcd_kv_new(ctx, key, value);
 	free(value);
 	free(key);
 	if (ret < 0)
@@ -996,7 +996,7 @@ int etcd_add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 		else
 			value = kv->value;
 		if (value)
-			ret = etcd_kv_put(ctx, key, value, true);
+			ret = etcd_kv_new(ctx, key, value);
 		free(key);
 	}
 	return ret;
@@ -1037,7 +1037,7 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, nsid, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_put(ctx, key, value, false);
+	ret = etcd_kv_update(ctx, key, value);
 	free(key);
 	if (ret < 0)
 		return -errno;
@@ -1087,7 +1087,7 @@ int etcd_set_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_put(ctx, key, value, false);
+	ret = etcd_kv_update(ctx, key, value);
 	free(value);
 	free(key);
 	if (ret < 0)
