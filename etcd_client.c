@@ -318,13 +318,12 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 		if (err_obj) {
 			fprintf(stderr, "%s\n",
 				json_object_get_string(err_obj));
-			errno = EINVAL;
-			ret = -1;
+			ret = -EINVAL;
 		}
 		err_obj = json_object_object_get(ctx->resp_obj, "errno");
 		if (err_obj) {
 			errno = json_object_get_int(err_obj);
-			ret = -1;
+			ret = -errno;
 		}
 	}
 

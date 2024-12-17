@@ -70,30 +70,31 @@ static int init_discovery(struct nofuse_context *ctx)
 			free(ctx->subsysnqn);
 		printf("use existing discovery NQN %s\n", discovery_nqn);
 		ctx->subsysnqn = strdup(discovery_nqn);
-		return 0;
+	} else {
+		if (!ctx->subsysnqn)
+			ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
+		ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn);
+		if (ret < 0) {
+			fprintf(stderr, "failed to set discovery nqn\n");
+			return ret;
+		}
+		memcpy(discovery_nqn, ctx->subsysnqn,
+		       strlen(ctx->subsysnqn));
+		printf("set discovery NQN to %s\n", discovery_nqn);
 	}
-	if (!ctx->subsysnqn)
-		ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
-	ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn);
-	if (ret < 0) {
-		fprintf(stderr, "failed to set discovery nqn\n");
-		return ret;
+	if (etcd_test_subsys(ctx->etcd, ctx->subsysnqn) < 0) {
+		printf("adding discovery subsystem %s\n",
+		       ctx->subsysnqn);
+		ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn,
+				      NVME_NQN_CUR, true);
 	}
-	memcpy(discovery_nqn, ctx->subsysnqn,
-	       strlen(ctx->subsysnqn));
-	printf("set discovery NQN to %s\n", discovery_nqn);
 	return ret;
 }
 
 static int init_subsys(struct nofuse_context *ctx)
 {
-	int ret;
-
-	ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn, NVME_NQN_CUR);
-	if (ret)
-		return ret;
-
-	etcd_add_subsys_port(ctx->etcd, ctx->subsysnqn, 1);
+	if (etcd_test_subsys(ctx->etcd, ctx->subsysnqn) == 0)
+		etcd_add_subsys_port(ctx->etcd, ctx->subsysnqn, 1);
 
 	return 0;
 }

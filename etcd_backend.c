@@ -587,7 +587,8 @@ int etcd_fill_subsys(struct etcd_ctx *ctx, const char *subsys,
 	return 0;
 }
 
-int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
+int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type,
+		    bool permanent)
 {
 	int ret, i;
 
@@ -605,9 +606,11 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
 			sprintf(type_str, "%d", type);
 			ret = etcd_kv_new(ctx, key, type_str);
 		} else if (!strcmp(kv->key, "attr_firmware"))
-			ret = etcd_kv_new(ctx, key, firmware_rev);
+			ret = etcd_kv_put(ctx, key, firmware_rev, false,
+					  permanent);
 		else
-			ret = etcd_kv_new(ctx, key, kv->value);
+			ret = etcd_kv_put(ctx, key, kv->value, false,
+					  permanent);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -623,8 +626,10 @@ int etcd_test_subsys(struct etcd_ctx *ctx, const char *nqn)
 	ret = asprintf(&key, "%s/subsystems/%s/attr_allow_any_host",
 		       ctx->prefix, nqn);
 	if (ret < 0)
-		return ret;
+		return false;
+	printf("%s: key %s\n", __func__, key);
 	ret = etcd_kv_get(ctx, key, NULL);
+	printf("%s: ret %d\n", __func__, ret);
 	free(key);
 	return ret;
 }

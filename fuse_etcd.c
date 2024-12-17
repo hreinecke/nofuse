@@ -652,7 +652,7 @@ static int subsys_mkdir(char *s)
 		printf("creating %s subsys %s\n",
 		       type == NVME_NQN_NVM ? "nvm" : "cur",
 		       subsysnqn);
-		return etcd_add_subsys(ctx, subsysnqn, type);
+		return etcd_add_subsys(ctx, subsysnqn, type, false);
 	}
 
 	if (strcmp(p, "namespaces"))
