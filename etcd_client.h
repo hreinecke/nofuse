@@ -76,7 +76,8 @@ static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 }
 
 int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
-struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key);
+struct etcd_kv *etcd_kv_range(struct etcd_ctx *ctx, const char *key,
+			      int *ret);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_revision(struct etcd_ctx *ctx, const char *key);

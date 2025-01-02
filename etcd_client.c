@@ -49,63 +49,6 @@ static char *__b64dec(const char *encoded_str)
 }
 
 static size_t
-etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
-{
-	struct json_object *etcd_resp, *kvs_obj;
-	struct etcd_ctx *ctx = arg;
-	int i;
-
-	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
-					  size * nmemb);
-	if (!etcd_resp) {
-		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
-			/* Partial / chunked response; continue */
-			return size * nmemb;
-		}
-		if (etcd_debug)
-			printf("%s: ERROR:\n%s\n", __func__, ptr);
-
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(ptr));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
-		return 0;
-	}
-	if (etcd_debug)
-		printf("%s: DATA:\n%s\n", __func__,
-		       json_object_to_json_string_ext(etcd_resp,
-						      JSON_C_TO_STRING_PRETTY));
-	kvs_obj = json_object_object_get(etcd_resp, "kvs");
-	if (!kvs_obj)
-		goto out;
-
-	for (i = 0; i < json_object_array_length(kvs_obj); i++) {
-		struct json_object *kv_obj, *key_obj, *value_obj;
-		char *key_str, *value_str;
-
-		kv_obj = json_object_array_get_idx(kvs_obj, i);
-		key_obj = json_object_object_get(kv_obj, "key");
-		if (!key_obj)
-			continue;
-		value_obj = json_object_object_get(kv_obj, "value");
-		if (!value_obj)
-			continue;
-		key_str = __b64dec(json_object_get_string(key_obj));
-		value_str = __b64dec(json_object_get_string(value_obj));
-		if (etcd_debug)
-			fprintf(stderr, "%s: key '%s', val '%s'\n",
-				__func__, key_str, value_str);
-		json_object_object_add(ctx->resp_obj, key_str,
-				       json_object_new_string(value_str));
-		free(value_str);
-		free(key_str);
-	}
-out:
-	json_object_put(etcd_resp);
-	return size * nmemb;
-}
-
-static size_t
 etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *kvs_obj;
@@ -418,13 +361,15 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	return ret;
 }
 
-struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key)
+struct etcd_kv *etcd_kv_range(struct etcd_ctx *ctx, const char *key,
+			      int *ret)
 {
 	char url[1024];
-	struct json_object *post_obj = NULL, *resp = NULL;
+	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL, end;
 	char *encoded_range = NULL, *range;
-	int ret;
+	struct etcd_kv *resp = NULL;
+	int _ret;
 
 	ctx->resp_obj = json_object_new_object();
 	sprintf(url, "%s://%s:%u/v3/kv/range",
@@ -443,33 +388,21 @@ struct json_object *etcd_kv_range(struct etcd_ctx *ctx, const char *key)
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
 
-	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_range_response);
-	if (!ret) {
-		struct json_object *err_obj;
-
-		err_obj = json_object_object_get(ctx->resp_obj, "error");
-		if (err_obj) {
-			fprintf(stderr, "%s\n",
-				json_object_get_string(err_obj));
-			errno = EINVAL;
-			ret = -1;
-		}
-		err_obj = json_object_object_get(ctx->resp_obj, "errno");
-		if (err_obj) {
-			errno = json_object_get_int(err_obj);
-			ret = -1;
-		}
+	_ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_kvs_response);
+	if (_ret) {
+		*ret = _ret;
+		return NULL;
 	}
-
+	if (ctx->resp_val > 0) {
+		resp = ctx->resp_kvs;
+		ctx->resp_kvs = NULL;
+	}
+	*ret = ctx->resp_val;
+	ctx->resp_val = 0;
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
 	json_tokener_free(ctx->tokener);
-	if (ret < 0)
-		json_object_put(ctx->resp_obj);
-	else
-		resp = ctx->resp_obj;
-	ctx->resp_obj = NULL;
 	return resp;
 }
 

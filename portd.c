@@ -172,38 +172,37 @@ out_free:
 }
 
 static void parse_ports(struct etcd_ctx *ctx,
-			struct json_object *resp_obj)
+			struct etcd_kv *kvs, int num_kvs)
 {
 	struct nofuse_port *port;
+	int i;
 
-	json_object_object_foreach(resp_obj, key, val_obj) {
-		char *path, *attr = NULL, *subsys = NULL;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char *attr = NULL, *subsys = NULL;
 		unsigned int portid, ana_grpid = 0;
-		int ret;
 
-		if (!json_object_is_type(val_obj, json_type_string))
-			continue;
-		path = strdup(key);
-		ret = parse_port_key(path, &portid, &attr, &subsys, &ana_grpid);
-		if (ret < 0)
-			continue;
-		if (subsys) {
-			port = find_port(portid);
-			if (!port)
-				continue;
-			printf("start port %d subsys %s\n",
-			       portid, subsys);
-			start_port(port);
-			put_port(port);
-		} else if (ana_grpid)
-			printf("add port %d ana group %d\n",
-			       portid, ana_grpid);
-		else {
-			find_and_add_port(ctx, portid);
-			printf("add port %d attr %s\n",
-			       portid, attr);
+		if (!parse_port_key(kv->key, &portid, &attr,
+				    &subsys, &ana_grpid)) {
+			if (subsys) {
+				port = find_port(portid);
+				if (port) {
+					printf("start port %d subsys %s\n",
+					       portid, subsys);
+					start_port(port);
+					put_port(port);
+				}
+			} else if (ana_grpid)
+				printf("add port %d ana group %d\n",
+				       portid, ana_grpid);
+			else {
+				find_and_add_port(ctx, portid);
+				printf("add port %d attr %s\n",
+				       portid, attr);
+			}
 		}
-		free(path);
+		free(kv->key);
+		free(kv->value);
 	}
 }
 
@@ -260,7 +259,7 @@ int main(int argc, char **argv)
 		{"help", no_argument, 0, '?'},
 	};
 	static pthread_t watcher_thr, signal_thr;
-	struct json_object *resp;
+	struct etcd_kv *kvs;
 	sigset_t oldmask;
 	char c;
 	int getopt_ind;
@@ -316,14 +315,14 @@ int main(int argc, char **argv)
 	asprintf(&prefix, "%s/ports", ctx->prefix);
 	printf("Using key %s\n", prefix);
 
-	resp = etcd_kv_range(ctx, prefix);
-	if (!resp) {
+	kvs = etcd_kv_range(ctx, prefix, &ret);
+	if (!kvs) {
 		fprintf(stderr, "Failed to retrieve port information\n");
 		goto out_free;
 	}
 
-	parse_ports(ctx, resp);
-	json_object_put(resp);
+	parse_ports(ctx, kvs, ret);
+	free(kvs);
 
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
