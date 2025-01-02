@@ -105,6 +105,78 @@ out:
 	return size * nmemb;
 }
 
+static size_t
+etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct json_object *etcd_resp, *kvs_obj;
+	struct etcd_ctx *ctx = arg;
+	int i, num_kvs;
+
+	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
+					  size * nmemb);
+	if (!etcd_resp) {
+		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
+			/* Partial / chunked response; continue */
+			return size * nmemb;
+		}
+		if (etcd_debug)
+			printf("%s: ERROR:\n%s\n", __func__, ptr);
+
+		ctx->resp_val = -EBADMSG;
+		return 0;
+	}
+	if (etcd_debug)
+		printf("%s: DATA:\n%s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
+	kvs_obj = json_object_object_get(etcd_resp, "kvs");
+	if (!kvs_obj)
+		goto out;
+
+	num_kvs = json_object_array_length(kvs_obj);
+	ctx->resp_kvs = malloc(sizeof(struct etcd_kv) * num_kvs);
+	if (!ctx->resp_kvs) {
+		if (etcd_debug)
+			printf("%s: failed to allocate kvs\n", __func__);
+		ctx->resp_val = -ENOMEM;
+		return 0;
+	}
+	memset(ctx->resp_kvs, 0, sizeof(struct etcd_kv) * num_kvs);
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &ctx->resp_kvs[i];
+		struct json_object *kv_obj, *key_obj, *value_obj, *attr_obj;
+
+		kv_obj = json_object_array_get_idx(kvs_obj, i);
+		key_obj = json_object_object_get(kv_obj, "key");
+		if (!key_obj)
+			continue;
+		kv->key = __b64dec(json_object_get_string(key_obj));
+		value_obj = json_object_object_get(kv_obj, "value");
+		if (value_obj) {
+			kv->value = __b64dec(json_object_get_string(value_obj));
+		}
+		attr_obj = json_object_object_get(kv_obj, "create_revision");
+		if (attr_obj) {
+			kv->create_revision = json_object_get_int64(attr_obj);
+		}
+		attr_obj = json_object_object_get(kv_obj, "mod_revision");
+		if (attr_obj) {
+			kv->mod_revision = json_object_get_int64(attr_obj);
+		}
+		attr_obj = json_object_object_get(kv_obj, "version");
+		if (attr_obj) {
+			kv->version = json_object_get_int64(attr_obj);
+		}
+		if (etcd_debug)
+			fprintf(stderr, "%s: key '%s', val '%s'\n",
+				__func__, kv->key, kv->value);
+	}
+	ctx->resp_val = num_kvs;
+out:
+	json_object_put(etcd_resp);
+	return size * nmemb;
+}
+
 static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 {
 	CURL *curl;
@@ -298,59 +370,51 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	char url[1024];
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
-	int ret;
+	int i, ret;
 
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
-	ctx->resp_obj = json_object_new_object();
 	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
 
-	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_range_response);
-	if (!ret) {
-		struct json_object *err_obj;
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_kvs_response);
+	if (ret)
+		return ret;
 
-		err_obj = json_object_object_get(ctx->resp_obj, "error");
-		if (err_obj) {
-			fprintf(stderr, "%s\n",
-				json_object_get_string(err_obj));
-			ret = -EINVAL;
-		}
-		err_obj = json_object_object_get(ctx->resp_obj, "errno");
-		if (err_obj) {
-			errno = json_object_get_int(err_obj);
-			ret = -errno;
-		}
-	}
+	if (ctx->resp_val > 0) {
+		ret = -ENOENT;
+		for (i = 0; i < ctx->resp_val; i++) {
+			struct etcd_kv *kv = &ctx->resp_kvs[i];
 
-	json_object_put(post_obj);
+			if (!strcmp(kv->key, key)) {
+				if (value)
+					strcpy(value, kv->value);
+				ret = 0;
+				break;
+			}
+		}
+	} else
+		ret = ctx->resp_val;
+
 	free(encoded_key);
 	json_tokener_free(ctx->tokener);
-	if (!ret) {
-		struct json_object_iterator its, ite;
-		struct json_object *val_obj;
-
-		its = json_object_iter_begin(ctx->resp_obj);
-		ite = json_object_iter_end(ctx->resp_obj);
-
-		ret = -ENOENT;
-		while (!json_object_iter_equal(&its, &ite)) {
-			val_obj = json_object_iter_peek_value(&its);
-			if (ret) {
-				if (value)
-					strcpy(value,
-					       json_object_get_string(val_obj));
-				ret = 0;
-			}
-			json_object_iter_next(&its);
+	json_object_put(post_obj);
+	if (ctx->resp_val > 0) {
+		for (i = 0; i < ctx->resp_val; i++) {
+			struct etcd_kv *kv = &ctx->resp_kvs[i];
+			if (kv->key)
+				free(kv->key);
+			if (kv->value)
+				free(kv->value);
 		}
+		free(ctx->resp_kvs);
+		ctx->resp_kvs = NULL;
 	}
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
+	ctx->resp_val = 0;
 	return ret;
 }
 

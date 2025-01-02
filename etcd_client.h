@@ -19,6 +19,21 @@ enum kv_key_op {
 	KV_KEY_OP_WATCH,
 };
 
+struct etcd_kv {
+	char *key;
+	char *value;
+	int64_t create_revision;
+	int64_t mod_revision;
+	int64_t version;
+	int64_t lease;
+};
+
+struct etcd_kv_event {
+	enum kv_key_op type;
+	struct etcd_kv kv;
+	struct etcd_kv prev_kv;
+};
+
 struct etcd_ctx {
 	char *prefix;
 	char *proto;
@@ -31,6 +46,8 @@ struct etcd_ctx {
 	int64_t revision;
 	int ttl;
 	CURL *curl_ctx;
+	struct etcd_kv *resp_kvs;
+	int resp_val;
 	struct json_tokener *tokener;
 	struct json_object *resp_obj;
 	void (*watch_cb)(struct etcd_ctx *, enum kv_key_op,
