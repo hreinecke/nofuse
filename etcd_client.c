@@ -165,8 +165,8 @@ out_err_opt:
 	return NULL;
 }
 
-int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
-		 struct json_object *post_obj, curl_write_callback write_cb)
+static int etcd_kv_exec(struct etcd_ctx *ctx, char *url,
+		struct json_object *post_obj, curl_write_callback write_cb)
 {
 	CURLcode err;
 	const char *post_data;

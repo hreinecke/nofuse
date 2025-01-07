@@ -14,8 +14,6 @@
 #include <getopt.h>
 #include <errno.h>
 
-#include <json-c/json.h>
-
 #include "common.h"
 #include "etcd_client.h"
 
@@ -222,7 +220,6 @@ static void *etcd_watcher(void *arg)
 	pthread_cleanup_push(cleanup_ctx, ctx);
 
 	sprintf(prefix, "%s/ports", ctx->prefix);
-	ctx->resp_obj = json_object_new_object();
 	ctx->watch_cb = update_ports;
 
 	ret = etcd_kv_watch(ctx, prefix);

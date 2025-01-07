@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <uuid/uuid.h>
-#include <json-c/json.h>
 
 #include "common.h"
 #include "etcd_backend.h"
