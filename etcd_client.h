@@ -26,6 +26,7 @@ struct etcd_kv {
 	int64_t mod_revision;
 	int64_t version;
 	int64_t lease;
+	bool ignore_lease;
 };
 
 struct etcd_kv_event {
@@ -59,8 +60,7 @@ extern bool curl_debug;
 struct etcd_ctx *etcd_init(const char *prefix);
 struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);
-int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv,
-		bool ignore_lease, bool no_lease);
+int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv, bool no_lease);
 
 static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
 				 const char *value)
@@ -68,8 +68,9 @@ static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
 	struct etcd_kv kv = {
 		.key = key,
 		.value = value,
+		.ignore_lease = true,
 	};
-	return etcd_kv_put(ctx, &kv, true, false);
+	return etcd_kv_put(ctx, &kv, false);
 }
 
 static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
@@ -78,8 +79,9 @@ static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 	struct etcd_kv kv = {
 		.key = key,
 		.value = value,
+		.ignore_lease = false,
 	};
-	return etcd_kv_put(ctx, &kv, false, false);
+	return etcd_kv_put(ctx, &kv, false);
 }
 
 int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);

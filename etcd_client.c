@@ -292,7 +292,7 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 }
 
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv,
-		bool ignore_lease, bool no_lease)
+		bool no_lease)
 {
 	char *url;
 	struct json_object *post_obj = NULL;
@@ -315,7 +315,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv,
 	encoded_value = __b64enc(kv->value, strlen(kv->value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
-	if (!ignore_lease) {
+	if (!kv->ignore_lease) {
 		uint64_t lease = ctx->lease;
 
 		if (no_lease)
@@ -394,7 +394,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL, end;
 	char *encoded_range = NULL, *range;
-	struct etcd_kv *resp = NULL;
 	int ret;
 
 	ret = asprintf(&url, "%s://%s:%u/v3/kv/range",
