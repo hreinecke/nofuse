@@ -49,7 +49,6 @@ struct etcd_ctx {
 	struct etcd_kv *resp_kvs;
 	int resp_val;
 	struct json_tokener *tokener;
-	struct json_object *resp_obj;
 	void (*watch_cb)(struct etcd_ctx *, enum kv_key_op,
 			 char *, const char *);
 };

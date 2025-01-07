@@ -440,10 +440,10 @@ etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(ptr));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		if (etcd_debug)
+			printf("%s: invalid response\n'%s'\n",
+			       __func__, ptr);
+		ctx->resp_val = -EBADMSG;
 		goto out;
 	}
 	if (etcd_debug)
@@ -453,20 +453,15 @@ etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
 
 	deleted_obj = json_object_object_get(etcd_resp, "deleted");
 	if (!deleted_obj) {
-		char *err_str = "delete key failed, invalid key";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EKEYREJECTED));
+		printf("%s: delete key failed, invalid key\n", __func__);
+		ctx->resp_val = -ENOKEY;
 		goto out;
 	}
 	deleted = json_object_get_int(deleted_obj);
 	if (!deleted) {
-		char *err_str = "delete key failed, key not deleted";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EKEYREJECTED));
+		printf("%s: delete key failed, key not deleted\n",
+		       __func__);
+		ctx->resp_val = -EKEYREJECTED;
 	}
 out:
 	json_object_put(etcd_resp);
@@ -487,7 +482,6 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	end = key[strlen(key) - 1];
 	end++;
 	end_key[strlen(key) - 1] = end;
-	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
 	encoded_end = __b64enc(end_key, strlen(end_key));
@@ -500,26 +494,14 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_delete_response);
 	if (!ret) {
-		struct json_object *err_obj;
-
-		err_obj = json_object_object_get(ctx->resp_obj, "error");
-		if (err_obj) {
-			fprintf(stderr, "%s\n",
-				json_object_get_string(err_obj));
-			errno = EINVAL;
-			ret = -1;
-		}
-		err_obj = json_object_object_get(ctx->resp_obj, "errno");
-		if (err_obj) {
-			errno = json_object_get_int(err_obj);
-			ret = -1;
+		if (ctx->resp_val < 0) {
+			ret = ctx->resp_val;
+			ctx->resp_val = 0;
 		}
 	}
 	free(encoded_end);
 	free(encoded_key);
 	json_object_put(post_obj);
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -541,6 +523,7 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		if (etcd_debug)
 			printf("%s: invalid response\n'%s'\n",
 			       __func__, ptr);
+		ctx->resp_val = -EBADMSG;
 		return 0;
 	}
 	if (etcd_debug)
@@ -677,6 +660,7 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		if (etcd_debug)
 			printf("%s: invalid response\n'%s'\n",
 			       __func__, ptr);
+		ctx->resp_val = -EBADMSG;
 		return 0;
 	}
 	if (etcd_debug)
@@ -693,15 +677,18 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 
 			printf("%s: revoke lease error '%s'\n",
 			       __func__, err_str);
+			ctx->resp_val = -EINVAL;
 		} else {
 			printf("Revoke lease %ld\n", ctx->lease);
 			ctx->lease = 0;
+			ctx->resp_val = 0;
 		}
 		goto out;
 	}
 	id_obj = json_object_object_get(etcd_resp, "ID");
 	if (!id_obj) {
 		printf("%s: invalid response, 'ID' not found", __func__);
+		ctx->resp_val = -EBADMSG;
 		goto out;
 	}
 	ctx->lease = json_object_get_int64(id_obj);
@@ -734,7 +721,10 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
 	if (!ret) {
-		if (!ctx->lease) {
+		if (ctx->resp_val < 0) {
+			ret = ctx->resp_val;
+			ctx->resp_val = 0;
+		} else if (!ctx->lease) {
 			fprintf(stderr, "no lease has been granted\n");
 			ret = -ENOKEY;
 		} else if (ctx->ttl < 0) {
@@ -759,10 +749,7 @@ etcd_parse_keepalive_response(char *ptr, size_t size, size_t nmemb, void *arg)
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(ptr));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		ctx->resp_val = -EBADMSG;
 		goto out;
 	}
 	if (etcd_debug)
@@ -770,29 +757,22 @@ etcd_parse_keepalive_response(char *ptr, size_t size, size_t nmemb, void *arg)
 				      JSON_C_TO_STRING_PRETTY));
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
-		char *err_str = "keepalive failed, 'result' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		printf("%s: keepalive failed, 'result' not found\n",
+		       __func__);
+		ctx->resp_val = -EBADMSG;
 		goto out;
 	}
 	id_obj = json_object_object_get(result_obj, "ID");
 	if (!id_obj) {
-		char *err_str = "keepalive failed, 'ID' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		printf("%s: keepalive failed, 'ID' not found\n",
+		       __func__);
+		ctx->resp_val = -EBADMSG;
 		goto out;
 	}
 	lease = json_object_get_int64(id_obj);
 	if (lease != ctx->lease) {
-		char *err_str = "keepalive failed, lease mismatch";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EKEYREJECTED));
+		printf("%s: keepalive failed, lease mismatch\n", __func__);
+		ctx->resp_val = -EKEYREJECTED;
 		goto out;
 	}
 	ttl_obj = json_object_object_get(result_obj, "TTL");
@@ -808,14 +788,15 @@ out:
 
 int etcd_lease_keepalive(struct etcd_ctx *ctx)
 {
-	char url[1024];
+	char *url;
 	struct json_object *post_obj;
 	int ret;
 
-	sprintf(url, "%s://%s:%u/v3/lease/keepalive",
-		ctx->proto, ctx->host, ctx->port);
+	ret = asprintf(&url, "%s://%s:%u/v3/lease/keepalive",
+		       ctx->proto, ctx->host, ctx->port);
+	if (ret < 0)
+		return -ENOMEM;
 
-	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
@@ -824,63 +805,41 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_keepalive_response);
 	if (!ret) {
-		struct json_object *err_obj;
-
-		err_obj = json_object_object_get(ctx->resp_obj, "error");
-		if (err_obj) {
-			fprintf(stderr, "%s\n",
-				json_object_get_string(err_obj));
-			errno = EINVAL;
-			ret = -1;
-		}
-		err_obj = json_object_object_get(ctx->resp_obj, "errno");
-		if (err_obj) {
-			errno = json_object_get_int(err_obj);
-			ret = -1;
-		}
-		if (!ret && ctx->ttl == -1) {
+		if (ctx->resp_val < 0) {
+			ret = ctx->resp_val;
+			ctx->resp_val = 0;
+		} else if (ctx->ttl == -1) {
 			fprintf(stderr, "lease expired\n");
 			errno = EKEYEXPIRED;
 			ret = -1;
 		}
 	}
 	json_object_put(post_obj);
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
+	free(url);
 	return ret;
 }
 
 int etcd_lease_timetolive(struct etcd_ctx *ctx)
 {
-	char url[1024];
+	char *url;
 	struct json_object *post_obj;
 	int ret;
 
-	sprintf(url, "%s://%s:%u/v3/lease/timetolive",
-		ctx->proto, ctx->host, ctx->port);
+	ret = asprintf(&url, "%s://%s:%u/v3/lease/timetolive",
+		       ctx->proto, ctx->host, ctx->port);
+	if (ret < 0)
+		return -ENOMEM;
 
-	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_keepalive_response);
 	if (!ret) {
-		struct json_object *err_obj;
-
-		err_obj = json_object_object_get(ctx->resp_obj, "error");
-		if (err_obj) {
-			fprintf(stderr, "%s\n",
-				json_object_get_string(err_obj));
-			errno = EINVAL;
-			ret = -1;
-		}
-		err_obj = json_object_object_get(ctx->resp_obj, "errno");
-		if (err_obj) {
-			errno = json_object_get_int(err_obj);
-			ret = -1;
-		}
-		if (!ret && ctx->ttl == -1) {
+		if (ctx->resp_val < 0) {
+			ret = ctx->resp_val;
+			ctx->resp_val = 0;
+		} else if (ctx->ttl == -1) {
 			fprintf(stderr, "lease expired\n");
 			errno = EKEYEXPIRED;
 			ret = -1;
@@ -888,8 +847,7 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 	}
 
 	json_object_put(post_obj);
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
+	free(url);
 	return ret;
 }
 
@@ -907,8 +865,14 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 			       json_object_new_int64(ctx->lease));
 	ctx->ttl = -1;
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
-	if (!ret && ctx->lease)
-		ret = -EKEYREJECTED;
+	if (!ret) {
+		if (ctx->resp_val < 0) {
+			ret = ctx->resp_val;
+			ctx->resp_val = 0;
+		} else if (ctx->lease) {
+			ret = -EKEYREJECTED;
+		}
+	}
 
 	json_object_put(post_obj);
 	return ret;
@@ -1079,7 +1043,6 @@ void etcd_exit(struct etcd_ctx *ctx)
 {
 	if (!ctx)
 		return;
-	json_object_put(ctx->resp_obj);
 	if (ctx->node_name)
 		free(ctx->node_name);
 	free(ctx->prefix);

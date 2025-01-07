@@ -177,10 +177,11 @@ static void parse_ports(struct etcd_ctx *ctx,
 
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
-		char *attr = NULL, *subsys = NULL;
+		char *key, *attr = NULL, *subsys = NULL;
 		unsigned int portid, ana_grpid = 0;
 
-		if (!parse_port_key(kv->key, &portid, &attr,
+		key = strdup(kv->key);
+		if (!parse_port_key(key, &portid, &attr,
 				    &subsys, &ana_grpid)) {
 			if (subsys) {
 				port = find_port(portid);
@@ -199,8 +200,9 @@ static void parse_ports(struct etcd_ctx *ctx,
 				       portid, attr);
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free(key);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 }
 
