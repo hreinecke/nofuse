@@ -49,8 +49,8 @@ static int _count_key_range(struct etcd_ctx *ctx, char *key, int *num)
 	struct etcd_kv *kvs;
 	int val = 0, ret, i;
 
-	kvs = etcd_kv_range(ctx, key, &ret);
-	if (!kvs)
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0)
 		return ret;
 
 	for (i = 0; i < ret; i++) {
@@ -75,9 +75,9 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 	ret = asprintf(&key, "%s/%s", ctx->prefix, root);
 	if (ret < 0)
 		return ret;
-	kvs = etcd_kv_range(ctx, key, &ret);
+	ret = etcd_kv_range(ctx, key, &kvs);
 	free(key);
-	if (!kvs)
+	if (ret < 0)
 		return ret;
 
 	if (!strcmp(root, "hosts"))
@@ -129,9 +129,9 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 		return -EINVAL;
 
 	key_offset = strlen(key);
-	kvs = etcd_kv_range(ctx, key, &ret);
+	ret = etcd_kv_range(ctx, key, &kvs);
 	free(key);
-	if (!kvs) {
+	if (ret < 0) {
 		free(key);
 		return ret;
 	}
@@ -445,9 +445,9 @@ int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 		return ret;
 
 	key_offset = strlen(key);
-	kvs = etcd_kv_range(ctx, key, &ret);
+	ret = etcd_kv_range(ctx, key, &kvs);
 	free(key);
-	if (!kvs)
+	if (ret < 0)
 		return ret;
 
 	for (i = 0; i < ret; i++) {
@@ -724,8 +724,8 @@ int etcd_fill_subsys_port(struct etcd_ctx *ctx, int id,
 	if (ret < 0)
 		return ret;
 
-	kvs = etcd_kv_range(ctx, key, &ret);
-	if (!kvs) {
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0) {
 		free(key);
 		return ret;
 	}
@@ -813,8 +813,8 @@ int etcd_fill_host_subsys(struct etcd_ctx *ctx, const char *subsysnqn,
 	if (ret < 0)
 		return ret;
 
-	kvs = etcd_kv_range(ctx, key, &ret);
-	if (!kvs) {
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0) {
 		free(key);
 		return ret;
 	}
@@ -932,9 +932,9 @@ int etcd_fill_namespace_dir(struct etcd_ctx *ctx, const char *subsysnqn,
 		return ret;
 
 	key_offset = strlen(key);
-	kvs = etcd_kv_range(ctx, key, &ret);
+	ret = etcd_kv_range(ctx, key, &kvs);
 	free(key);
-	if (!kvs)
+	if (ret < 0)
 		return ret;
 
 	for (i = 0; i < ret; i++) {
@@ -1136,9 +1136,9 @@ int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	kvs = etcd_kv_range(ctx, key, &ret);
+	ret = etcd_kv_range(ctx, key, &kvs);
 	free(key);
-	if (!kvs)
+	if (ret < 0)
 		return ret;
 
 	for (i = 0; i < ret; i++) {

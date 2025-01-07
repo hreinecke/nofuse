@@ -314,8 +314,8 @@ int main(int argc, char **argv)
 	asprintf(&prefix, "%s/ports", ctx->prefix);
 	printf("Using key %s\n", prefix);
 
-	kvs = etcd_kv_range(ctx, prefix, &ret);
-	if (!kvs) {
+	ret = etcd_kv_range(ctx, prefix, &kvs);
+	if (ret < 0) {
 		fprintf(stderr, "Failed to retrieve port information\n");
 		goto out_free;
 	}
