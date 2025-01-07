@@ -20,8 +20,8 @@ enum kv_key_op {
 };
 
 struct etcd_kv {
-	char *key;
-	char *value;
+	const char *key;
+	const char *value;
 	int64_t create_revision;
 	int64_t mod_revision;
 	int64_t version;
@@ -60,19 +60,27 @@ extern bool curl_debug;
 struct etcd_ctx *etcd_init(const char *prefix);
 struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);
-int etcd_kv_put(struct etcd_ctx *ctx, const char *key, const char *value,
+int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv,
 		bool ignore_lease, bool no_lease);
 
 static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
 				 const char *value)
 {
-	return etcd_kv_put(ctx, key, value, true, false);
+	struct etcd_kv kv = {
+		.key = key,
+		.value = value,
+	};
+	return etcd_kv_put(ctx, &kv, true, false);
 }
 
 static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 			      const char *value)
 {
-	return etcd_kv_put(ctx, key, value, false, false);
+	struct etcd_kv kv = {
+		.key = key,
+		.value = value,
+	};
+	return etcd_kv_put(ctx, &kv, false, false);
 }
 
 int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);

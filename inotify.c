@@ -340,12 +340,23 @@ static int update_value(struct dir_watcher *wd)
 		printf("%s: %s key %s value '%s'\n", __func__,
 		       t, key, value);
 	if (ret > 0) {
+		struct etcd_kv kv;
+
+		memset(&kv, 0, sizeof(kv));
+		kv.key = key;
+		kv.value = value;
 		pthread_mutex_lock(&wd->ctx->etcd_mutex);
-		ret = etcd_kv_put(wd->ctx->etcd, key, value, false, false);
+		ret = etcd_kv_put(wd->ctx->etcd, &kv, false, false);
 		pthread_mutex_unlock(&wd->ctx->etcd_mutex);
 		if (ret < 0)
+			fprintf(stderr, "%s: %s key %s curl error %d\n",
+				__func__, t, key, ret);
+		else if (wd->ctx->etcd->resp_val < 0) {
+			ret = wd->ctx->etcd->resp_val;
+			wd->ctx->etcd->resp_val = 0;
 			fprintf(stderr, "%s: %s key %s put error %d\n",
 				__func__, t, key, ret);
+		}
 	} else {
 		fprintf(stderr, "%s: %s %s value error %d\n",
 			__func__, t, p, ret);

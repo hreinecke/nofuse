@@ -16,16 +16,18 @@ struct key_value_template {
 
 int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 {
+	struct etcd_kv kv;
 	char *key;
 	int ret;
 
 	ret = asprintf(&key, "%s/discovery_nqn", ctx->prefix);
 	if (ret < 0)
 		return ret;
-
-	ret = etcd_kv_put(ctx, key, buf, false, true);
+	kv.key = key;
+	kv.value = buf;
+	ret = etcd_kv_put(ctx, &kv, false, true);
 	free(key);
-	return ret;
+	return ctx->resp_val;
 }
 
 int etcd_get_discovery_nqn(struct etcd_ctx *ctx, char *buf)
@@ -56,8 +58,8 @@ static int _count_key_range(struct etcd_ctx *ctx, char *key, int *num)
 
 		if (!strncmp(kv->key, key, strlen(key)))
 			val++;
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
 	*num = val;
@@ -97,8 +99,8 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 			if (!strcmp(p, attr))
 				num++;
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	printf("%s: root %s %d elements\n", __func__, root, num);
 	free(kvs);
@@ -149,8 +151,8 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 				free(val);
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
 	return 0;
@@ -194,7 +196,7 @@ int etcd_add_host(struct etcd_ctx *ctx, const char *nqn)
 			       ctx->prefix, nqn, kv->key);
 		if (ret < 0)
 			return ret;
-		ret = etcd_kv_new(ctx, key, kv->value);
+		ret = etcd_kv_new(ctx, key, (char *)kv->value);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -463,8 +465,8 @@ int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 				free(val);
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
 	return 0;
@@ -596,24 +598,27 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type,
 	int ret, i;
 
 	for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
-		struct key_value_template *kv = &subsys_template[i];
+		struct key_value_template *kvt = &subsys_template[i];
+		struct etcd_kv kv;
 		char *key;
 
 		ret = asprintf(&key, "%s/subsystems/%s/%s",
-			       ctx->prefix, nqn, kv->key);
+			       ctx->prefix, nqn, kvt->key);
 		if (ret < 0)
 			return ret;
-		if (!strcmp(kv->key, "attr_type")) {
+		kv.key = key;
+		if (!strcmp(kvt->key, "attr_type")) {
 			char type_str[3];
 
 			sprintf(type_str, "%d", type);
 			ret = etcd_kv_new(ctx, key, type_str);
-		} else if (!strcmp(kv->key, "attr_firmware"))
-			ret = etcd_kv_put(ctx, key, firmware_rev, false,
-					  permanent);
-		else
-			ret = etcd_kv_put(ctx, key, kv->value, false,
-					  permanent);
+		} else if (!strcmp(kvt->key, "attr_firmware")) {
+			kv.value = firmware_rev;
+			ret = etcd_kv_put(ctx, &kv, false, permanent);
+		} else {
+			kv.value = kvt->value;
+			ret = etcd_kv_put(ctx, &kv, false, permanent);
+		}
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -736,10 +741,11 @@ int etcd_fill_subsys_port(struct etcd_ctx *ctx, int id,
 				num++;
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
+	free(key);
 	printf("%s: %d elements\n", __func__, num);
 	return 0;
 }
@@ -824,8 +830,8 @@ int etcd_fill_host_subsys(struct etcd_ctx *ctx, const char *subsysnqn,
 				num++;
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
 	free(key);
@@ -946,8 +952,8 @@ int etcd_fill_namespace_dir(struct etcd_ctx *ctx, const char *subsysnqn,
 				free(val);
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
 	return 0;
@@ -1150,8 +1156,8 @@ int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 				ret = 0;
 			}
 		}
-		free(kv->key);
-		free(kv->value);
+		free((char *)kv->key);
+		free((char *)kv->value);
 	}
 	free(kvs);
 	return ret;
