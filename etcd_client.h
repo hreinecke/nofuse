@@ -80,7 +80,6 @@ struct etcd_kv *etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 			      int *ret);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key);
-int etcd_kv_revision(struct etcd_ctx *ctx, const char *key);
 void etcd_kv_watch_stop(struct etcd_ctx *ctx);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);

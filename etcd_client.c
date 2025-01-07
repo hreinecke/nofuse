@@ -371,7 +371,6 @@ struct etcd_kv *etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	struct etcd_kv *resp = NULL;
 	int _ret;
 
-	ctx->resp_obj = json_object_new_object();
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
@@ -404,112 +403,6 @@ struct etcd_kv *etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	json_object_put(post_obj);
 	json_tokener_free(ctx->tokener);
 	return resp;
-}
-
-static size_t
-etcd_parse_revision_response (char *ptr, size_t size, size_t nmemb, void *arg)
-{
-	struct json_object *etcd_resp, *hdr_obj, *rev_obj;
-	struct etcd_ctx *ctx = arg;
-	int value;
-
-	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
-					  size * nmemb);
-	if (!etcd_resp) {
-		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
-			/* Partial / chunked response; continue */
-			return size * nmemb;
-		}
-		if (etcd_debug)
-			printf("%s: ERROR:\n%s\n", __func__, ptr);
-
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(ptr));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
-		return 0;
-	}
-	if (etcd_debug)
-		printf("%s: DATA:\n%s\n", __func__,
-		       json_object_to_json_string_ext(etcd_resp,
-						      JSON_C_TO_STRING_PRETTY));
-	hdr_obj = json_object_object_get(etcd_resp, "header");
-	if (!hdr_obj) {
-		char *err_str = "invalid response, 'header' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
-		goto out;
-	}
-	rev_obj = json_object_object_get(hdr_obj, "revision");
-	if (!rev_obj) {
-		char *err_str = "invalid response, 'revision' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
-		goto out;
-	}
-	value = json_object_get_int(rev_obj);
-	json_object_object_add(ctx->resp_obj, "revision",
-			       json_object_new_int(value));
-out:
-	json_object_put(etcd_resp);
-	return size * nmemb;
-}
-
-int etcd_kv_revision(struct etcd_ctx *ctx, const char *key)
-{
-	char url[1024];
-	struct json_object *post_obj = NULL, *rev_obj;
-	char *encoded_key = NULL;
-	int ret;
-
-	sprintf(url, "%s://%s:%u/v3/kv/range",
-		ctx->proto, ctx->host, ctx->port);
-
-	ctx->resp_obj = json_object_new_object();
-	ctx->tokener = json_tokener_new_ex(5);
-	post_obj = json_object_new_object();
-	encoded_key = __b64enc(key, strlen(key));
-	json_object_object_add(post_obj, "key",
-			       json_object_new_string(encoded_key));
-
-	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_revision_response);
-	if (!ret) {
-		struct json_object *err_obj;
-
-		err_obj = json_object_object_get(ctx->resp_obj, "error");
-		if (err_obj) {
-			fprintf(stderr, "etcd_kv_exec: %s\n",
-				json_object_get_string(err_obj));
-			errno = EINVAL;
-			ret = -1;
-		}
-		err_obj = json_object_object_get(ctx->resp_obj, "errno");
-		if (err_obj) {
-			errno = json_object_get_int(err_obj);
-			ret = -1;
-		}
-	}
-	if (!ret) {
-		rev_obj = json_object_object_get(ctx->resp_obj, "revision");
-		if (!rev_obj) {
-			fprintf(stderr,
-				"invalid response, 'revision' not found\n");
-			errno = -ENOKEY;
-			ret = -1;
-		} else {
-			ret = json_object_get_int(rev_obj);
-		}
-	}
-	json_object_put(post_obj);
-	free(encoded_key);
-	json_tokener_free(ctx->tokener);
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
-	return ret;
 }
 
 static size_t
