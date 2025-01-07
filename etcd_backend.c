@@ -26,7 +26,8 @@ int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 	kv.key = key;
 	kv.value = buf;
 	kv.ignore_lease = false;
-	ret = etcd_kv_put(ctx, &kv, true);
+	kv.lease = 0;
+	ret = etcd_kv_put(ctx, &kv);
 	free(key);
 	return ctx->resp_val;
 }
@@ -609,6 +610,10 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type,
 			return ret;
 		kv.key = key;
 		kv.ignore_lease = false;
+		if (permanent)
+			kv.lease = 0;
+		else
+			kv.lease = ctx->lease;
 		if (!strcmp(kvt->key, "attr_type")) {
 			char type_str[3];
 
@@ -616,10 +621,10 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type,
 			ret = etcd_kv_new(ctx, key, type_str);
 		} else if (!strcmp(kvt->key, "attr_firmware")) {
 			kv.value = firmware_rev;
-			ret = etcd_kv_put(ctx, &kv, permanent);
+			ret = etcd_kv_put(ctx, &kv);
 		} else {
 			kv.value = kvt->value;
-			ret = etcd_kv_put(ctx, &kv, permanent);
+			ret = etcd_kv_put(ctx, &kv);
 		}
 		free(key);
 		if (ret < 0)

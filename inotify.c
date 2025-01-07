@@ -345,8 +345,10 @@ static int update_value(struct dir_watcher *wd)
 		memset(&kv, 0, sizeof(kv));
 		kv.key = key;
 		kv.value = value;
+		kv.ignore_lease = false;
+		kv.lease = wd->ctx->etcd->lease;
 		pthread_mutex_lock(&wd->ctx->etcd_mutex);
-		ret = etcd_kv_put(wd->ctx->etcd, &kv, false, false);
+		ret = etcd_kv_put(wd->ctx->etcd, &kv);
 		pthread_mutex_unlock(&wd->ctx->etcd_mutex);
 		if (ret < 0)
 			fprintf(stderr, "%s: %s key %s curl error %d\n",
