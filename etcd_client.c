@@ -1016,10 +1016,6 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		if (etcd_debug)
 			printf("%s: ERROR:\n%s\n", __func__, ptr);
 
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(ptr));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
 		return 0;
 	}
 
@@ -1028,20 +1024,12 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 					JSON_C_TO_STRING_PRETTY));
 	hdr_obj = json_object_object_get(etcd_resp, "header");
 	if (!hdr_obj) {
-		char *err_str = "invalid response, 'header' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		printf("%s: invalid response, 'header' not found", __func__);
 		goto out;
 	}
 	mbs_obj = json_object_object_get(etcd_resp, "members");
 	if (!mbs_obj) {
-		char *err_str = "invalid response, 'members' not found";
-		json_object_object_add(ctx->resp_obj, "error",
-				       json_object_new_string(err_str));
-		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+		printf("%s: invalid response, 'members' not found", __func__);
 		goto out;
 	}
 
@@ -1089,22 +1077,24 @@ out:
 int etcd_member_id(struct etcd_ctx *ctx)
 {
 	struct json_object *post_obj;
-	char url[1024];
+	char *url;
 	int ret;
 
-	sprintf(url, "%s://%s:%u/v3/cluster/member/list",
-		ctx->proto, ctx->host, ctx->port);
+	ret = asprintf(&url, "%s://%s:%u/v3/cluster/member/list",
+		       ctx->proto, ctx->host, ctx->port);
+	if (ret < 0)
+		return ret;
 
 	ctx->tokener = json_tokener_new_ex(5);
-	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "linearizable",
 			       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_member_response);
+	if (!ret && !ctx->node_name)
+		ret = -ENOENT;
 	json_object_put(post_obj);
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
+	free(url);
 	return ret;
 }
 
