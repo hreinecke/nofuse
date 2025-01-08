@@ -47,6 +47,7 @@ struct etcd_ctx {
 	int64_t revision;
 	int ttl;
 	CURL *curl_ctx;
+	CURLM *curlm_ctx;
 	struct etcd_kv *resp_kvs;
 	int resp_val;
 	struct json_tokener *tokener;

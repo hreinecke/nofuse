@@ -650,10 +650,6 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
-			/* Partial / chunked response; continue */
-			return size * nmemb;
-		}
 		if (etcd_debug)
 			printf("%s: invalid response\n'%s'\n",
 			       __func__, ptr);
@@ -998,15 +994,15 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		ctx->prefix = strdup(default_etcd_prefix);
 	ctx->lease = 0;
 	ctx->ttl = default_etcd_ttl;
+	ctx->curlm_ctx = curl_multi_init();
 
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
 
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
+		etcd_exit(ctx);
 		errno = -ret;
-		free(ctx->prefix);
-		free(ctx);
 		return NULL;
 	}
 	return ctx;
@@ -1042,6 +1038,8 @@ void etcd_exit(struct etcd_ctx *ctx)
 		return;
 	if (ctx->node_name)
 		free(ctx->node_name);
+	if (ctx->curlm_ctx)
+		curl_multi_cleanup(ctx->curlm_ctx);
 	free(ctx->prefix);
 	free(ctx);
 }
