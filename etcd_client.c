@@ -53,21 +53,39 @@ static void
 etcd_kvs_free(struct etcd_conn_ctx *ctx)
 {
 	int i;
+	struct etcd_kv_event *ev = &ctx->resp_ev;
 
-	if (ctx->resp_val < 0)
-		return;
-	for (i = 0; i < ctx->resp_val; i++) {
-		struct etcd_kv *kv = &ctx->resp_kvs[i];
-		char *key = (char *)kv->key;
-		char *value = (char *)kv->value;
+	if (ev->kvs) {
+		for (i = 0; i < ev->num_kvs; i++) {
+			struct etcd_kv *kv = &ev->kvs[i];
+			char *key = (char *)kv->key;
+			char *value = (char *)kv->value;
 
-		if (key)
-			free(key);
-		if (value)
-			free(value);
+			if (key)
+				free(key);
+			if (value)
+				free(value);
+		}
+		free(ev->kvs);
+		ev->kvs = NULL;
+		ev->num_kvs = 0;
 	}
-	free(ctx->resp_kvs);
-	ctx->resp_kvs = NULL;
+	if (ev->prev_kvs) {
+		for (i = 0; i < ev->num_prev_kvs; i++) {
+			struct etcd_kv *kv = &ev->prev_kvs[i];
+			char *key = (char *)kv->key;
+			char *value = (char *)kv->value;
+
+			if (key)
+				free(key);
+			if (value)
+				free(value);
+		}
+		free(ev->prev_kvs);
+		ev->prev_kvs = NULL;
+		ev->num_prev_kvs = 0;
+	}
+	ev->ev_op = KV_KEY_OP_NONE;
 	ctx->resp_val = 0;
 }
 
@@ -100,16 +118,16 @@ etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 
 	num_kvs = json_object_array_length(kvs_obj);
-	ctx->resp_kvs = malloc(sizeof(struct etcd_kv) * num_kvs);
-	if (!ctx->resp_kvs) {
+	ctx->resp_ev.kvs = malloc(sizeof(struct etcd_kv) * num_kvs);
+	if (!ctx->resp_ev.kvs) {
 		if (etcd_debug)
 			printf("%s: failed to allocate kvs\n", __func__);
 		ctx->resp_val = -ENOMEM;
 		return 0;
 	}
-	memset(ctx->resp_kvs, 0, sizeof(struct etcd_kv) * num_kvs);
+	memset(ctx->resp_ev.kvs, 0, sizeof(struct etcd_kv) * num_kvs);
 	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &ctx->resp_kvs[i];
+		struct etcd_kv *kv = &ctx->resp_ev.kvs[i];
 		struct json_object *kv_obj, *key_obj, *value_obj, *attr_obj;
 
 		kv_obj = json_object_array_get_idx(kvs_obj, i);
@@ -137,7 +155,7 @@ etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			fprintf(stderr, "%s: key '%s', val '%s'\n",
 				__func__, kv->key, kv->value);
 	}
-	ctx->resp_val = num_kvs;
+	ctx->resp_ev.num_kvs = num_kvs;
 out:
 	json_object_put(etcd_resp);
 	return size * nmemb;
@@ -199,15 +217,22 @@ static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 			break;
 		}
 		if (running) {
+			int numfds = 0;
+
 			/* wait for activity, timeout or "nothing" */
 			merr = curl_multi_poll(ctx->curlm_ctx,
 					       NULL, 0, 1000,
-					       NULL);
+					       &numfds);
 			if (merr) {
 				fprintf(stderr,
 					"curl_multi_poll() failed, %s\n",
 					curl_multi_strerror(merr));
 				ret = -EIO;
+				break;
+			} else if (!numfds) {
+				fprintf(stderr,
+					"curl_multi_poll() no events\n");
+				ret = 0;
 				break;
 			}
 		}
@@ -220,17 +245,18 @@ static size_t
 etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *header_obj, *rev_obj;
-	struct etcd_conn_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn = arg;
+	struct etcd_kv_event *ev = &conn->resp_ev;
 
-	if (!ctx->resp_kvs) {
-		ctx->resp_val = -EINVAL;
+	if (!ev->num_kvs) {
+		conn->resp_val = -EINVAL;
 		return 0;
 	}
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
 		if (etcd_debug)
 			printf("%s: invalid response\n'%s'\n", __func__, ptr);
-		ctx->resp_val = -EBADMSG;
+		conn->resp_val = -EBADMSG;
 		return 0;
 	}
 	if (etcd_debug)
@@ -242,12 +268,13 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		if (etcd_debug)
 			printf("%s: invalid response, 'header' not found\n",
 			       __func__);
-		ctx->resp_val = -EBADMSG;
+		conn->resp_val = -EBADMSG;
 	} else {
 		rev_obj = json_object_object_get(header_obj, "revision");
-		if (rev_obj)
-			ctx->resp_kvs->create_revision =
+		if (rev_obj) {
+			ev->ev_revision =
 				json_object_get_int64(rev_obj);
+		}
 	}
 	json_object_put(etcd_resp);
 	return size * nmemb;
@@ -270,9 +297,9 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	if (ret < 0)
 		return ret;
 
-	kv->create_revision = -1;
-	conn->resp_kvs = kv;
-	conn->resp_val = 1;
+	conn->resp_ev.ev_revision = -1;
+	conn->resp_ev.kvs = kv;
+	conn->resp_ev.num_kvs = 1;
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(kv->key, strlen(kv->key));
 	json_object_object_add(post_obj, "key",
@@ -292,14 +319,14 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	if (!ret) {
 		if (conn->resp_val < 0)
 			ret = conn->resp_val;
-		if (kv->create_revision < 0)
+		else if (conn->resp_ev.ev_revision < 0)
 			ret = -ENOMSG;
 	}
 	free(encoded_value);
 	free(encoded_key);
 	json_object_put(post_obj);
-	conn->resp_kvs = NULL;
-	conn->resp_val = 0;
+	conn->resp_ev.kvs = NULL;
+	conn->resp_ev.num_kvs = 0;
 	etcd_conn_delete(conn);
 	return ret;
 }
@@ -330,27 +357,26 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 			       json_object_new_string(encoded_key));
 
 	ret = etcd_kv_exec(conn, url, post_obj, etcd_parse_kvs_response);
-	if (ret)
-		goto out_free;
+	if (!ret) {
+		if (conn->resp_val < 0)
+			ret = conn->resp_val;
+		else if (conn->resp_ev.num_kvs > 0) {
+			int i;
 
-	if (conn->resp_val > 0) {
-		int i;
+			ret = -ENOENT;
+			for (i = 0; i < conn->resp_ev.num_kvs; i++) {
+				struct etcd_kv *kv = &conn->resp_ev.kvs[i];
 
-		ret = -ENOENT;
-		for (i = 0; i < conn->resp_val; i++) {
-			struct etcd_kv *kv = &conn->resp_kvs[i];
-
-			if (!strcmp(kv->key, key)) {
-				if (value)
-					strcpy(value, kv->value);
-				ret = 0;
-				break;
+				if (!strcmp(kv->key, key)) {
+					if (value)
+						strcpy(value, kv->value);
+					ret = 0;
+					break;
+				}
 			}
 		}
-	} else
-		ret = conn->resp_val;
+	}
 
-out_free:
 	free(encoded_key);
 	json_object_put(post_obj);
 	etcd_kvs_free(conn);
@@ -399,9 +425,11 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		ret = conn->resp_val;
 		conn->resp_val = 0;
 	}
-	if (ret > 0) {
-		*ret_kvs = conn->resp_kvs;
-		conn->resp_kvs = NULL;
+	if (!ret && conn->resp_ev.num_kvs) {
+		*ret_kvs = conn->resp_ev.kvs;
+		conn->resp_ev.kvs = NULL;
+		ret = conn->resp_ev.num_kvs;
+		conn->resp_ev.num_kvs = 0;
 	} else
 		*ret_kvs = NULL;
 
@@ -498,20 +526,20 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *result_obj, *event_obj;
 	struct json_object *header_obj, *rev_obj;
-	struct etcd_conn_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn = arg;
 	int i;
 
-	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
+	etcd_resp = json_tokener_parse_ex(conn->tokener, ptr,
 					  size * nmemb);
 	if (!etcd_resp) {
-		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
+		if (json_tokener_get_error(conn->tokener) == json_tokener_continue) {
 			/* Partial / chunked response; continue */
 			return size * nmemb;
 		}
 		if (etcd_debug)
 			printf("%s: invalid response\n'%s'\n",
 			       __func__, ptr);
-		ctx->resp_val = -EBADMSG;
+		conn->resp_val = -EBADMSG;
 		return 0;
 	}
 	if (etcd_debug)
@@ -535,10 +563,10 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	}
 	rev_obj = json_object_object_get(header_obj, "revision");
 	if (rev_obj) {
-		ctx->ctx->revision = json_object_get_int64(rev_obj);
+		conn->resp_ev.ev_revision = json_object_get_int64(rev_obj);
 		if (etcd_debug)
 			printf("%s: new revision %ld\n",
-			       __func__, ctx->ctx->revision);
+			       __func__, conn->resp_ev.ev_revision);
 	}
 
 	/* 'created' set in response to a 'WatchRequest', no data is pending */
@@ -553,42 +581,43 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 	}
 
-	for (i = 0; i < json_object_array_length(event_obj); i++) {
+	conn->resp_ev.num_kvs = json_object_array_length(event_obj);
+	conn->resp_ev.kvs = malloc(sizeof(struct etcd_kv) *
+				   conn->resp_ev.num_kvs);
+	for (i = 0; i < conn->resp_ev.num_kvs; i++) {
+		struct etcd_kv *kv = &conn->resp_ev.kvs[i];
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
 		struct json_object *type_obj, *value_obj;
-		char *key_str, *value_str;
 
 		kvs_obj = json_object_array_get_idx(event_obj, i);
 		type_obj = json_object_object_get(kvs_obj, "type");
+		if (type_obj &&
+		    strcmp(json_object_get_string(type_obj), "DELETE"))
+			kv->deleted = true;
 		kv_obj = json_object_object_get(kvs_obj, "kv");
 		if (!kv_obj)
 			continue;
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		key_str = __b64dec(json_object_get_string(key_obj));
+		kv->key = __b64dec(json_object_get_string(key_obj));
 		value_obj = json_object_object_get(kv_obj, "value");
 		if (!value_obj) {
-			if (!strcmp(json_object_get_string(type_obj),
-				    "DELETE") && ctx->watch_cb)
-				ctx->watch_cb(ctx, KV_KEY_OP_DELETE,
-					      key_str, NULL);
-			free(key_str);
+			if (!kv->deleted) {
+				free((char *)kv->key);
+			}
 			continue;
 		}
-		value_str = __b64dec(json_object_get_string(value_obj));
-		if (ctx->watch_cb)
-			ctx->watch_cb(ctx, KV_KEY_OP_ADD, key_str, value_str);
-		free(value_str);
-		free(key_str);
+		kv->value = __b64dec(json_object_get_string(value_obj));
 	}
 out:
 	json_object_put(etcd_resp);
-	json_tokener_reset(ctx->tokener);
+	json_tokener_reset(conn->tokener);
 	return size * nmemb;
 }
 
-int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key)
+int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
+		  struct etcd_kv **ret_kvs)
 {
 	struct etcd_ctx *ctx = conn->ctx;
 	char url[1024];
@@ -612,17 +641,63 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key)
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
-	if (ctx->revision > 0)
+	if (conn->revision > 0)
 		json_object_object_add(req_obj, "start_revision",
-				       json_object_new_int64(ctx->revision));
+				       json_object_new_int64(conn->revision));
+	if (conn->watch_id > 0)
+		json_object_object_add(req_obj, "watch_id",
+				       json_object_new_int64(conn->watch_id));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(conn, url, post_obj, etcd_parse_watch_response);
+	if (!ret) {
+		if (conn->resp_val < 0)
+			ret = conn->resp_val;
+		else if (conn->resp_ev.num_kvs) {
+			*ret_kvs = conn->resp_ev.kvs;
+			conn->resp_ev.kvs = NULL;
+			ret = conn->resp_ev.num_kvs;
+			conn->resp_ev.num_kvs = 0;
+		}
+	}
 
 	free(encoded_key);
 	free(encoded_end);
 	free(end_key);
 	json_object_put(post_obj);
+	return ret;
+}
+
+int etcd_kv_watch_cancel(struct etcd_ctx *ctx, int64_t watch_id)
+{
+	struct etcd_conn_ctx *conn;
+	char *url;
+	struct json_object *post_obj, *req_obj;
+	int ret;
+
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		return -ENOMEM;
+
+	ret = asprintf(&url, "%s://%s:%u/v3/watch",
+		       ctx->proto, ctx->host, ctx->port);
+	if (ret < 0) {
+		etcd_conn_delete(conn);
+		return -ENOMEM;
+	}
+
+	conn->tokener = json_tokener_new_ex(10);
+	post_obj = json_object_new_object();
+	req_obj = json_object_new_object();
+	json_object_object_add(req_obj, "watch_id",
+			       json_object_new_int64(watch_id));
+	json_object_object_add(post_obj, "cancel_request", req_obj);
+
+	ret = etcd_kv_exec(conn, url, post_obj, etcd_parse_watch_response);
+
+	json_object_put(post_obj);
+	free(url);
+	etcd_conn_delete(conn);
 	return ret;
 }
 
@@ -1065,8 +1140,8 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		return NULL;
 	}
 	memset(ctx, 0, sizeof(struct etcd_ctx));
-	ctx->host = default_etcd_host;
-	ctx->proto = default_etcd_proto;
+	ctx->host = strdup(default_etcd_host);
+	ctx->proto = strdup(default_etcd_proto);
 	ctx->port = default_etcd_port;
 	if (prefix)
 		ctx->prefix = strdup(prefix);
@@ -1098,6 +1173,8 @@ void etcd_exit(struct etcd_ctx *ctx)
 	if (ctx->curlm_ctx)
 		curl_multi_cleanup(ctx->curlm_ctx);
 	free(ctx->prefix);
+	free(ctx->host);
+	free(ctx->proto);
 	free(ctx);
 }
 
@@ -1139,22 +1216,30 @@ void etcd_conn_delete(struct etcd_conn_ctx *conn)
 	struct etcd_ctx *ctx = conn->ctx;
 
 	pthread_mutex_lock(&ctx->conn_mutex);
-	if (ctx->conn == conn) {
-		ctx->conn = NULL;
-	} else {
-		struct etcd_conn_ctx *c = ctx->conn;
+	if (ctx->conn) {
+		if (ctx->conn == conn) {
+			if (conn->next) {
+				ctx->conn = conn->next;
+				conn->next = NULL;
+			} else
+				ctx->conn = NULL;
+		} else {
+			struct etcd_conn_ctx *c = ctx->conn;
 
-		while (c->next && c->next != conn)
-			c = c->next;
-		if (c->next == conn) {
-			c->next = conn->next;
-			conn->next = NULL;
+			while (c->next && c->next != conn)
+				c = c->next;
+			if (c->next == conn) {
+				c->next = conn->next;
+				conn->next = NULL;
+			}
 		}
 	}
 	conn->ctx = NULL;
 	pthread_mutex_unlock(&ctx->conn_mutex);
 	if (conn->curl_ctx) {
-		curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
+		if (ctx->curlm_ctx)
+			curl_multi_remove_handle(ctx->curlm_ctx,
+						 conn->curl_ctx);
 		curl_easy_cleanup(conn->curl_ctx);
 		conn->curl_ctx = NULL;
 	}

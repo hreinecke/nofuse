@@ -112,21 +112,16 @@ static int parse_port_key(char *key, unsigned int *portid,
 	return 0;
 }
 
-static void update_ports(struct etcd_conn_ctx *conn, enum kv_key_op op,
-			 char *key, const char *value)
+static void update_ports(struct etcd_conn_ctx *conn,
+			 struct etcd_kv *kv)
 {
 	char *key_save, *attr, *subsys = NULL;
 	unsigned int portid, ana_grpid = 0;
 	int ret;
 
-	key_save = strdup(key);
-	if (op != KV_KEY_OP_ADD && op != KV_KEY_OP_DELETE) {
-		fprintf(stderr, "Skip unhandled op %d\n", op);
-		free(key_save);
-		return;
-	}
-	if (strncmp(key, conn->ctx->prefix, strlen(conn->ctx->prefix))) {
-		fprintf(stderr, "Skip invalid prefix '%s'\n", key);
+	key_save = strdup(kv->key);
+	if (strncmp(key_save, conn->ctx->prefix, strlen(conn->ctx->prefix))) {
+		fprintf(stderr, "Skip invalid prefix '%s'\n", kv->key);
 		free(key_save);
 		return;
 	}
@@ -137,9 +132,9 @@ static void update_ports(struct etcd_conn_ctx *conn, enum kv_key_op op,
 
 	if (attr) {
 		printf("%s: op %s port %d attr %s\n", __func__,
-		       op == KV_KEY_OP_ADD ? "add" : "delete",
+		       kv->deleted ? "delete" : "add",
 		       portid, attr);
-		if (op == KV_KEY_OP_ADD)
+		if (!kv->deleted)
 			find_and_add_port(conn->ctx, portid);
 		else if (!strcmp(attr, "addr_traddr"))
 			find_and_del_port(portid);
@@ -147,14 +142,14 @@ static void update_ports(struct etcd_conn_ctx *conn, enum kv_key_op op,
 		struct nofuse_port *port;
 
 		printf("%s: op %s port %d subsys %s\n",
-		       __func__, op == KV_KEY_OP_ADD ? "add" : "delete",
+		       __func__, kv->deleted ? "delete" : "add",
 		       portid, subsys);
 		port = find_port(portid);
 		if (!port) {
 			printf("%s: no port found\n", __func__);
 			goto out_free;
 		}
-		if (op == KV_KEY_OP_ADD) {
+		if (!kv->deleted) {
 			start_port(port);
 		} else {
 			stop_port(port);
@@ -162,7 +157,7 @@ static void update_ports(struct etcd_conn_ctx *conn, enum kv_key_op op,
 		put_port(port);
 	} else {
 		printf("%s: op %s port %d ana group %d\n", __func__,
-		       op == KV_KEY_OP_ADD ? "add" : "delete",
+		       kv->deleted ? "delete" : "add",
 		       portid, ana_grpid);
 	}
 out_free:
@@ -206,20 +201,64 @@ static void parse_ports(struct etcd_ctx *ctx,
 	}
 }
 
-static void *etcd_watcher(void *arg)
+static void delete_conn(void *arg)
 {
 	struct etcd_conn_ctx *conn = arg;
-	char prefix[PATH_MAX];
+
+	etcd_conn_delete(conn);
+}
+
+static void *etcd_watcher(void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn;
+	struct etcd_kv *kvs;
+	char *prefix;
+	int64_t start_revision = 0;
 	int ret;
 
-	sprintf(prefix, "%s/ports", conn->ctx->prefix);
-	conn->watch_cb = update_ports;
-
-	ret = etcd_kv_watch(conn, prefix);
+	ret = asprintf(&prefix, "%s/ports", ctx->prefix);
 	if (ret < 0)
-		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
-			__func__, ret);
+		return NULL;
 
+	while (!stopped) {
+		conn = etcd_conn_create(ctx);
+		if (!conn)
+			break;
+
+		pthread_cleanup_push(delete_conn, conn);
+
+		conn->watch_id = pthread_self();
+		conn->revision = start_revision;
+
+		ret = etcd_kv_watch(conn, prefix, &kvs);
+		if (ret < 0)
+			fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
+				__func__, ret);
+
+		if (ret > 0) {
+			int i;
+
+			for (i = 0; i < ret; i++) {
+				struct etcd_kv *kv = &kvs[i];
+
+				update_ports(conn, kv);
+				free((char *)kv->key);
+				if (kv->value)
+					free((char *)kv->value);
+			}
+			free(kvs);
+		}
+		if (conn->resp_ev.ev_revision > 0) {
+			start_revision = conn->resp_ev.ev_revision;
+			conn->resp_ev.ev_revision = 0;
+			fprintf(stderr, "%s: new start rev %ld\n",
+				__func__, start_revision);
+		}
+		pthread_cleanup_pop(1);
+	}
+
+	free(prefix);
 	pthread_exit(NULL);
 	return NULL;
 }
@@ -247,7 +286,6 @@ int main(int argc, char **argv)
 		{"help", no_argument, 0, '?'},
 	};
 	static pthread_t watcher_thr, signal_thr;
-	struct etcd_conn_ctx *conn;
 	struct etcd_kv *kvs;
 	sigset_t oldmask;
 	char c;
@@ -281,13 +319,14 @@ int main(int argc, char **argv)
 			ctx->prefix = strdup(optarg);
 			break;
 		case 'h':
-			ctx->host = optarg;
+			free(ctx->host);
+			ctx->host = strdup(optarg);
 			break;
 		case 'p':
 			ctx->port = atoi(optarg);
 			break;
 		case 's':
-			ctx->proto = "https";
+			ctx->proto = strdup("https");
 			break;
 		case 'v':
 			etcd_debug = true;
@@ -313,16 +352,12 @@ int main(int argc, char **argv)
 	parse_ports(ctx, kvs, ret);
 	free(kvs);
 
-	conn = etcd_conn_create(ctx);
-	if (!conn)
-		goto out_free;
-
-	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, conn);
+	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_conn_delete;
+		goto out_cleanup;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -330,7 +365,7 @@ int main(int argc, char **argv)
 		pthread_cond_wait(&wait, &lock);
 	pthread_mutex_unlock(&lock);
 
-	etcd_kv_watch_stop(conn);
+	etcd_kv_watch_cancel(ctx, watcher_thr);
 
 	printf("cancelling watcher\n");
 	pthread_cancel(watcher_thr);
@@ -338,9 +373,7 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
-out_conn_delete:
-	etcd_conn_delete(conn);
-
+out_cleanup:
 	cleanup_ports();
 out_free:
 	free(prefix);
