@@ -143,123 +143,21 @@ out:
 	return size * nmemb;
 }
 
-static CURL *etcd_curl_init(struct etcd_ctx *ctx)
-{
-	CURL *curl;
-	CURLoption opt;
-	CURLcode err;
-
-	curl = curl_easy_init();
-	if (!curl) {
-		fprintf(stderr, "curl easy init failed\n");
-		return NULL;
-	}
-
-	opt = CURLOPT_FOLLOWLOCATION;
-	err = curl_easy_setopt(curl, opt, 1L);
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	opt = CURLOPT_FORBID_REUSE;
-	err = curl_easy_setopt(curl, opt, 1L);
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	opt = CURLOPT_POST;
-	err = curl_easy_setopt(curl, opt, 1L);
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	if (ctx->ttl > 0) {
-		opt = CURLOPT_TIMEOUT;
-		err = curl_easy_setopt(curl, opt, ctx->ttl);
-	}
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	if (curl_debug)
-		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-	return curl;
-
-out_err_opt:
-	fprintf(stderr, "curl setopt %d, error %d: %s\n",
-		opt, err, curl_easy_strerror(err));
-	curl_easy_cleanup(curl);
-	return NULL;
-}
-
-struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ectx)
-{
-	struct etcd_conn_ctx *conn;
-
-	conn = malloc(sizeof(struct etcd_conn_ctx));
-	if (!conn) {
-		fprintf(stderr, "cannot allocate context\n");
-		return NULL;
-	}
-	memset(conn, 0, sizeof(*conn));
-
-	conn->curl_ctx = etcd_curl_init(ectx);
-	if (!conn->curl_ctx) {
-		free(conn);
-		return NULL;
-	}
-	curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEDATA, conn);
-	pthread_mutex_lock(&ectx->conn_mutex);
-	conn->ctx = ectx;
-	if (!ectx->conn)
-		ectx->conn = conn;
-	else {
-		struct etcd_conn_ctx *c = ectx->conn;
-
-		while (c->next)
-			c = c->next;
-		c->next = conn;
-	}
-	pthread_mutex_unlock(&ectx->conn_mutex);
-	return conn;
-}
-
-void etcd_conn_delete(struct etcd_conn_ctx *ctx)
-{
-	struct etcd_ctx *ectx = ctx->ctx;
-	struct etcd_conn_ctx *c = ectx->conn;
-
-	pthread_mutex_lock(&ectx->conn_mutex);
-	if (ectx->conn == ctx) {
-		ectx->conn = NULL;
-	} else {
-		c = ectx->conn;
-		while (c->next && c->next != ctx)
-			c = c->next;
-		if (c->next == ctx) {
-			c->next = ctx->next;
-			ctx->next = NULL;
-		}
-	}
-	ctx->ctx = NULL;
-	pthread_mutex_unlock(&ectx->conn_mutex);
-	if (ctx->curl_ctx) {
-		curl_easy_cleanup(ctx->curl_ctx);
-		ctx->curl_ctx = NULL;
-	}
-	if (ctx->tokener) {
-		json_tokener_free(ctx->tokener);
-		ctx->tokener = NULL;
-	}
-	free(ctx);
-}
-
-static int etcd_kv_exec(struct etcd_conn_ctx *ctx, char *url,
+static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		struct json_object *post_obj, curl_write_callback write_cb)
 {
+	struct etcd_ctx *ctx = conn->ctx;
 	CURLcode err;
 	const char *post_data;
-	int ret = 0;
+	int ret = 0, running = 0;
 
-	err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_URL, url);
+	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt url failed, %s\n",
 			curl_easy_strerror(err));
 		return -EINVAL;
 	}
-	err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_WRITEFUNCTION, write_cb);
+	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEFUNCTION, write_cb);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s\n",
 			curl_easy_strerror(err));
@@ -267,13 +165,13 @@ static int etcd_kv_exec(struct etcd_conn_ctx *ctx, char *url,
 	}
 
 	if (etcd_debug)
-		printf("%s: POST:\n%s\n", __func__,
+		printf("%s: POST %s:\n%s\n", __func__, url,
 		       json_object_to_json_string_ext(post_obj,
 						      JSON_C_TO_STRING_PRETTY));
 
 	if (post_obj) {
 		post_data = json_object_to_json_string(post_obj);
-		err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_POSTFIELDS,
+		err = curl_easy_setopt(conn->curl_ctx, CURLOPT_POSTFIELDS,
 				       post_data);
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfields failed, %s\n",
@@ -281,7 +179,7 @@ static int etcd_kv_exec(struct etcd_conn_ctx *ctx, char *url,
 			return -EINVAL;
 		}
 
-		err = curl_easy_setopt(ctx->curl_ctx, CURLOPT_POSTFIELDSIZE,
+		err = curl_easy_setopt(conn->curl_ctx, CURLOPT_POSTFIELDSIZE,
 				       strlen(post_data));
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
@@ -290,15 +188,30 @@ static int etcd_kv_exec(struct etcd_conn_ctx *ctx, char *url,
 		}
 	}
 
-	err = curl_easy_perform(ctx->curl_ctx);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed, %d (%s)\n",
-			err, curl_easy_strerror(err));
-		if (err == CURLE_OPERATION_TIMEDOUT)
-			ret = -ETIME;
-		else
+	do {
+		CURLMcode merr;
+
+		merr = curl_multi_perform(ctx->curlm_ctx, &running);
+		if (merr) {
+			fprintf(stderr, "curl_multi_perform() failed, %s\n",
+				curl_multi_strerror(merr));
 			ret = -EIO;
-	}
+			break;
+		}
+		if (running) {
+			/* wait for activity, timeout or "nothing" */
+			merr = curl_multi_poll(ctx->curlm_ctx,
+					       NULL, 0, 1000,
+					       NULL);
+			if (merr) {
+				fprintf(stderr,
+					"curl_multi_poll() failed, %s\n",
+					curl_multi_strerror(merr));
+				ret = -EIO;
+				break;
+			}
+		}
+	} while (running);
 
 	return ret;
 }
@@ -1100,6 +1013,47 @@ int etcd_member_id(struct etcd_ctx *ctx)
 	return ret;
 }
 
+static CURL *etcd_curl_init(struct etcd_ctx *ctx)
+{
+	CURL *curl;
+	CURLoption opt;
+	CURLcode err;
+
+	curl = curl_easy_init();
+	if (!curl) {
+		fprintf(stderr, "curl easy init failed\n");
+		return NULL;
+	}
+
+	opt = CURLOPT_FOLLOWLOCATION;
+	err = curl_easy_setopt(curl, opt, 1L);
+	if (err != CURLE_OK)
+		goto out_err_opt;
+	opt = CURLOPT_FORBID_REUSE;
+	err = curl_easy_setopt(curl, opt, 1L);
+	if (err != CURLE_OK)
+		goto out_err_opt;
+	opt = CURLOPT_POST;
+	err = curl_easy_setopt(curl, opt, 1L);
+	if (err != CURLE_OK)
+		goto out_err_opt;
+	if (ctx->ttl > 0) {
+		opt = CURLOPT_TIMEOUT;
+		err = curl_easy_setopt(curl, opt, ctx->ttl);
+	}
+	if (err != CURLE_OK)
+		goto out_err_opt;
+	if (curl_debug)
+		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+	return curl;
+
+out_err_opt:
+	fprintf(stderr, "curl setopt %d, error %d: %s\n",
+		opt, err, curl_easy_strerror(err));
+	curl_easy_cleanup(curl);
+	return NULL;
+}
+
 struct etcd_ctx *etcd_init(const char *prefix)
 {
 	struct etcd_ctx *ctx;
@@ -1145,4 +1099,68 @@ void etcd_exit(struct etcd_ctx *ctx)
 		curl_multi_cleanup(ctx->curlm_ctx);
 	free(ctx->prefix);
 	free(ctx);
+}
+
+struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
+{
+	struct etcd_conn_ctx *conn;
+
+	conn = malloc(sizeof(struct etcd_conn_ctx));
+	if (!conn) {
+		fprintf(stderr, "cannot allocate context\n");
+		return NULL;
+	}
+	memset(conn, 0, sizeof(*conn));
+
+	conn->curl_ctx = etcd_curl_init(ctx);
+	if (!conn->curl_ctx) {
+		free(conn);
+		return NULL;
+	}
+	curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEDATA, conn);
+	pthread_mutex_lock(&ctx->conn_mutex);
+	conn->ctx = ctx;
+	if (!ctx->conn)
+		ctx->conn = conn;
+	else {
+		struct etcd_conn_ctx *c = ctx->conn;
+
+		while (c->next)
+			c = c->next;
+		c->next = conn;
+	}
+	curl_multi_add_handle(ctx->curlm_ctx, conn->curl_ctx);
+	pthread_mutex_unlock(&ctx->conn_mutex);
+	return conn;
+}
+
+void etcd_conn_delete(struct etcd_conn_ctx *conn)
+{
+	struct etcd_ctx *ctx = conn->ctx;
+
+	pthread_mutex_lock(&ctx->conn_mutex);
+	if (ctx->conn == conn) {
+		ctx->conn = NULL;
+	} else {
+		struct etcd_conn_ctx *c = ctx->conn;
+
+		while (c->next && c->next != conn)
+			c = c->next;
+		if (c->next == conn) {
+			c->next = conn->next;
+			conn->next = NULL;
+		}
+	}
+	conn->ctx = NULL;
+	pthread_mutex_unlock(&ctx->conn_mutex);
+	if (conn->curl_ctx) {
+		curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
+		curl_easy_cleanup(conn->curl_ctx);
+		conn->curl_ctx = NULL;
+	}
+	if (conn->tokener) {
+		json_tokener_free(conn->tokener);
+		conn->tokener = NULL;
+	}
+	free(conn);
 }
