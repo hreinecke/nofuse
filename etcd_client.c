@@ -110,7 +110,7 @@ etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("%s: DATA:\n%s\n", __func__,
+		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
@@ -260,7 +260,7 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("%s: %s\n", __func__,
+		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
 	header_obj = json_object_object_get(etcd_resp, "header");
@@ -457,7 +457,7 @@ etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 	}
 	if (etcd_debug)
-		printf("%s: %s\n", __func__,
+		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
 
@@ -543,13 +543,13 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("%s: %s\n", __func__,
+		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
 		if (etcd_debug)
-			printf("%s: invalid response, 'result' not found",
+			printf("%s: invalid response, 'result' not found\n",
 			       __func__);
 		goto out;
 	}
@@ -557,7 +557,7 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	header_obj = json_object_object_get(result_obj, "header");
 	if (!header_obj) {
 		if (etcd_debug)
-			printf("%s: invalid response, 'header' not found",
+			printf("%s: invalid response, 'header' not found\n",
 			       __func__);
 		goto out;
 	}
@@ -576,7 +576,7 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	event_obj = json_object_object_get(result_obj, "events");
 	if (!event_obj) {
 		if (etcd_debug)
-			printf("%s: invalid response, 'events' not found",
+			printf("%s: invalid response, 'events' not found\n",
 			       __func__);
 		goto out;
 	}
@@ -725,7 +725,7 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (etcd_debug)
-		printf("%s: %s\n", __func__,
+		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
 	if (ectx->ttl == -1) {
@@ -748,14 +748,16 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	}
 	id_obj = json_object_object_get(etcd_resp, "ID");
 	if (!id_obj) {
-		printf("%s: invalid response, 'ID' not found", __func__);
+		printf("%s: invalid response, 'ID' not found\n",
+		       __func__);
 		ctx->resp_val = -EBADMSG;
 		goto out;
 	}
 	ectx->lease = json_object_get_int64(id_obj);
 	ttl_obj = json_object_object_get(etcd_resp, "TTL");
 	if (!ttl_obj) {
-		printf("%s: keepalive failed, key expired", __func__);
+		printf("%s: keepalive failed, key expired\n",
+		       __func__);
 		ectx->ttl = -1;
 	} else {
 		ectx->ttl = json_object_get_int(ttl_obj);
@@ -824,7 +826,8 @@ etcd_parse_keepalive_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 	}
 	if (etcd_debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+		printf("%s\n%s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
 				      JSON_C_TO_STRING_PRETTY));
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
@@ -1001,16 +1004,19 @@ etcd_parse_member_response (char *ptr, size_t size, size_t nmemb, void *arg)
 	}
 
 	if (etcd_debug)
-		printf("DATA:\n%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
+		printf("%s\n%s\n", __func__,
+		       json_object_to_json_string_ext(etcd_resp,
+						      JSON_C_TO_STRING_PRETTY));
 	hdr_obj = json_object_object_get(etcd_resp, "header");
 	if (!hdr_obj) {
-		printf("%s: invalid response, 'header' not found", __func__);
+		printf("%s: invalid response, 'header' not found\n",
+		       __func__);
 		goto out;
 	}
 	mbs_obj = json_object_object_get(etcd_resp, "members");
 	if (!mbs_obj) {
-		printf("%s: invalid response, 'members' not found", __func__);
+		printf("%s: invalid response, 'members' not found\n",
+		       __func__);
 		goto out;
 	}
 

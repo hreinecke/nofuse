@@ -212,6 +212,11 @@ int main(int argc, char *argv[])
 
 #ifdef NOFUSE_ETCD
 	ctx->etcd = etcd_init(ctx->prefix);
+	if (!ctx->etcd) {
+		fprintf(stderr, "cannot connect to etcd\n");
+		free(ctx);
+		return 1;
+	}
 	ctx->etcd->ttl = ctx->ttl;
 	ret = etcd_lease_grant(ctx->etcd);
 #else
