@@ -215,7 +215,7 @@ static void cleanup_ctx(void *arg)
 
 static void *etcd_watcher(void *arg)
 {
-	struct etcd_ctx *ctx = etcd_dup(arg);
+	struct etcd_ctx *ctx = arg;
 	char prefix[PATH_MAX];
 	int ret;
 

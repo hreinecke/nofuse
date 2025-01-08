@@ -46,12 +46,20 @@ struct etcd_ctx {
 	int64_t lease;
 	int64_t revision;
 	int ttl;
-	CURL *curl_ctx;
 	CURLM *curlm_ctx;
+	pthread_mutex_t conn_mutex;
+	struct etcd_conn_ctx *conn;
+};
+
+struct etcd_conn_ctx {
+	struct etcd_ctx *ctx;
+	struct etcd_conn_ctx *next;
+	int ctx_conn_id;
+	CURL *curl_ctx;
 	struct etcd_kv *resp_kvs;
 	int resp_val;
 	struct json_tokener *tokener;
-	void (*watch_cb)(struct etcd_ctx *, enum kv_key_op,
+	void (*watch_cb)(struct etcd_conn_ctx *, enum kv_key_op,
 			 char *, const char *);
 };
 
@@ -59,8 +67,10 @@ extern bool etcd_debug;
 extern bool curl_debug;
 
 struct etcd_ctx *etcd_init(const char *prefix);
-struct etcd_ctx *etcd_dup(struct etcd_ctx *ctx);
+struct etcd_conn_ctx *etcd_conn(struct etcd_ctx *ctx);
+void etcd_conn_exit(struct etcd_conn_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);
+
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 
 static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
@@ -91,8 +101,8 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
 int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv **ret_kvs);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
-int etcd_kv_watch(struct etcd_ctx *ctx, const char *key);
-void etcd_kv_watch_stop(struct etcd_ctx *ctx);
+int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key);
+void etcd_kv_watch_stop(struct etcd_conn_ctx *conn);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);
 int etcd_lease_keepalive(struct etcd_ctx *ctx);
