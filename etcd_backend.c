@@ -29,7 +29,7 @@ int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 	kv.lease = 0;
 	ret = etcd_kv_put(ctx, &kv);
 	free(key);
-	return ctx->resp_val;
+	return ret;
 }
 
 int etcd_get_discovery_nqn(struct etcd_ctx *ctx, char *buf)

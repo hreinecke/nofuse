@@ -67,9 +67,9 @@ extern bool etcd_debug;
 extern bool curl_debug;
 
 struct etcd_ctx *etcd_init(const char *prefix);
-struct etcd_conn_ctx *etcd_conn(struct etcd_ctx *ctx);
-void etcd_conn_exit(struct etcd_conn_ctx *ctx);
 void etcd_exit(struct etcd_ctx *ctx);
+struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
+void etcd_conn_delete(struct etcd_conn_ctx *ctx);
 
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 
