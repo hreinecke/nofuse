@@ -167,10 +167,6 @@ static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 	err = curl_easy_setopt(curl, opt, 1L);
 	if (err != CURLE_OK)
 		goto out_err_opt;
-	opt = CURLOPT_WRITEDATA;
-	err = curl_easy_setopt(curl, opt, ctx);
-	if (err != CURLE_OK)
-		goto out_err_opt;
 	if (ctx->ttl > 0) {
 		opt = CURLOPT_TIMEOUT;
 		err = curl_easy_setopt(curl, opt, ctx->ttl);
@@ -190,33 +186,34 @@ out_err_opt:
 
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ectx)
 {
-	struct etcd_conn_ctx *ctx;
+	struct etcd_conn_ctx *conn;
 
-	ctx = malloc(sizeof(struct etcd_conn_ctx));
-	if (!ctx) {
+	conn = malloc(sizeof(struct etcd_conn_ctx));
+	if (!conn) {
 		fprintf(stderr, "cannot allocate context\n");
 		return NULL;
 	}
-	memset(ctx, 0, sizeof(struct etcd_ctx));
+	memset(conn, 0, sizeof(*conn));
 
-	ctx->curl_ctx = etcd_curl_init(ectx);
-	if (!ctx->curl_ctx) {
-		free(ctx);
+	conn->curl_ctx = etcd_curl_init(ectx);
+	if (!conn->curl_ctx) {
+		free(conn);
 		return NULL;
 	}
+	curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEDATA, conn);
 	pthread_mutex_lock(&ectx->conn_mutex);
-	ctx->ctx = ectx;
+	conn->ctx = ectx;
 	if (!ectx->conn)
-		ectx->conn = ctx;
+		ectx->conn = conn;
 	else {
 		struct etcd_conn_ctx *c = ectx->conn;
 
 		while (c->next)
 			c = c->next;
-		c->next = ctx;
+		c->next = conn;
 	}
 	pthread_mutex_unlock(&ectx->conn_mutex);
-	return ctx;
+	return conn;
 }
 
 void etcd_conn_delete(struct etcd_conn_ctx *ctx)
@@ -442,7 +439,6 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 
 out_free:
 	free(encoded_key);
-	json_tokener_free(conn->tokener);
 	json_object_put(post_obj);
 	etcd_kvs_free(conn);
 	etcd_conn_delete(conn);
@@ -499,7 +495,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
-	json_tokener_free(conn->tokener);
 	free(url);
 	etcd_conn_delete(conn);
 	return ret;
@@ -1126,6 +1121,7 @@ struct etcd_ctx *etcd_init(const char *prefix)
 	ctx->lease = 0;
 	ctx->ttl = default_etcd_ttl;
 	ctx->curlm_ctx = curl_multi_init();
+	pthread_mutex_init(&ctx->conn_mutex, NULL);
 
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
