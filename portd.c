@@ -212,10 +212,12 @@ static void *etcd_watcher(void *arg)
 {
 	struct etcd_ctx *ctx = arg;
 	struct etcd_conn_ctx *conn;
-	struct etcd_kv *kvs;
+	struct etcd_kv_event ev;
 	char *prefix;
 	int64_t start_revision = 0;
 	int ret;
+
+	memset(&ev, 0, sizeof(ev));
 
 	ret = asprintf(&prefix, "%s/ports", ctx->prefix);
 	if (ret < 0)
@@ -228,30 +230,24 @@ static void *etcd_watcher(void *arg)
 
 		pthread_cleanup_push(delete_conn, conn);
 
-		conn->watch_id = pthread_self();
-		conn->revision = start_revision;
-
-		ret = etcd_kv_watch(conn, prefix, &kvs);
+		ev.ev_revision = start_revision;
+		ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
 		if (ret < 0)
 			fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
-
-		if (ret > 0) {
+		else {
 			int i;
 
-			for (i = 0; i < ret; i++) {
-				struct etcd_kv *kv = &kvs[i];
+			for (i = 0; i < ev.num_kvs; i++) {
+				struct etcd_kv *kv = &ev.kvs[i];
 
 				update_ports(conn, kv);
-				free((char *)kv->key);
-				if (kv->value)
-					free((char *)kv->value);
 			}
-			free(kvs);
+			etcd_ev_free(&ev);
 		}
-		if (conn->resp_ev.ev_revision > 0) {
-			start_revision = conn->resp_ev.ev_revision;
-			conn->resp_ev.ev_revision = 0;
+		if (ev.ev_revision > 0) {
+			start_revision = ev.ev_revision;
+			ev.ev_revision = 0;
 			fprintf(stderr, "%s: new start rev %ld\n",
 				__func__, start_revision);
 		}

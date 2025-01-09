@@ -632,17 +632,15 @@ out:
 }
 
 int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
-		  struct etcd_kv **ret_kvs)
+		  struct etcd_kv_event *ev, int64_t watch_id)
 {
 	struct etcd_ctx *ctx = conn->ctx;
-	struct etcd_kv_event ev;
 	char *url;
 	struct json_object *post_obj, *req_obj;
 	char *encoded_key, *end_key, *encoded_end, end;
 	int ret;
 
-	memset(&ev, 0, sizeof(ev));
-	ev.tokener = json_tokener_new_ex(10);
+	ev->tokener = json_tokener_new_ex(10);
 
 	ret = asprintf(&url, "%s://%s:%u/v3/watch",
 		       ctx->proto, ctx->host, ctx->port);
@@ -661,30 +659,22 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
-	if (conn->revision > 0)
+	if (ev->ev_revision > 0)
 		json_object_object_add(req_obj, "start_revision",
-				       json_object_new_int64(conn->revision));
-	if (conn->watch_id > 0)
+				       json_object_new_int64(ev->ev_revision));
+	if (watch_id > 0)
 		json_object_object_add(req_obj, "watch_id",
-				       json_object_new_int64(conn->watch_id));
+				       json_object_new_int64(watch_id));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(conn, url, post_obj,
-			   etcd_parse_watch_response, &ev);
-	if (!ret) {
-		if (ev.error < 0)
-			ret = ev.error;
-		else if (ev.num_kvs) {
-			*ret_kvs = ev.kvs;
-			ret = ev.num_kvs;
-		}
-	}
+			   etcd_parse_watch_response, ev);
 
 	free(encoded_key);
 	free(encoded_end);
 	free(end_key);
 	json_object_put(post_obj);
-	json_tokener_free(ev.tokener);
+	json_tokener_free(ev->tokener);
 	return ret;
 }
 
@@ -995,7 +985,6 @@ etcd_parse_revoke_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	error_obj = json_object_object_get(etcd_resp, "error");
 	if (error_obj) {
 		const char *err_str = json_object_get_string(error_obj);
-		int error_code;
 
 		printf("%s: revoke error '%s'\n",
 		       __func__, err_str);
