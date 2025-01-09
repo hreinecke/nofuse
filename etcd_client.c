@@ -86,14 +86,100 @@ void etcd_ev_free(struct etcd_kv_event *ev)
 	ev->error = 0;
 }
 
+int etcd_conn_continue(struct etcd_conn_ctx *conn)
+{
+	struct etcd_ctx *ctx = conn->ctx;
+	int ret = 0, running = 0;
+
+	curl_multi_add_handle(ctx->curlm_ctx, conn->curl_ctx);
+
+	do {
+		CURLMcode merr;
+		int numfds = 0;
+
+		/* wait for activity, timeout or "nothing" */
+		merr = curl_multi_poll(ctx->curlm_ctx,
+				       NULL, 0, 1000,
+				       &numfds);
+		if (merr) {
+			fprintf(stderr,
+				"curl_multi_poll() failed, %s\n",
+				curl_multi_strerror(merr));
+			ret = -EIO;
+			break;
+		} else if (!numfds) {
+			fprintf(stderr,
+				"curl_multi_poll(), %d transfers pending\n",
+				running);
+			ret = -EAGAIN;
+			break;
+		}
+
+		pthread_mutex_lock(&ctx->conn_mutex);
+		merr = curl_multi_perform(ctx->curlm_ctx, &running);
+		pthread_mutex_unlock(&ctx->conn_mutex);
+		if (merr) {
+			fprintf(stderr, "curl_multi_perform() failed, %s\n",
+				curl_multi_strerror(merr));
+			ret = -EIO;
+			break;
+		}
+	} while (running);
+
+	curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
+	return ret;
+}
+
+static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
+{
+	struct etcd_ctx *ctx = conn->ctx;
+	int ret = 0, running;
+
+	curl_multi_add_handle(ctx->curlm_ctx, conn->curl_ctx);
+
+	do {
+		CURLMcode merr;
+
+		pthread_mutex_lock(&ctx->conn_mutex);
+		merr = curl_multi_perform(ctx->curlm_ctx, &running);
+		pthread_mutex_unlock(&ctx->conn_mutex);
+		if (merr) {
+			fprintf(stderr, "curl_multi_perform() failed, %s\n",
+				curl_multi_strerror(merr));
+			ret = -EIO;
+			break;
+		}
+
+		if (running) {
+			int numfds = 0;
+
+			/* wait for activity, timeout or "nothing" */
+			merr = curl_multi_poll(ctx->curlm_ctx,
+					       NULL, 0, 1000,
+					       &numfds);
+			if (merr) {
+				fprintf(stderr,
+					"curl_multi_poll() failed, %s\n",
+					curl_multi_strerror(merr));
+				ret = -EIO;
+				break;
+			} else if (!numfds) {
+				fprintf(stderr,
+					"curl_multi_poll(), %d transfers pending\n", running);
+			}
+		}
+	} while (running);
+
+	curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
+	return ret;
+}
+
 static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 			struct json_object *post_obj,
 			curl_write_callback write_cb, void *write_data)
 {
-	struct etcd_ctx *ctx = conn->ctx;
 	CURLcode err;
 	const char *post_data;
-	int ret = 0, running = 0;
 
 	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
@@ -114,12 +200,12 @@ static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		return -EINVAL;
 	}
 
-	if (etcd_debug)
-		printf("%s: POST %s:\n%s\n", __func__, url,
-		       json_object_to_json_string_ext(post_obj,
+	if (post_obj) {
+		if (etcd_debug)
+			printf("%s: POST %s:\n%s\n", __func__, url,
+			       json_object_to_json_string_ext(post_obj,
 						      JSON_C_TO_STRING_PRETTY));
 
-	if (post_obj) {
 		post_data = json_object_to_json_string(post_obj);
 		err = curl_easy_setopt(conn->curl_ctx, CURLOPT_POSTFIELDS,
 				       post_data);
@@ -138,39 +224,7 @@ static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		}
 	}
 
-	do {
-		CURLMcode merr;
-
-		merr = curl_multi_perform(ctx->curlm_ctx, &running);
-		if (merr) {
-			fprintf(stderr, "curl_multi_perform() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		}
-		if (running) {
-			int numfds = 0;
-
-			/* wait for activity, timeout or "nothing" */
-			merr = curl_multi_poll(ctx->curlm_ctx,
-					       NULL, 0, 1000,
-					       &numfds);
-			if (merr) {
-				fprintf(stderr,
-					"curl_multi_poll() failed, %s\n",
-					curl_multi_strerror(merr));
-				ret = -EIO;
-				break;
-			} else if (!numfds) {
-				fprintf(stderr,
-					"curl_multi_poll() no events\n");
-				ret = 0;
-				break;
-			}
-		}
-	} while (running);
-
-	return ret;
+	return etcd_kv_transfer(conn);
 }
 
 static size_t
@@ -362,12 +416,12 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	char *encoded_key = NULL;
 	int ret, i;
 
-	memset(&ev, 0, sizeof(ev));
-	ev.tokener = json_tokener_new_ex(5);
-
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		return -ENOMEM;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.tokener = conn->tokener;
 
 	ret = asprintf(&url, "%s://%s:%u/v3/kv/range",
 		       ctx->proto, ctx->host, ctx->port);
@@ -410,7 +464,6 @@ out_free:
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
 	free(url);
-	json_tokener_free(ev.tokener);
 	return ret;
 }
 
@@ -425,12 +478,12 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	char *encoded_range = NULL, *range;
 	int ret;
 
-	memset(&ev, 0, sizeof(ev));
-	ev.tokener = json_tokener_new_ex(5);
-
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		return -ENOMEM;
+
+	memset(&ev, 0, sizeof(ev));
+	ev.tokener = conn->tokener;
 
 	ret = asprintf(&url, "%s://%s:%u/v3/kv/range",
 		       ctx->proto, ctx->host, ctx->port);
@@ -468,7 +521,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	json_object_put(post_obj);
 	free(url);
 	etcd_conn_delete(conn);
-	json_tokener_free(ev.tokener);
 	return ret;
 }
 
@@ -578,10 +630,15 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		ev->error = -EBADMSG;
 		return 0;
 	}
-	if (etcd_debug)
+
+	if (etcd_debug) {
+		printf("%s: raw '%s' (%lu/%lu bytes)\n", __func__,
+		       ptr, json_tokener_get_parse_end(ev->tokener),
+		       size * nmemb);
 		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
+	}
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
 		if (etcd_debug)
@@ -660,7 +717,7 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	char *encoded_key, *end_key, *encoded_end, end;
 	int ret;
 
-	ev->tokener = json_tokener_new_ex(10);
+	ev->tokener = conn->tokener;
 
 	ret = asprintf(&url, "%s://%s:%u/v3/watch",
 		       ctx->proto, ctx->host, ctx->port);
@@ -694,31 +751,23 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	free(encoded_end);
 	free(end_key);
 	json_object_put(post_obj);
-	json_tokener_free(ev->tokener);
 	return ret;
 }
 
-int etcd_kv_watch_cancel(struct etcd_ctx *ctx, int64_t watch_id)
+int etcd_kv_watch_cancel(struct etcd_conn_ctx *conn, int64_t watch_id)
 {
-	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	char *url;
 	struct json_object *post_obj, *req_obj;
 	int ret;
 
 	memset(&ev, 0, sizeof(ev));
-	ev.tokener = json_tokener_new_ex(10);
-
-	conn = etcd_conn_create(ctx);
-	if (!conn)
-		return -ENOMEM;
+	ev.tokener = conn->tokener;
 
 	ret = asprintf(&url, "%s://%s:%u/v3/watch",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
+		       conn->ctx->proto, conn->ctx->host, conn->ctx->port);
+	if (ret < 0)
 		return -ENOMEM;
-	}
 
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
@@ -734,8 +783,6 @@ int etcd_kv_watch_cancel(struct etcd_ctx *ctx, int64_t watch_id)
 
 	json_object_put(post_obj);
 	free(url);
-	etcd_conn_delete(conn);
-	json_tokener_free(ev.tokener);
 	return ret;
 }
 
@@ -1168,6 +1215,7 @@ static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 	CURL *curl;
 	CURLoption opt;
 	CURLcode err;
+	struct curl_slist *headers = NULL;
 
 	curl = curl_easy_init();
 	if (!curl) {
@@ -1193,6 +1241,11 @@ static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 	}
 	if (err != CURLE_OK)
 		goto out_err_opt;
+
+	headers = curl_slist_append(headers, "Expect:");
+	headers = curl_slist_append(headers, "Content-Type: application/json");
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
 	if (curl_debug)
 		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	return curl;
@@ -1269,6 +1322,8 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 		free(conn);
 		return NULL;
 	}
+	conn->tokener = json_tokener_new_ex(10);
+
 	pthread_mutex_lock(&ctx->conn_mutex);
 	conn->ctx = ctx;
 	curl_easy_setopt(conn->curl_ctx, CURLOPT_PRIVATE, conn);
@@ -1281,7 +1336,6 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 			c = c->next;
 		c->next = conn;
 	}
-	curl_multi_add_handle(ctx->curlm_ctx, conn->curl_ctx);
 	pthread_mutex_unlock(&ctx->conn_mutex);
 	return conn;
 }
@@ -1312,11 +1366,9 @@ void etcd_conn_delete(struct etcd_conn_ctx *conn)
 	conn->ctx = NULL;
 	pthread_mutex_unlock(&ctx->conn_mutex);
 	if (conn->curl_ctx) {
-		if (ctx->curlm_ctx)
-			curl_multi_remove_handle(ctx->curlm_ctx,
-						 conn->curl_ctx);
 		curl_easy_cleanup(conn->curl_ctx);
 		conn->curl_ctx = NULL;
 	}
+	json_tokener_free(conn->tokener);
 	free(conn);
 }

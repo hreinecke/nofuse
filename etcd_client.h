@@ -24,13 +24,13 @@ struct etcd_kv {
 };
 
 struct etcd_kv_event {
-	struct json_tokener *tokener;
 	int64_t ev_revision;
 	int error;
 	struct etcd_kv *kvs;
 	int num_kvs;
 	struct etcd_kv *prev_kvs;
 	int num_prev_kvs;
+	struct json_tokener *tokener;
 };
 
 struct etcd_ctx {
@@ -54,6 +54,7 @@ struct etcd_conn_ctx {
 	CURL *curl_ctx;
 	int64_t revision;
 	int64_t watch_id;
+	struct json_tokener *tokener;
 };
 
 extern bool etcd_debug;
@@ -64,6 +65,8 @@ void etcd_exit(struct etcd_ctx *ctx);
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
 void etcd_ev_free(struct etcd_kv_event *ev);
+
+int etcd_conn_continue(struct etcd_conn_ctx *conn);
 
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 
@@ -97,7 +100,7 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id);
-int etcd_kv_watch_cancel(struct etcd_ctx *ctx, int64_t watch_id);
+int etcd_kv_watch_cancel(struct etcd_conn_ctx *conn, int64_t watch_id);
 void etcd_kv_watch_stop(struct etcd_conn_ctx *conn);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);

@@ -223,36 +223,31 @@ static void *etcd_watcher(void *arg)
 	if (ret < 0)
 		return NULL;
 
-	while (!stopped) {
-		conn = etcd_conn_create(ctx);
-		if (!conn)
-			break;
-
-		pthread_cleanup_push(delete_conn, conn);
-
-		ev.ev_revision = start_revision;
-		ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
-		if (ret < 0)
-			fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
-				__func__, ret);
-		else {
-			int i;
-
-			for (i = 0; i < ev.num_kvs; i++) {
-				struct etcd_kv *kv = &ev.kvs[i];
-
-				update_ports(conn, kv);
-			}
-			etcd_ev_free(&ev);
-		}
-		if (ev.ev_revision > 0) {
-			start_revision = ev.ev_revision;
-			ev.ev_revision = 0;
-			fprintf(stderr, "%s: new start rev %ld\n",
-				__func__, start_revision);
-		}
-		pthread_cleanup_pop(1);
+	conn = etcd_conn_create(ctx);
+	if (!conn) {
+		free(prefix);
+		return NULL;
 	}
+
+	pthread_cleanup_push(delete_conn, conn);
+
+	ev.ev_revision = start_revision;
+	ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
+	if (!ret)
+		goto out_pop;
+	if (ret != -EAGAIN) {
+		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
+				__func__, ret);
+			goto out_pop;
+	}
+	while (!stopped) {
+		ret = etcd_conn_continue(conn);		
+	}
+
+	etcd_kv_watch_cancel(conn, pthread_self());
+
+out_pop:
+	pthread_cleanup_pop(1);
 
 	free(prefix);
 	pthread_exit(NULL);
@@ -360,8 +355,6 @@ int main(int argc, char **argv)
 	while (!stopped)
 		pthread_cond_wait(&wait, &lock);
 	pthread_mutex_unlock(&lock);
-
-	etcd_kv_watch_cancel(ctx, watcher_thr);
 
 	printf("cancelling watcher\n");
 	pthread_cancel(watcher_thr);
