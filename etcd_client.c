@@ -268,7 +268,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 static size_t
 etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
-	struct json_object *etcd_resp, *kvs_obj;
+	struct json_object *etcd_resp, *header_obj, *kvs_obj;
 	struct etcd_kv_event *ev = arg;
 	int i;
 
@@ -289,6 +289,22 @@ etcd_parse_kvs_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		printf("%s\n%s\n", __func__,
 		       json_object_to_json_string_ext(etcd_resp,
 						      JSON_C_TO_STRING_PRETTY));
+	header_obj = json_object_object_get(etcd_resp, "header");
+	if (!header_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'header' not found\n",
+			       __func__);
+		ev->error = -EBADMSG;
+	} else {
+		struct json_object *rev_obj;
+
+		rev_obj = json_object_object_get(header_obj, "revision");
+		if (rev_obj) {
+			ev->ev_revision =
+				json_object_get_int64(rev_obj);
+		} else
+			ev->ev_revision = -1;
+	}
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
 	if (!kvs_obj)
 		goto out;
@@ -344,7 +360,7 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	char *url;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
-	int ret;
+	int ret, i;
 
 	memset(&ev, 0, sizeof(ev));
 	ev.tokener = json_tokener_new_ex(5);
@@ -367,12 +383,15 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 
 	ret = etcd_kv_exec(conn, url, post_obj,
 			   etcd_parse_kvs_response, &ev);
-	if (!ret && ev.error < 0)
+	if (ret)
+		goto out_free;
+	if (ev.error < 0) {
 		ret = ev.error;
-	if (!ret && ev.num_kvs) {
-		int i;
+		goto out_free;
+	}
 
-		ret = -ENOENT;
+	ret = -ENOENT;
+	if (ev.num_kvs) {
 		for (i = 0; i < ev.num_kvs; i++) {
 			struct etcd_kv *kv = &ev.kvs[i];
 
@@ -386,6 +405,7 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 		etcd_ev_free(&ev);
 	}
 
+out_free:
 	free(encoded_key);
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
