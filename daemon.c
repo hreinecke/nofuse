@@ -107,9 +107,7 @@ static void *keepalive_loop(void *arg)
 	int ret;
 
 	while (!stopped) {
-		pthread_mutex_lock(&ctx->etcd_mutex);
 		ret = etcd_lease_keepalive(ctx->etcd);
-		pthread_mutex_unlock(&ctx->etcd_mutex);
 		if (ret < 0)
 			break;
 		sleep(ctx->etcd->ttl >> 1);

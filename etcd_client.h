@@ -11,15 +11,6 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 
-enum kv_key_op {
-	KV_KEY_OP_NONE = 0,
-	KV_KEY_OP_ADD,
-	KV_KEY_OP_DELETE,
-	KV_KEY_OP_GET,
-	KV_KEY_OP_RANGE,
-	KV_KEY_OP_WATCH,
-};
-
 struct etcd_kv {
 	const char *key;
 	const char *value;
@@ -27,13 +18,15 @@ struct etcd_kv {
 	int64_t mod_revision;
 	int64_t version;
 	int64_t lease;
+	int64_t ttl;
 	bool ignore_lease;
 	bool deleted;
 };
 
 struct etcd_kv_event {
+	struct json_tokener *tokener;
 	int64_t ev_revision;
-	enum kv_key_op ev_op;
+	int error;
 	struct etcd_kv *kvs;
 	int num_kvs;
 	struct etcd_kv *prev_kvs;
@@ -60,9 +53,6 @@ struct etcd_conn_ctx {
 	struct etcd_conn_ctx *next;
 	CURL *curl_ctx;
 	int64_t revision;
-	struct etcd_kv_event resp_ev;
-	int resp_val;
-	struct json_tokener *tokener;
 	int64_t watch_id;
 };
 
@@ -73,6 +63,7 @@ struct etcd_ctx *etcd_init(const char *prefix);
 void etcd_exit(struct etcd_ctx *ctx);
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
+void etcd_ev_free(struct etcd_kv_event *ev);
 
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 
