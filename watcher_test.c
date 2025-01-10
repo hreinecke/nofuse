@@ -125,6 +125,8 @@ char *format_watch(char *key, int64_t revision, int64_t watch_id)
 
 	buf = strdup(tmp);
 	json_object_put(post_obj);
+	free(encoded_key);
+	free(encoded_end);
 	free(end_key);
 	return buf;
 }
@@ -195,18 +197,22 @@ int send_cancel(int sockfd, int64_t watch_id)
 	hdrlen = asprintf(&hdr, http_header,
 		       default_hostname, default_port,
 		       postlen);
-	if (hdrlen < 0)
+	if (hdrlen < 0) {
+		free(post);
 		return -ENOMEM;
+	}
 
 	printf("http header (%d bytes)\n", hdrlen);
 	ret = send_http(sockfd, hdr, hdrlen);
 	free(hdr);
 	if (ret != 0) {
 		printf("error sending http header, %d bytes left\n", ret);
+		free(post);
 		return -errno;
 	}
 	printf("http post (%ld bytes)\n%s\n", postlen, post);
 	ret = send_http(sockfd, post, postlen);
+	free(post);
 	if (ret != 0) {
 		printf("error sending http post, %d bytes left\n", ret);
 		return -errno;
@@ -336,7 +342,7 @@ out:
 	return 0;
 }
 
-int recv_http(int sockfd, char **data, size_t *data_len)
+int recv_http(int sockfd)
 {
 	size_t alloc_size, result_inc = 512, result_size, data_left, len;
 	char *result, *data_ptr, *http_hdr = NULL;
@@ -467,30 +473,28 @@ int recv_http(int sockfd, char **data, size_t *data_len)
 			continue;
 
 		printf("expand buffer, %ld bytes read\n", result_size);
-		tmp = result;
 		alloc_size += result_inc;
-		result = malloc(alloc_size);
-		if (!result) {
+		tmp = realloc(result, alloc_size);
+		if (!tmp) {
 			fprintf(stderr,
 				"failed to reallocate result\n");
 			break;
 		}
-		memcpy(result, tmp, result_size);
+		result = tmp;
 		data_ptr = result + result_size;
 		data_left = result_inc;
 		memset(data_ptr, 0, data_left);
 		free(tmp);
 	}
-	*data = result;
-	*data_len = result_size;
+	free(result);
 	return ret;
 }
 
 int main(int argc, char **argv)
 {
 	int sockfd, flags, ret, hdrlen;
-	size_t buflen, postlen;
-	char *hdr, *buf, *post;
+	size_t postlen;
+	char *hdr, *post;
 
 	sockfd = etcd_connect(default_hostname, default_port);
 	if (sockfd < 0)
@@ -505,29 +509,29 @@ int main(int argc, char **argv)
 	hdrlen = asprintf(&hdr, http_header,
 		       default_hostname, default_port,
 		       postlen);
-	if (hdrlen < 0)
+	if (hdrlen < 0) {
+		free(post);
 		return 1;
+	}
 
 	printf("sending http header (%d bytes)\n", hdrlen);
 	ret = send_http(sockfd, hdr, hdrlen);
 	free(hdr);
 	if (ret != 0) {
 		printf("error sending http header, %d bytes left\n", ret);
+		free(post);
 		close(sockfd);
 		return 1;
 	}
 	printf("http post (%ld bytes)\n%s\n", postlen, post);
 	ret = send_http(sockfd, post, postlen);
+	free(post);
 	if (ret != 0) {
 		printf("error sending http post, %d bytes left\n", ret);
 		close(sockfd);
 		return 1;
 	}
-	ret = recv_http(sockfd, &buf, &buflen);
+	ret = recv_http(sockfd);
 	close(sockfd);
-	if (buflen) {
-		printf("received data '%s'\n", buf);
-		free(buf);
-	}
 	return 0;
 }
