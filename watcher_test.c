@@ -405,7 +405,11 @@ int recv_http(int sockfd, char **data, size_t *data_len)
 		ret = parse_http_hdr(http_hdr, &chunked);
 		if (ret < 0)
 			break;
-		if (chunked) {
+		if (!chunked) {
+			ret = parse_http_body(result, result_size);
+			goto complete;
+		}
+		do {
 			size_t chunk_len;
 
 			ret = parse_http_chunk(result, &chunk_len);
@@ -442,9 +446,8 @@ int recv_http(int sockfd, char **data, size_t *data_len)
 				printf("http chunk (%ld bytes to parse)\n",
 				       result_size);
 			}
-		} else {
-			ret = parse_http_body(result, result_size);
-		}
+		} while (result_size);
+	complete:
 		if (!ret) {
 			printf("http response complete\n");
 			memset(result, 0, alloc_size);
