@@ -94,7 +94,6 @@ int main(int argc, char **argv)
 		exit(1);
 
 	memset(ctx, 0, sizeof(*ctx));
-	pthread_mutex_init(&ctx->etcd_mutex, NULL);
 	ctx->pathname = strdup("/sys/kernel/config/nvmet");
 	ctx->path_fd = open(ctx->pathname, O_DIRECTORY | O_RDONLY);
 	if (ctx->path_fd < 0) {

@@ -4,7 +4,6 @@
 extern bool inotify_debug;
 
 struct watcher_ctx {
-	pthread_mutex_t etcd_mutex;
 	struct etcd_ctx *etcd;
 	char *pathname;
 	int path_fd;

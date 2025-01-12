@@ -39,7 +39,6 @@ bool ep_debug;
 bool port_debug;
 
 struct nofuse_context {
-	pthread_mutex_t etcd_mutex;
 	struct etcd_ctx *etcd;
 	char *subsysnqn;
 	const char *traddr;
@@ -192,7 +191,6 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
-	pthread_mutex_init(&ctx->etcd_mutex, NULL);
 #ifndef NOFUSE_ETCD
 	ctx->dbname = strdup("nofuse.sqlite");
 #endif
