@@ -340,15 +340,7 @@ static int update_value(struct dir_watcher *wd)
 		printf("%s: %s key %s value '%s'\n", __func__,
 		       t, key, value);
 	if (ret > 0) {
-		struct etcd_kv kv;
-
-		memset(&kv, 0, sizeof(kv));
-		kv.key = key;
-		kv.value = value;
-		kv.ignore_lease = true;
-		pthread_mutex_lock(&wd->ctx->etcd_mutex);
-		ret = etcd_kv_put(wd->ctx->etcd, &kv);
-		pthread_mutex_unlock(&wd->ctx->etcd_mutex);
+		ret = etcd_kv_update(wd->ctx->etcd, key, value);
 		if (ret < 0)
 			fprintf(stderr, "%s: %s key %s put error %d\n",
 				__func__, t, key, ret);
@@ -619,9 +611,7 @@ void *inotify_loop(void *arg)
 		int rlen, ret;
 		char *iev_buf;
 
-		pthread_mutex_lock(&ctx->etcd_mutex);
 		ret = etcd_lease_keepalive(ctx->etcd);
-		pthread_mutex_unlock(&ctx->etcd_mutex);
 		if (ret < 0) {
 			fprintf(stderr,
 				"failed to update lease, error %d\n", ret);
