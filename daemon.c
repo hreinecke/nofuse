@@ -215,7 +215,9 @@ int main(int argc, char *argv[])
 		free(ctx);
 		return 1;
 	}
-	ctx->etcd->ttl = ctx->ttl;
+	if (ctx->ttl)
+		ctx->etcd->ttl = ctx->ttl;
+
 	ret = etcd_lease_grant(ctx->etcd);
 #else
 	ret = configdb_open(ctx->dbname);
