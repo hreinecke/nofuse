@@ -297,8 +297,9 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
 	if (!kv->ignore_lease) {
-		json_object_object_add(post_obj, "lease",
-				       json_object_new_int64(kv->lease));
+		if (kv->lease)
+			json_object_object_add(post_obj, "lease",
+				json_object_new_int64(kv->lease));
 	} else {
 		json_object_object_add(post_obj, "ignore_lease",
 				       json_object_new_boolean(true));

@@ -342,11 +342,103 @@ out:
 	return 0;
 }
 
+int parse_http(char *result, size_t result_size)
+{
+	struct http_parser *http;
+
+	if (!http->hdr) {
+		body = strstr(result, "\r\n\r\n");
+		if (!body) {
+			printf("http hdr retry\n");
+			return 0;
+		}
+		memset(body, 0, 4);
+		body += 4;
+		http->hdr = strdup(result);
+		ret = parse_http_hdr(http->hdr, &http->chunked);
+		if (ret < 0) {
+			printf("http hdr parse error\n");
+			return ret;
+		}
+		return body - result;
+	}
+	if (!http->chunked) {
+		http->body = result;
+		ret = parse_http_body(result, result_size);
+		goto complete;
+	}
+	do {
+		size_t chunk_len;
+
+		ret = parse_http_chunk(result, &chunk_len);
+		if (ret < 0)
+			break;
+		printf("http chunk (%ld bytes of %ld bytes)\n",
+		       chunk_len, result_size);
+		result += ret;
+		result_size -= ret;
+		if (strcmp(result + chunk_len, "\r\n")) {
+			printf("http chunk parse error\n");
+			return 0;
+		}
+		if (!chunk_len)
+			goto complete;
+		next_chunk = result + chunk_len;
+		memset(next_chunk, 0, 2);
+		next_chunk += 2;
+		ret = parse_http_body(result, chunk_len);
+		if (!ret || chunk_len > result_size) {
+			printf("http chunk retry\n");
+			return 0;
+		}
+		
+		body = result + ret;
+		result_size -= ret;
+		memmove(result, body, result_size);
+		result[chunk_len] = '\0';
+		data_left = alloc_size - result_size;
+		data_ptr = result + strlen(result);
+		printf("http chunk (%ld bytes left)\n",
+		       result_size);
+		ret = parse_http_body(result, chunk_len);
+		if (ret < 0)
+			break;
+		body = result + chunk_len;
+		result_size -= chunk_len;
+		while (result_size > 0) {
+			if (*body == '\r' ||
+			    *body == '\n')
+				*body = 0;
+			result_size--;
+			body++;
+		}
+		if (result_size) {
+			memmove(result, body, result_size);
+			data_left = alloc_size = result_size;
+			data_ptr = result + strlen(result);
+			printf("http chunk (%ld bytes to parse)\n",
+			       result_size);
+		}
+	} while (result_size);
+	complete:
+		if (!ret) {
+			printf("http response complete\n");
+			memset(result, 0, alloc_size);
+			data_ptr = result;
+			data_left = result_size;
+			result_size = 0;
+			free(http_hdr);
+			http_hdr = NULL;
+			continue;
+		}
+}
+	
 int recv_http(int sockfd)
 {
-	size_t alloc_size, result_inc = 512, result_size, data_left, len;
+	size_t alloc_size, result_inc = 64, result_size, data_left, len;
 	char *result, *data_ptr, *http_hdr = NULL;
 	int ret, wait = 5;
+	bool chunked;
 
 	alloc_size = result_inc;
 	result_size = 0;
@@ -361,7 +453,6 @@ int recv_http(int sockfd)
 		fd_set rfd;
 		struct timeval tmo;
 		char *tmp, *body;
-		bool chunked;
 
 		FD_ZERO(&rfd);
 		FD_SET(sockfd, &rfd);
@@ -396,79 +487,26 @@ int recv_http(int sockfd)
 		}
 		len = ret;
 		result_size += len;
-		if (!http_hdr) {
-			body = strstr(result, "\r\n\r\n");
-			if (!body)
-				goto recv_cont;
-			memset(body, 0, 4);
-			body += 4;
-			http_hdr = strdup(result);
-			memmove(result, body, strlen(body));
-			result_size = strlen(body);
-			data_left = alloc_size - result_size;
-			data_ptr = result + strlen(result);
-		}
-		ret = parse_http_hdr(http_hdr, &chunked);
-		if (ret < 0)
+		ret = parse_http(result, result_size, http_parser);
+		if (ret < 0) {
+			fprintf(stderr, "http parse error %d\n", ret);
 			break;
-		if (!chunked) {
-			ret = parse_http_body(result, result_size);
-			goto complete;
 		}
-		do {
-			size_t chunk_len;
-
-			ret = parse_http_chunk(result, &chunk_len);
-			if (ret < 0)
-				break;
-			printf("http chunk (%ld bytes of %ld bytes)\n",
-			       chunk_len, result_size);
-			if (!ret || chunk_len > result_size)
-				goto recv_cont;
-			body = result + ret;
-			result_size -= ret;
-			memmove(result, body, result_size);
-			result[chunk_len] = '\0';
+		if (ret > 0) {
+			printf("advance by %ld bytes (%ld total)\n",
+			       ret, result_size - ret);
+			tmp = result + ret;
+			memmove(result, tmp, result_size - ret);
+			result_size =- ret;
 			data_left = alloc_size - result_size;
-			data_ptr = result + strlen(result);
-			printf("http chunk (%ld bytes left)\n",
-			       result_size);
-			ret = parse_http_body(result, chunk_len);
-			if (ret < 0)
-				break;
-			body = result + chunk_len;
-			result_size -= chunk_len;
-			while (result_size > 0) {
-				if (*body == '\r' ||
-				    *body == '\n')
-					*body = 0;
-				result_size--;
-				body++;
-			}
-			if (result_size) {
-				memmove(result, body, result_size);
-				data_left = alloc_size = result_size;
-				data_ptr = result + strlen(result);
-				printf("http chunk (%ld bytes to parse)\n",
-				       result_size);
-			}
-		} while (result_size);
-	complete:
-		if (!ret) {
-			printf("http response complete\n");
-			memset(result, 0, alloc_size);
-			data_ptr = result;
-			data_left = result_size;
-			result_size = 0;
-			free(http_hdr);
-			http_hdr = NULL;
-			continue;
+			data_ptr = result + result_size;
+			memset(data_ptr, 0, data_left);
+		} else {
+			printf("read %ld bytes (%ld total)\n",
+			       len, result_size);
+			data_left -= len;
+			data_ptr += len;
 		}
-	recv_cont:
-		printf("read %d bytes (%ld total)\n",
-		       ret, result_size + ret);
-		data_left -= ret;
-		data_ptr += ret;
 		if (data_left)
 			continue;
 
@@ -484,7 +522,6 @@ int recv_http(int sockfd)
 		data_ptr = result + result_size;
 		data_left = result_inc;
 		memset(data_ptr, 0, data_left);
-		free(tmp);
 	}
 	free(result);
 	return ret;
