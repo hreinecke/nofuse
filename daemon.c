@@ -106,10 +106,14 @@ static void *keepalive_loop(void *arg)
 	int ret;
 
 	while (!stopped) {
+		time_t t = time(NULL);
+
+		if (etcd_debug)
+			printf("%s", ctime(&t));
 		ret = etcd_lease_keepalive(ctx->etcd);
 		if (ret < 0)
 			break;
-		sleep(ctx->etcd->ttl >> 1);
+		sleep(ctx->etcd->ttl / 2);
 	}
 	return NULL;
 }
@@ -213,8 +217,11 @@ int main(int argc, char *argv[])
 		free(ctx);
 		return 1;
 	}
-	if (ctx->ttl)
+	if (ctx->ttl) {
+		if (ctx->ttl < 2)
+			ctx->ttl = 2;
 		ctx->etcd->ttl = ctx->ttl;
+	}
 
 	ret = etcd_lease_grant(ctx->etcd);
 #else
