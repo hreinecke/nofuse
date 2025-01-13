@@ -296,14 +296,12 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	encoded_value = __b64enc(kv->value, strlen(kv->value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
-	if (!kv->ignore_lease) {
-		if (kv->lease)
-			json_object_object_add(post_obj, "lease",
-				json_object_new_int64(kv->lease));
-	} else {
+	if (kv->ignore_lease) {
 		json_object_object_add(post_obj, "ignore_lease",
 				       json_object_new_boolean(true));
-		kv->lease = -1;
+	} else if (kv->lease) {
+		json_object_object_add(post_obj, "lease",
+				       json_object_new_int64(kv->lease));
 	}
 	ret = etcd_kv_exec(conn, url, post_obj,
 			   etcd_parse_set_response, &ev);
@@ -826,7 +824,7 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	ev->kvs->lease = json_object_get_int64(id_obj);
 	ttl_obj = json_object_object_get(etcd_resp, "TTL");
 	if (!ttl_obj) {
-		printf("%s: keepalive failed, key expired\n",
+		printf("%s: invalid response, 'TTL' not found\n",
 		       __func__);
 		ev->kvs->ttl = -1;
 	} else {
