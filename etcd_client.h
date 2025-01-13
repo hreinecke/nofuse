@@ -31,6 +31,8 @@ struct etcd_kv_event {
 	struct etcd_kv *prev_kvs;
 	int num_prev_kvs;
 	struct json_tokener *tokener;
+	void (*watch_cb)(struct etcd_kv_event *ev, void *p);
+	void *watch_arg;
 };
 
 struct etcd_ctx {

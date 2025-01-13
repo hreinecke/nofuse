@@ -703,7 +703,10 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		}
 		kv->value = __b64dec(json_object_get_string(value_obj));
 	}
+	if (ev->watch_cb)
+		ev->watch_cb(ev, ev->watch_arg);
 out:
+	etcd_ev_free(ev);
 	json_object_put(etcd_resp);
 	json_tokener_reset(ev->tokener);
 	return size * nmemb;
