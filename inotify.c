@@ -321,7 +321,7 @@ static int read_attr(char *attr_path, char *value, size_t value_len)
 	return len;
 }
 
-static int update_value(struct dir_watcher *wd)
+static int update_value(struct dir_watcher *wd, bool create)
 {
 	char value[PATH_MAX + 1], *t, *p;
 	char key[PATH_MAX + 1];
@@ -335,15 +335,28 @@ static int update_value(struct dir_watcher *wd)
 		t = "attr";
 		ret = read_attr(wd->dirname, value, sizeof(value));
 	}
-	sprintf(key, "%s/%s", wd->ctx->etcd->prefix, p);
+	if (!strncmp(p, "ports/", 6)) {
+		char *node_name = wd->ctx->etcd->node_name;
+
+		if (!node_name)
+			node_name = "localhost";
+		sprintf(key, "%s/ports/%s:%s",
+			wd->ctx->etcd->prefix, node_name, p + 6);
+	} else {
+		sprintf(key, "%s/%s", wd->ctx->etcd->prefix, p);
+	}
 	if (inotify_debug)
 		printf("%s: %s key %s value '%s'\n", __func__,
 		       t, key, value);
 	if (ret > 0) {
-		ret = etcd_kv_update(wd->ctx->etcd, key, value);
+		if (create)
+			ret = etcd_kv_new(wd->ctx->etcd, key, value);
+		else
+			ret = etcd_kv_update(wd->ctx->etcd, key, value);
 		if (ret < 0)
-			fprintf(stderr, "%s: %s key %s put error %d\n",
-				__func__, t, key, ret);
+			fprintf(stderr, "%s: %s key %s %s error %d\n",
+				__func__, t, key,
+				create ? "create" : "update", ret);
 	} else {
 		fprintf(stderr, "%s: %s %s value error %d\n",
 			__func__, t, p, ret);
@@ -353,7 +366,8 @@ static int update_value(struct dir_watcher *wd)
 
 static enum watcher_type
 mark_file(struct watcher_ctx *ctx, const char *dirname,
-	  const char *filename, enum watcher_type type, bool isdir)
+	  const char *filename, enum watcher_type type,
+	  bool isdir, bool create)
 {
 	enum watcher_type new_type;
 	struct dir_watcher *wd;
@@ -376,7 +390,7 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 			return TYPE_UNKNOWN;
 		}
 		if (!isdir)
-			update_value(wd);
+			update_value(wd, create);
 	} else if (inotify_debug) {
 		p = dirname + strlen(ctx->pathname) + 1;
 		printf("skip inotify type %s (%d) flags %d on %s\n",
@@ -386,7 +400,7 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 }
 
 int mark_inotify(struct watcher_ctx *ctx, const char *dir,
-		 const char *file, enum watcher_type type)
+		 const char *file, enum watcher_type type, bool create)
 {
 	char dirname[PATH_MAX + 1];
 	enum watcher_type new_type;
@@ -394,8 +408,8 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 	struct dirent *se;
 
 	if (inotify_debug)
-		printf("%s: dir %s type %d file %s\n",
-		       __func__, dir, type, file);
+		printf("%s: %s dir %s type %d file %s\n",
+		       __func__, create ? "create" : "update", dir, type, file);
 
 	strcpy(dirname, dir);
 	if (file) {
@@ -416,11 +430,12 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 			printf("%s: checking %s %s\n",
 			       __func__, dirname, se->d_name);
 		new_type = mark_file(ctx, dirname, se->d_name, type,
-				     se->d_type == DT_DIR);
+				     se->d_type == DT_DIR, create);
 		if (new_type == TYPE_UNKNOWN)
 			continue;
 		if (se->d_type == DT_DIR) {
-			mark_inotify(ctx, dirname, se->d_name, new_type);
+			mark_inotify(ctx, dirname, se->d_name,
+				     new_type, create);
 		}
 	}
 	closedir(sd);
@@ -523,10 +538,10 @@ int process_inotify_event(char *iev_buf, int iev_len)
 		}
 		new_type = mark_file(watcher->ctx, watcher->dirname,
 				     ev->name, watcher->type,
-				     (ev->mask & IN_ISDIR));
+				     (ev->mask & IN_ISDIR), true);
 		if (new_type != TYPE_UNKNOWN && (ev->mask & IN_ISDIR))
 			mark_inotify(watcher->ctx, watcher->dirname,
-				     ev->name, new_type);
+				     ev->name, new_type, true);
 	} else if (ev->mask & IN_DELETE_SELF) {
 		if (inotify_debug)
 			printf("rmdir %s type %d\n",
@@ -568,7 +583,7 @@ static int start_inotify(struct watcher_ctx *ctx)
 		return -errno;
 	}
 
-	ret = mark_inotify(ctx, ctx->pathname, NULL, TYPE_ROOT);
+	ret = mark_inotify(ctx, ctx->pathname, NULL, TYPE_ROOT, false);
 	if (ret < 0) {
 		close(ctx->inotify_fd);
 		ctx->inotify_fd = -1;
