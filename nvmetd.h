@@ -11,5 +11,7 @@ struct watcher_ctx {
 };
 
 void *inotify_loop(void *arg);
+int start_inotify(struct watcher_ctx *ctx);
+void stop_inotify(struct watcher_ctx *ctx);
 
 #endif /* _NVMETD_H */

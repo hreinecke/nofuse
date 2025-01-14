@@ -60,6 +60,69 @@ static void *signal_handler(void *arg)
 	return NULL;
 }
 
+static void update_nvmetd(struct etcd_kv_event *ev, void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+	int i;
+
+	for (i = 0; i < ev->num_kvs; i++) {
+		struct etcd_kv *kv = &ev->kvs[i];
+
+		printf("%s: %s key %s value %s\n", __func__,
+		       kv->deleted ? "delete" : "add",
+		       kv->key, kv->value);
+	}
+}
+
+static void delete_conn(void *arg)
+{
+	struct etcd_conn_ctx *conn = arg;
+
+	etcd_conn_delete(conn);
+}
+
+static void *etcd_watcher(void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn;
+	struct etcd_kv_event ev;
+	int64_t start_revision = 0;
+	int ret;
+
+	memset(&ev, 0, sizeof(ev));
+
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		return NULL;
+
+	pthread_cleanup_push(delete_conn, conn);
+
+	ev.ev_revision = start_revision;
+	ev.watch_cb = update_nvmetd;
+	ev.watch_arg = ctx;
+	ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
+	if (!ret)
+		goto out_pop;
+	if (ret != -EAGAIN) {
+		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
+				__func__, ret);
+			goto out_pop;
+	}
+	while (!stopped) {
+		ret = etcd_conn_continue(conn);
+		if (ret < 0 && ret != -EAGAIN)
+			break;
+	}
+
+	etcd_kv_watch_cancel(conn, pthread_self());
+
+out_pop:
+	pthread_cleanup_pop(1);
+
+	pthread_exit(NULL);
+	return NULL;
+}
+
 void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
@@ -82,6 +145,7 @@ int main(int argc, char **argv)
 		{"verbose", no_argument, 0, 'v'},
 		{"help", no_argument, 0, '?'},
 	};
+	pthread_t inotify_thr;
 	pthread_t watcher_thr;
 	pthread_t signal_thr;
 	sigset_t oldmask;
@@ -102,14 +166,13 @@ int main(int argc, char **argv)
 		ret = errno;
 		goto out_free;
 	}
-
 	ctx->etcd = etcd_init(NULL);
 	if (!ctx->etcd) {
 		ret = ENOMEM;
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_close;
 	}
-
+	ctx->etcd->ttl = 10;
 	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
@@ -150,18 +213,32 @@ int main(int argc, char **argv)
 		goto out_restore;
 	}
 
-	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
-	if (ret) {
-		fprintf(stderr, "cannot start signal handler\n");
+	ret = start_inotify(ctx);
+	if (ret < 0) {
+		fprintf(stderr, "failed to start inotify\n");
 		goto out_revoke;
 	}
 
-	ret = pthread_create(&watcher_thr, NULL, inotify_loop, ctx);
+	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
+	if (ret) {
+		fprintf(stderr, "cannot start signal handler\n");
+		goto out_stop_inotify;
+	}
+
+	ret = pthread_create(&inotify_thr, NULL, inotify_loop, ctx);
+	if (ret) {
+		inotify_thr = 0;
+		fprintf(stderr, "failed to start inotify loop, error %d\n",
+			ret);
+		goto out_cancel_signal;
+	}
+
+	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx->etcd);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_cancel;
+		goto out_cancel_inotify;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -174,9 +251,18 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
-out_cancel:
+out_cancel_inotify:
+	printf("cancelling inotify loop\n");
+	pthread_cancel(inotify_thr);
+	printf("waiting for inotify loop to terminate\n");
+	pthread_join(inotify_thr, NULL);
+
+out_cancel_signal:
 	pthread_cancel(signal_thr);
 	pthread_join(signal_thr, NULL);
+
+out_stop_inotify:
+	stop_inotify(ctx);
 
 out_revoke:
 	etcd_lease_revoke(ctx->etcd);

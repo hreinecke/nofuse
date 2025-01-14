@@ -633,7 +633,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 	return ev_len;
 }
 
-static int start_inotify(struct watcher_ctx *ctx)
+int start_inotify(struct watcher_ctx *ctx)
 {
 	int ret;
 
@@ -651,9 +651,8 @@ static int start_inotify(struct watcher_ctx *ctx)
 	return ret;
 }
 
-static void stop_inotify(void *arg)
+void stop_inotify(struct watcher_ctx *ctx)
 {
-	struct watcher_ctx *ctx = arg;
 	struct dir_watcher *watcher, *tmp_watch;
 
 	list_for_each_entry_safe(watcher, tmp_watch, &dir_watcher_list, entry) {
