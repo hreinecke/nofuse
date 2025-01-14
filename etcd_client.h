@@ -90,6 +90,7 @@ static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 		.key = key,
 		.value = value,
 		.ignore_lease = false,
+		.lease = ctx->lease,
 	};
 	return etcd_kv_put(ctx, &kv);
 }
