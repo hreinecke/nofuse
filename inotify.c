@@ -120,6 +120,7 @@ struct dir_watcher {
 	struct linked_list entry;
 	enum watcher_type type;
 	const char *type_name;
+	int flags;
 	int wd;
 	char dirname[FILENAME_MAX];
 };
@@ -138,7 +139,7 @@ static int get_flags(enum watcher_type type, const char **name)
 	return flags;
 }
 
-static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
+static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 {
 	struct dir_watcher *tmp;
 	const char *p;
@@ -152,7 +153,7 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 		return tmp;
 	}
 	watcher->wd = inotify_add_watch(watcher->ctx->inotify_fd,
-					watcher->dirname, flags);
+					watcher->dirname, watcher->flags);
 	if (watcher->wd < 0) {
 		fprintf(stderr,
 			"failed to add inotify watch to '%s', error %d\n",
@@ -162,8 +163,8 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 	if (inotify_debug) {
 		p = watcher->dirname + strlen(watcher->ctx->pathname) + 1;
 		printf("add inotify watch %d type %s (%d) flags %d to %s\n",
-		       watcher->wd, watcher->type_name, watcher->type, flags,
-		       p);
+		       watcher->wd, watcher->type_name, watcher->type,
+		       watcher->flags, p);
 	}
 	list_add(&watcher->entry, &dir_watcher_list);
 	return 0;
@@ -207,7 +208,8 @@ allocate_watch(struct watcher_ctx *ctx, const char *dirname,
 	watcher->type = type;
 	watcher->type_name = type_name;
 	watcher->ctx = ctx;
-	tmp = add_watch(watcher, flags);
+	watcher->flags = flags;
+	tmp = add_watch(watcher);
 	if (tmp) {
 		if (tmp == watcher)
 			free(watcher);
@@ -559,15 +561,33 @@ int process_inotify_event(char *iev_buf, int iev_len)
 		}
 		unmark_inotify(watcher->ctx, NULL, subdir);
 	} else if (ev->mask & IN_MODIFY) {
+		int ret, ifd = watcher->ctx->inotify_fd;
+
 		if (inotify_debug)
 			printf("write %s %s\n", watcher->dirname, ev->name);
 
+		ret = inotify_rm_watch(ifd, watcher->wd);
+		if (ret < 0) {
+			fprintf(stderr,
+				"failed to disable inotify watch on '%s'\n",
+				watcher->dirname);
+			return ev_len;
+		}
+		watcher->wd = -1;
 		switch (watcher->type) {
 		default:
 			fprintf(stderr, "unhandled modify type %d\n",
 				watcher->type);
-			free(watcher);
 			break;
+		}
+		watcher->wd = inotify_add_watch(ifd, watcher->dirname,
+						watcher->flags);
+		if (watcher->wd < 0) {
+			fprintf(stderr,
+				"cannot enable inotify watch on '%s'\n",
+				watcher->dirname);
+			remove_watch(watcher);
+			free(watcher);
 		}
 	}
 	return ev_len;
