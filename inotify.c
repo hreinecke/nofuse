@@ -408,6 +408,16 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 					    ctx->etcd->node_name);
 				free(key);
 			}
+			ret = asprintf(&key, "%s/ports/%s:%s/addr_origin",
+				       ctx->etcd->prefix,
+				       ctx->etcd->node_name, filename);
+			if (ret > 0) {
+				if (inotify_debug)
+					printf("%s: add key %s value '%s'",
+					       __func__, key, ctx->etcd->node_name);
+				etcd_kv_new(ctx->etcd, key, "nvmet");
+				free(key);
+			}
 		}
 	} else {
 		if (new_type == TYPE_UNKNOWN || type == TYPE_ROOT) {
