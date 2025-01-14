@@ -252,37 +252,27 @@ static int tcp_init_listener(struct nofuse_port *port)
 	int listenfd;
 	int ret, reuse = 1;
 	struct addrinfo *ai, hints;
+	char portid[32];
 	char traddr[256];
 	char trsvcid[32];
 	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
-#ifdef NOFUSE_ETCD
-	ret = etcd_get_port_attr(port->ctx, port->portid,
+	sprintf(portid, "%d", port->portid);
+	ret = etcd_get_port_attr(port->ctx, portid,
 				 "addr_traddr", traddr);
-#else
-	ret = configdb_get_port_attr(port->portid, "addr_traddr", traddr);
-#endif
 	if (ret < 0) {
 		port_err(port, "failed to get traddr, error %d", ret);
 		return ret;
 	}
-#ifdef NOFUSE_ETCD
-	ret = etcd_get_port_attr(port->ctx, port->portid,
+	ret = etcd_get_port_attr(port->ctx, portid,
 				 "addr_trsvcid", trsvcid);
-#else
-	ret = configdb_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
-#endif
 	if (ret < 0) {
 		port_err(port, "failed to get trsvcid, errot %d", ret);
 		return ret;
 	}
-#ifdef NOFUSE_ETCD
-	ret = etcd_get_port_attr(port->ctx, port->portid,
+	ret = etcd_get_port_attr(port->ctx, portid,
 				 "addr_adrfam", adrfam_str);
-#else
-	ret = configdb_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
-#endif
 	if (ret < 0) {
 		port_err(port, "failed to get adrfam, error %d", ret);
 		return ret;

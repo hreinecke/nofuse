@@ -95,7 +95,7 @@ static int init_discovery(struct nofuse_context *ctx)
 static int init_subsys(struct nofuse_context *ctx)
 {
 	if (etcd_test_subsys(ctx->etcd, ctx->subsysnqn) == 0)
-		etcd_add_subsys_port(ctx->etcd, ctx->subsysnqn, 1);
+		etcd_add_subsys_port(ctx->etcd, ctx->subsysnqn, "1");
 
 	return 0;
 }
@@ -165,16 +165,16 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
-	ret = etcd_add_port(ctx->etcd, ctx->prefix, 1, ctx->traddr, 8009);
+	ret = etcd_add_port(ctx->etcd, ctx->prefix, "1", ctx->traddr, "8009");
 	if (ret < 0) {
 		fprintf(stderr, "failed to add port for %s\n",
 			ctx->traddr);
 		return 1;
 	}
-	ret = etcd_add_ana_group(ctx->etcd, 1, 1, NVME_ANA_OPTIMIZED);
+	ret = etcd_add_ana_group(ctx->etcd, "1", 1, NVME_ANA_OPTIMIZED);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add ana group to port\n");
-		etcd_del_port(ctx->etcd, 1);
+		etcd_del_port(ctx->etcd, "1");
 		return 1;
 	}
 

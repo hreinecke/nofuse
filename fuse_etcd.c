@@ -83,20 +83,20 @@ static int host_getattr(char *hostnqn, struct stat *stbuf)
 	return 0;
 }
 
-static int port_subsystems_getattr(unsigned int portid, const char *subsys,
+static int port_subsystems_getattr(const char *port, const char *subsys,
 				   struct stat *stbuf)
 {
 	int ret;
 	const char *p;
 
-	fuse_info("%s: port %d subsys %s", __func__,
-		  portid, subsys);
+	fuse_info("%s: port %s subsys %s", __func__,
+		  port, subsys);
 	if (!subsys) {
 		int num_subsys = 0;
 
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 2;
-		ret = etcd_count_subsys_port(ctx, portid, &num_subsys);
+		ret = etcd_count_subsys_port(ctx, port, &num_subsys);
 		if (ret)
 			return -ENOENT;
 		stbuf->st_nlink += num_subsys;
@@ -105,7 +105,7 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	ret = etcd_get_subsys_port(ctx, subsys, portid, NULL);
+	ret = etcd_get_subsys_port(ctx, subsys, port, NULL);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFLNK | 0755;
@@ -114,7 +114,7 @@ static int port_subsystems_getattr(unsigned int portid, const char *subsys,
 	return 0;
 }
 
-static int port_ana_groups_getattr(int portid, const char *ana_grp,
+static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 				   struct stat *stbuf)
 {
 	int ret;
@@ -125,21 +125,21 @@ static int port_ana_groups_getattr(int portid, const char *ana_grp,
 
 		stbuf->st_mode = S_IFDIR | 0755;
 		stbuf->st_nlink = 1;
-		ret = etcd_count_ana_groups(ctx, portid, &num_grps);
+		ret = etcd_count_ana_groups(ctx, port, &num_grps);
 		if (ret)
 			return -ENOENT;
 		stbuf->st_nlink += num_grps;
 		return 0;
 	}
 
-	fuse_info("%s: port %d ana group %s",
-		  __func__, portid, ana_grp);
+	fuse_info("%s: port %s ana group %s",
+		  __func__, port, ana_grp);
 
 	p = strtok(NULL, "/");
 	if (p && strcmp(p, "ana_state"))
 		return -ENOENT;
 
-	ret = etcd_get_ana_group(ctx, portid, ana_grp, NULL);
+	ret = etcd_get_ana_group(ctx, port, ana_grp, NULL);
 	if (ret < 0)
 		return ret;
 	if (!p) {
@@ -155,14 +155,10 @@ static int port_ana_groups_getattr(int portid, const char *ana_grp,
 
 static int port_getattr(char *port, struct stat *stbuf)
 {
-	int portid;
 	int ret;
-	char *p, *attr, *eptr = NULL;;
+	char *p, *attr;
 
-	portid = strtoul(port, &eptr, 10);
-	if (port == eptr)
-		return -ENOENT;
-	ret = etcd_test_port(ctx, portid);
+	ret = etcd_test_port(ctx, port);
 	if (ret < 0)
 		return -ENOENT;
 
@@ -178,9 +174,9 @@ static int port_getattr(char *port, struct stat *stbuf)
 	p = strtok(NULL, "/");
 
 	if (!strcmp(attr, "subsystems"))
-		return port_subsystems_getattr(portid, p, stbuf);
+		return port_subsystems_getattr(port, p, stbuf);
 	if (!strcmp(attr, "ana_groups"))
-		return port_ana_groups_getattr(portid, p, stbuf);
+		return port_ana_groups_getattr(port, p, stbuf);
 
 	if (p)
 		return -ENOENT;
@@ -194,7 +190,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	if (strncmp(attr, "addr_", 5))
 		return -ENOENT;
 
-	ret = etcd_get_port_attr(ctx, portid, attr, NULL);
+	ret = etcd_get_port_attr(ctx, port, attr, NULL);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFREG | 0644;
@@ -406,8 +402,6 @@ static int fill_port(const char *port,
 		     void *buf, fuse_fill_dir_t filler)
 {
 	const char *p, *subdir;
-	char *eptr = NULL;
-	unsigned int portid;
 
 	if (!port) {
 		/* list contents of /ports */
@@ -416,15 +410,12 @@ static int fill_port(const char *port,
 		return etcd_fill_port_dir(ctx, buf, filler);
 	}
 
-	portid = strtoul(port, &eptr, 10);
-	if (port == eptr)
-		return -ENOENT;
 	p = strtok(NULL, "/");
 	if (!p) {
-		/* list contents of /ports/<portid> */
+		/* list contents of /ports/<port> */
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
-		return etcd_fill_port(ctx, portid, buf, filler);
+		return etcd_fill_port(ctx, port, buf, filler);
 	}
 	subdir = p;
 	p = strtok(NULL, "/");
@@ -438,11 +429,11 @@ static int fill_port(const char *port,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (subsys) {
-			if (etcd_get_subsys_port(ctx, subsys, portid, NULL) < 0)
+			if (etcd_get_subsys_port(ctx, subsys, port, NULL) < 0)
 				return -ENOENT;
 			return 0;
 		}
-		return etcd_fill_subsys_port(ctx, portid, buf, filler);
+		return etcd_fill_subsys_port(ctx, port, buf, filler);
 	}
 	if (!strcmp(subdir, "ana_groups")) {
 		const char *ana_grp = p;
@@ -457,7 +448,7 @@ static int fill_port(const char *port,
 		}
 		if (!ana_grp)
 			return etcd_fill_ana_groups(ctx, port, buf, filler);
-		if (etcd_get_ana_group(ctx, portid, ana_grp, NULL) < 0)
+		if (etcd_get_ana_group(ctx, port, ana_grp, NULL) < 0)
 			return -ENOENT;
 		filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -581,30 +572,26 @@ out_free:
 static int port_mkdir(char *s)
 {
 	char *port, *p, *eptr = NULL;
-	int portid, ana_grpid;
+	int ana_grpid;
 	int ret;
 
 	port = strtok_r(NULL, "/", &s);
 	if (!port)
 		return -ENOENT;
 
-	portid = strtoul(port, &eptr, 10);
-	if (port == eptr)
-		return -EINVAL;
-
 	p = strtok(NULL, "/");
 	if (!p) {
-		ret = etcd_add_port(ctx, "nofuse", portid, NULL, 0);
+		ret = etcd_add_port(ctx, "nofuse", port, NULL, 0);
 		if (ret < 0) {
-			fuse_err("%s: cannot add port %d, error %d",
-				 __func__, portid, ret);
+			fuse_err("%s: cannot add port %s, error %d",
+				 __func__, port, ret);
 			return ret;
 		}
-		ret = etcd_add_ana_group(ctx, portid, 1, NVME_ANA_OPTIMIZED);
+		ret = etcd_add_ana_group(ctx, port, 1, NVME_ANA_OPTIMIZED);
 		if (ret < 0) {
-			fuse_err("%s: cannot add group 1 to port %d, error %d\n",
-				 __func__, portid, ret);
-			etcd_del_port(ctx, portid);
+			fuse_err("%s: cannot add group 1 to port %s, error %d\n",
+				 __func__, port, ret);
+			etcd_del_port(ctx, port);
 		}
 		return ret;
 	}
@@ -618,15 +605,15 @@ static int port_mkdir(char *s)
 	ana_grpid = strtoul(p, &eptr, 10);
 	if (p == eptr)
 		return -ENOENT;
-	fuse_info("%s: port %d ana group %d", __func__,
-		  portid, ana_grpid);
-	ret = etcd_add_ana_group(ctx, portid, ana_grpid,
+	fuse_info("%s: port %s ana group %d", __func__,
+		  port, ana_grpid);
+	ret = etcd_add_ana_group(ctx, port, ana_grpid,
 			    ana_grpid == 1 ?
 			    NVME_ANA_OPTIMIZED : NVME_ANA_INACCESSIBLE);
 	if (ret < 0) {
 		fuse_err("%s: cannot add ana group %d to "
-			 "port %d, error %d", __func__,
-			 portid, ana_grpid, ret);
+			 "port %s, error %d", __func__,
+			 ana_grpid, port, ret);
 		return ret;
 	}
 	return 0;
@@ -716,30 +703,26 @@ out_free:
 static int port_rmdir(char *s)
 {
 	char *port, *p, *ana_grp, *eptr = NULL;
-	unsigned int portid;
 	int ana_grpid;
 
 	port = strtok_r(NULL, "/", &s);
 	if (!port)
 		return -ENOENT;
-	portid = strtoul(port, &eptr, 10);
-	if (port == eptr)
-		return -EINVAL;
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		int ret;
 
-		ret = etcd_del_ana_group(ctx, portid, 1);
+		ret = etcd_del_ana_group(ctx, port, 1);
 		if (ret < 0) {
-			fuse_err("%s: cannot remove group 1 from port %d, "
-				 "error %d", __func__, portid, ret);
+			fuse_err("%s: cannot remove group 1 from port %s, "
+				 "error %d", __func__, port, ret);
 			return ret;
 		}
-		ret = etcd_del_port(ctx, portid);
+		ret = etcd_del_port(ctx, port);
 		if (ret < 0) {
-			fuse_err("%s: cannot remove port %d, error %d",
-			       __func__, portid, ret);
-			etcd_add_ana_group(ctx, portid, 1, NVME_ANA_OPTIMIZED);
+			fuse_err("%s: cannot remove port %s, error %d",
+			       __func__, port, ret);
+			etcd_add_ana_group(ctx, port, 1, NVME_ANA_OPTIMIZED);
 		}
 		return ret;
 	}
@@ -755,11 +738,11 @@ static int port_rmdir(char *s)
 	ana_grpid = strtoul(ana_grp, &eptr, 10);
 	if (ana_grp == eptr)
 		return -EINVAL;
-	fuse_info("%s: port %d ana group %d", __func__,
-	       portid, ana_grpid);
+	fuse_info("%s: port %s ana group %d", __func__,
+	       port, ana_grpid);
 	if (ana_grpid == 1)
 		return -EACCES;
-	return etcd_del_ana_group(ctx, portid, ana_grpid);
+	return etcd_del_ana_group(ctx, port, ana_grpid);
 }
 
 static int subsys_rmdir(char *s)
@@ -833,19 +816,14 @@ out_free:
 	return ret;
 }
 
-static int parse_port_link(char *s, unsigned int *portid,
+static int parse_port_link(char *s, const char **port,
 			   const char **subsys)
 {
-	const char *p, *port;
-	char *eptr = NULL;
-	unsigned int p_id;
+	const char *p, *_port;
 
-	port = strtok_r(NULL, "/", &s);
-	if (!port)
+	_port = strtok_r(NULL, "/", &s);
+	if (!_port)
 		return -ENOENT;
-	p_id = strtoul(port, &eptr, 10);
-	if (port == eptr)
-		return -EINVAL;
 	p = strtok_r(NULL, "/", &s);
 	if (!p)
 		return -ENOENT;
@@ -859,7 +837,7 @@ static int parse_port_link(char *s, unsigned int *portid,
 		*subsys = NULL;
 		return -ENOENT;
 	}
-	*portid = p_id;
+	*port = _port;
 	return 0;
 }
 
@@ -904,13 +882,12 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 	if (!root)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *subsys;
-		unsigned int portid;
+		const char *port, *subsys;
 
-		ret = parse_port_link(s, &portid, &subsys);
+		ret = parse_port_link(s, &port, &subsys);
 		if (ret < 0)
 			goto out_free;
-		ret = etcd_get_subsys_port(ctx, subsys, portid, buf);
+		ret = etcd_get_subsys_port(ctx, subsys, port, buf);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -948,15 +925,14 @@ static int nofuse_symlink(const char *from, const char *to)
 	if (!root)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *subsys;
-		unsigned int portid;
+		const char *port, *subsys;
 
-		ret = parse_port_link(s, &portid, &subsys);
+		ret = parse_port_link(s, &port, &subsys);
 		if (ret < 0)
 			goto out_free;
-		fuse_info("%s: subsys %s portid %d",
-		       __func__, subsys, portid);
-		ret = etcd_add_subsys_port(ctx, subsys, portid);
+		fuse_info("%s: subsys %s port %s",
+		       __func__, subsys, port);
+		ret = etcd_add_subsys_port(ctx, subsys, port);
 		if (ret < 0) {
 			fuse_err("%s: failed to add subsys, error %d",
 			       __func__, ret);
@@ -996,13 +972,12 @@ static int nofuse_unlink(const char *path)
 	if (!root)
 		goto out_free;
 	if (!strcmp(root, ports_dir)) {
-		const char *subsys;
-		unsigned int portid;
+		const char *port, *subsys;
 
-		ret = parse_port_link(s, &portid, &subsys);
+		ret = parse_port_link(s, &port, &subsys);
 		if (ret < 0)
 			goto out_free;
-		ret = etcd_del_subsys_port(ctx, subsys, portid);
+		ret = etcd_del_subsys_port(ctx, subsys, port);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -1077,38 +1052,33 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 	}
 	if (!strcmp(root, ports_dir)) {
 		const char *port = p;
-		char *eptr = NULL;
-		unsigned int portid;
 
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
 		p = strtok(NULL, "/");
 		if (!p)
 			goto out_free;
 
 		attr = p;
 		p = strtok(NULL, "/");
-		fuse_info("%s: port %d attr %s p %s", __func__,
-		       portid, attr, p);
+		fuse_info("%s: port %s attr %s p %s", __func__,
+		       port, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
 
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
-			fuse_info("%s: port %d ana_grp %s attr %s", __func__,
-			       portid, ana_grp, p);
-			ret = etcd_get_ana_group(ctx, portid, ana_grp, NULL);
+			fuse_info("%s: port %s ana_grp %s attr %s", __func__,
+			       port, ana_grp, p);
+			ret = etcd_get_ana_group(ctx, port, ana_grp, NULL);
 			if (ret < 0) {
-				fuse_err("%s: port %d ana_grp %s error %d",
-					 __func__, portid, ana_grp, ret);
+				fuse_err("%s: port %s ana_grp %s error %d",
+					 __func__, port, ana_grp, ret);
 				ret = -ENOENT;
 			} else
 				ret = 0;
 			goto out_free;
 		} else {
-			ret = etcd_get_port_attr(ctx, portid, attr, NULL);
+			ret = etcd_get_port_attr(ctx, port, attr, NULL);
 			if (ret < 0)
 				ret = -ENOENT;
 			goto out_free;
@@ -1203,20 +1173,14 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			goto out_free;
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
-		char *eptr = NULL;
-		unsigned int portid;
-
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
 
 		attr = strtok(NULL, "/");
 		if (!attr)
 			goto out_free;
 
 		p = strtok(NULL, "/");
-		fuse_info("%s: port %d attr %s p %s", __func__,
-		       portid, attr, p);
+		fuse_info("%s: port %s attr %s p %s", __func__,
+		       port, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
 
@@ -1227,13 +1191,13 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				goto out_free;
 			fuse_info("%s: port %s ana_grp %s", __func__,
 			       port, ana_grp);
-			ret = etcd_get_ana_group(ctx, portid, ana_grp, buf);
+			ret = etcd_get_ana_group(ctx, port, ana_grp, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
 			}
 		} else {
-			ret = etcd_get_port_attr(ctx, portid, attr, buf);
+			ret = etcd_get_port_attr(ctx, port, attr, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1447,19 +1411,14 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		ret = len;
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
-		char *eptr = NULL;
-		unsigned int portid;
 
-		portid = strtoul(port, &eptr, 10);
-		if (port == eptr)
-			goto out_free;
 		attr = strtok(NULL, "/");
 		if (!attr)
 			goto out_free;
 
 		p = strtok(NULL, "/");
-		fuse_info("%s: port %d attr %s p %s", __func__,
-		       portid, attr, p);
+		fuse_info("%s: port %s attr %s p %s", __func__,
+		       port, attr, p);
 
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
@@ -1472,14 +1431,14 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 			fuse_info("%s: port %s ana_grp %s state %s", __func__,
 			       port, ana_grp, value);
-			ret = etcd_set_ana_group(ctx, portid, ana_grp, value);
+			ret = etcd_set_ana_group(ctx, port, ana_grp, value);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
 			}
 			ret = len;
 		} else {
-			ret = etcd_set_port_attr(ctx, portid, attr, value);
+			ret = etcd_set_port_attr(ctx, port, attr, value);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;

@@ -281,7 +281,7 @@ int etcd_fill_port_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
 	return etcd_fill_root(ctx, "ports", buf, filler);
 }
 
-int etcd_fill_port(struct etcd_ctx *ctx, unsigned int id,
+int etcd_fill_port(struct etcd_ctx *ctx, const char *port,
 		   void *buf, fuse_fill_dir_t filler)
 {
 	int i;
@@ -298,17 +298,17 @@ int etcd_fill_port(struct etcd_ctx *ctx, unsigned int id,
 }
 
 int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
-		  unsigned int id, const char *traddr, unsigned int port)
+		  const char *port, const char *traddr, const char *trsvcid)
 {
 	int ret, i;
 
 	for (i = 0; i < NUM_PORT_ATTRS; i++) {
 		struct key_value_template *kv = &port_template[i];
-		char portnum[16], *key;
+		char *key;
 		const char *value;
 
-		ret = asprintf(&key, "%s/ports/%d/%s",
-			       ctx->prefix, id, kv->key);
+		ret = asprintf(&key, "%s/ports/%s/%s",
+			       ctx->prefix, port, kv->key);
 		if (ret < 0)
 			return ret;
 		value = kv->value;
@@ -319,10 +319,8 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
 			if (traddr)
 				value = traddr;
 		} else if (!strcmp(kv->key, "addr_trsvcid")) {
-			if (port > 0) {
-				sprintf(portnum, "%d", port);
-				value = portnum;
-			}
+			if (trsvcid)
+				value = trsvcid;
 		} else if (!strcmp(kv->key, "addr_origin")) {
 			if (origin)
 				value = origin;
@@ -335,13 +333,13 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
 	return 0;
 }
 
-int etcd_test_port(struct etcd_ctx *ctx, unsigned int id)
+int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/addr_trtype",
-		       ctx->prefix, id);
+	ret = asprintf(&key, "%s/ports/%s/addr_trtype",
+		       ctx->prefix, port);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_get(ctx, key, NULL);
@@ -349,7 +347,7 @@ int etcd_test_port(struct etcd_ctx *ctx, unsigned int id)
 	return ret;
 }
 
-int etcd_set_port_attr(struct etcd_ctx *ctx, unsigned int id,
+int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, const char *value)
 {
 	char *key;
@@ -366,8 +364,8 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, unsigned int id,
 	if (ret < 0)
 		return ret;
 
-	ret = asprintf(&key, "%s/ports/%d/%s",
-		       ctx->prefix, id, attr);
+	ret = asprintf(&key, "%s/ports/%s/%s",
+		       ctx->prefix, port, attr);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_update(ctx, key, value);
@@ -377,14 +375,14 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, unsigned int id,
 	return 0;
 }
 
-int etcd_get_port_attr(struct etcd_ctx *ctx, unsigned int id,
+int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, char *value)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/%s",
-		       ctx->prefix, id, attr);
+	ret = asprintf(&key, "%s/ports/%s/%s",
+		       ctx->prefix, port, attr);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
@@ -405,12 +403,12 @@ int etcd_get_port_attr(struct etcd_ctx *ctx, unsigned int id,
 	return ret;
 }
 
-int etcd_del_port(struct etcd_ctx *ctx, unsigned int id)
+int etcd_del_port(struct etcd_ctx *ctx, const char *port)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d", ctx->prefix, id);
+	ret = asprintf(&key, "%s/ports/%s", ctx->prefix, port);
 	if (ret < 0)
 		return ret;
 
@@ -419,13 +417,13 @@ int etcd_del_port(struct etcd_ctx *ctx, unsigned int id)
 	return ret;
 }
 
-int etcd_count_ana_groups(struct etcd_ctx *ctx, int id, int *ngrps)
+int etcd_count_ana_groups(struct etcd_ctx *ctx, const char *port, int *ngrps)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/ana_groups",
-		       ctx->prefix, id);
+	ret = asprintf(&key, "%s/ports/%s/ana_groups",
+		       ctx->prefix, port);
 	if (ret < 0)
 		return ret;
 
@@ -474,14 +472,14 @@ int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 	return 0;
 }
 
-int etcd_add_ana_group(struct etcd_ctx *ctx, int portid,
+int etcd_add_ana_group(struct etcd_ctx *ctx, const char *port,
 		       int ana_grpid, int ana_state)
 {
 	char *key, *value;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/ana_groups/%d/ana_state",
-		       ctx->prefix, portid, ana_grpid);
+	ret = asprintf(&key, "%s/ports/%s/ana_groups/%d/ana_state",
+		       ctx->prefix, port, ana_grpid);
 	if (ret < 0)
 		return ret;
 	switch(ana_state) {
@@ -508,14 +506,14 @@ int etcd_add_ana_group(struct etcd_ctx *ctx, int portid,
 	return ret;
 }
 
-int etcd_get_ana_group(struct etcd_ctx *ctx, int portid,
+int etcd_get_ana_group(struct etcd_ctx *ctx, const char *port,
 		       const char *ana_grp, char *ana_state)
 {
 	int ret = -ENOENT;
 	char *key;
 
-	ret = asprintf(&key, "%s/ports/%d/ana_groups/%s/ana_state",
-		       ctx->prefix, portid, ana_grp);
+	ret = asprintf(&key, "%s/ports/%s/ana_groups/%s/ana_state",
+		       ctx->prefix, port, ana_grp);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_get(ctx, key, ana_state);
@@ -523,14 +521,14 @@ int etcd_get_ana_group(struct etcd_ctx *ctx, int portid,
 	return ret;
 }
 
-int etcd_set_ana_group(struct etcd_ctx *ctx, int portid,
+int etcd_set_ana_group(struct etcd_ctx *ctx, const char *port,
 		       const char *ana_grp, char *ana_state)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/ana_groups/%s/ana_state",
-		       ctx->prefix, portid, ana_grp);
+	ret = asprintf(&key, "%s/ports/%s/ana_groups/%s/ana_state",
+		       ctx->prefix, port, ana_grp);
 	if (ret < 0)
 		return ret;
 
@@ -546,13 +544,13 @@ int etcd_set_ana_group(struct etcd_ctx *ctx, int portid,
 	return ret;
 }
 
-int etcd_del_ana_group(struct etcd_ctx *ctx, int portid, int ana_grpid)
+int etcd_del_ana_group(struct etcd_ctx *ctx, const char *port, int ana_grpid)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/ana_groups/%d/ana_state",
-		       ctx->prefix, portid, ana_grpid);
+	ret = asprintf(&key, "%s/ports/%s/ana_groups/%d/ana_state",
+		       ctx->prefix, port, ana_grpid);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_delete(ctx, key);
@@ -719,15 +717,15 @@ int etcd_del_subsys(struct etcd_ctx *ctx, const char *nqn)
 	return ret;
 }
 
-int etcd_fill_subsys_port(struct etcd_ctx *ctx, int id,
+int etcd_fill_subsys_port(struct etcd_ctx *ctx, const char *port,
 			  void *buf, fuse_fill_dir_t filler)
 {
 	struct etcd_kv *kvs;
 	char *key, *val;
 	int ret, num = 0, i;
 
-	ret = asprintf(&key, "%s/ports/%d/subsystems",
-		       ctx->prefix, id);
+	ret = asprintf(&key, "%s/ports/%s/subsystems",
+		       ctx->prefix, port);
 	if (ret < 0)
 		return ret;
 
@@ -757,13 +755,14 @@ int etcd_fill_subsys_port(struct etcd_ctx *ctx, int id,
 	return 0;
 }
 
-int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn, int id)
+int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
+			 const char *port)
 {
 	char *key, *value;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/subsystems/%s",
-		       ctx->prefix, id, subsysnqn);
+	ret = asprintf(&key, "%s/ports/%s/subsystems/%s",
+		       ctx->prefix, port, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = asprintf(&value, "../../../subsystems/%s", subsysnqn);
@@ -780,13 +779,13 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn, int id)
 }
 
 int etcd_get_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
-			 int id, char *value)
+			 const char *port, char *value)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/subsystems/%s",
-		       ctx->prefix, id, subsysnqn);
+	ret = asprintf(&key, "%s/ports/%s/subsystems/%s",
+		       ctx->prefix, port, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
@@ -794,13 +793,14 @@ int etcd_get_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 	return ret;
 }
 
-int etcd_del_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn, int id)
+int etcd_del_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
+			 const char *port)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/subsystems/%s",
-		       ctx->prefix, id, subsysnqn);
+	ret = asprintf(&key, "%s/ports/%s/subsystems/%s",
+		       ctx->prefix, port, subsysnqn);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_delete(ctx, key);
@@ -1185,13 +1185,13 @@ int etcd_del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int etcd_count_subsys_port(struct etcd_ctx *ctx, int portid, int *nsubsys)
+int etcd_count_subsys_port(struct etcd_ctx *ctx, const char *port, int *nsubsys)
 {
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%d/subsystems",
-		       ctx->prefix, portid);
+	ret = asprintf(&key, "%s/ports/%s/subsystems",
+		       ctx->prefix, port);
 	if (ret < 0)
 		return ret;
 
