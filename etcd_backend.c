@@ -273,7 +273,7 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
 	{ .key = "addr_node", .value = "" },
-	{ .key = "addr_origin", .value = "" },
+	{ .key = "addr_origin", .value = "nofuse" },
 };
 
 int etcd_fill_port_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
