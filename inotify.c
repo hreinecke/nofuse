@@ -583,7 +583,7 @@ static int start_inotify(struct watcher_ctx *ctx)
 		return -errno;
 	}
 
-	ret = mark_inotify(ctx, ctx->pathname, NULL, TYPE_ROOT, false);
+	ret = mark_inotify(ctx, ctx->pathname, NULL, TYPE_ROOT, true);
 	if (ret < 0) {
 		close(ctx->inotify_fd);
 		ctx->inotify_fd = -1;
