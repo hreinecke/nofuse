@@ -18,11 +18,7 @@
 #include <ctype.h>
 
 #include "common.h"
-#ifdef NOFUSE_ETCD
 #include "etcd_backend.h"
-#else
-#include "configdb.h"
-#endif
 
 bool fuse_debug;
 bool etcd_debug;
@@ -117,8 +113,10 @@ static int port_subsystems_getattr(const char *port, const char *subsys,
 static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 				   struct stat *stbuf)
 {
+	unsigned long ana_grpid;
 	int ret;
 	const char *p;
+	char *eptr = NULL;
 
 	if (!ana_grp) {
 		int num_grps = 0;
@@ -138,8 +136,11 @@ static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 	p = strtok(NULL, "/");
 	if (p && strcmp(p, "ana_state"))
 		return -ENOENT;
+	ana_grpid = strtoul(ana_grp, &eptr, 10);
+	if (ana_grp == eptr || ana_grpid == ULONG_MAX)
+		return -EINVAL;
 
-	ret = etcd_get_ana_group(ctx, port, ana_grp, NULL);
+	ret = etcd_get_ana_group(ctx, port, ana_grpid, NULL);
 	if (ret < 0)
 		return ret;
 	if (!p) {
@@ -437,6 +438,8 @@ static int fill_port(const char *port,
 	}
 	if (!strcmp(subdir, "ana_groups")) {
 		const char *ana_grp = p;
+		char *eptr = NULL;
+		unsigned long ana_grpid;
 
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -448,7 +451,11 @@ static int fill_port(const char *port,
 		}
 		if (!ana_grp)
 			return etcd_fill_ana_groups(ctx, port, buf, filler);
-		if (etcd_get_ana_group(ctx, port, ana_grp, NULL) < 0)
+		ana_grpid = strtoul(ana_grp, &eptr, 10);
+		if (ana_grp == eptr || ana_grpid == ULONG_MAX)
+			return -EINVAL;
+
+		if (etcd_get_ana_group(ctx, port, ana_grpid, NULL) < 0)
 			return -ENOENT;
 		filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -1063,13 +1070,20 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		       port, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
+			char *eptr = NULL;
+			unsigned long ana_grpid;
 
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
-			fuse_info("%s: port %s ana_grp %s attr %s", __func__,
-			       port, ana_grp, p);
-			ret = etcd_get_ana_group(ctx, port, ana_grp, NULL);
+			ana_grpid = strtoul(ana_grp, &eptr, 10);
+			if (ana_grp == eptr || ana_grpid == ULONG_MAX) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			fuse_info("%s: port %s ana_grp %lu attr %s", __func__,
+			       port, ana_grpid, p);
+			ret = etcd_get_ana_group(ctx, port, ana_grpid, NULL);
 			if (ret < 0) {
 				fuse_err("%s: port %s ana_grp %s error %d",
 					 __func__, port, ana_grp, ret);
@@ -1183,15 +1197,22 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       port, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
 			const char *ana_grp = p;
+			char *eptr = NULL;
+			unsigned long ana_grpid;
 
 			if (!ana_grp)
 				goto out_free;
 			p = strtok(NULL, "/");
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
-			fuse_info("%s: port %s ana_grp %s", __func__,
-			       port, ana_grp);
-			ret = etcd_get_ana_group(ctx, port, ana_grp, buf);
+			ana_grpid = strtoul(ana_grp, &eptr, 10);
+			if (ana_grp == eptr || ana_grpid == ULONG_MAX) {
+				ret = -EINVAL;
+				goto out_free;
+			}
+			fuse_info("%s: port %s ana_grp %lu", __func__,
+			       port, ana_grpid);
+			ret = etcd_get_ana_group(ctx, port, ana_grpid, buf);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;

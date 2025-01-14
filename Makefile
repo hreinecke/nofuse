@@ -1,28 +1,17 @@
 
-BACKEND = ETCD
 CFLAGS = -Wall -g -I/usr/include/fuse3
 DAEMON_OBJS := daemon.o
 OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o \
 	base64.o tls.o
 
-SQL_OBJS := configdb.o
 ETCD_OBJS := etcd_client.o etcd_backend.o
 
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3
-
-SQL_LIBS := -lsqlite3
 ETCD_LIBS := -ljson-c -lcurl
 
-ifeq ($(BACKEND),ETCD)
-CFLAGS += -DNOFUSE_ETCD
 DAEMON_OBJS += fuse_etcd.o
 LIBS += $(ETCD_LIBS)
 OBJS += $(ETCD_OBJS)
-else
-DAEMON_OBJS += fuse.o
-LIBS += $(SQL_LIBS)
-OBJS += $(SQL_OBJS)
-endif
 
 all: nofuse portd nvmetd xdp_drop_port.o base64_test
 

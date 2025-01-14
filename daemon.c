@@ -25,12 +25,8 @@
 #include "common.h"
 #include "ops.h"
 #include "tls.h"
-#ifdef NOFUSE_ETCD
 #include "etcd_client.h"
 #include "etcd_backend.h"
-#else
-#include "configdb.h"
-#endif
 
 int stopped;
 bool tcp_debug;
@@ -126,12 +122,8 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--help", help),
 	OPTION("--debug", debug),
 	OPTION("--traddr=%s", traddr),
-#ifdef NOFUSE_ETCD
 	OPTION("--prefix=%s", prefix),
 	OPTION("--ttl=%d", ttl),
-#else
-	OPTION("--dbname=%s", dbname),
-#endif
 	FUSE_OPT_END,
 };
 
@@ -142,12 +134,8 @@ static void show_help(void)
 	printf("  --debug - enable debug prints in log files");
 	printf("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
 	printf("  --subsysnqn=<NQN> - Discovery subsystem NQN to use");
-#ifdef NOFUSE_ETCD
 	printf("  --prefix=<prefix> - etcd key-value prefix");
 	printf("  --ttl=<ttl> - Time-to-live for etcd key-value pairs");
-#else
-	printf("  --dbname=<filename> - Database filename");
-#endif
 }
 
 static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
@@ -195,9 +183,6 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
-#ifndef NOFUSE_ETCD
-	ctx->dbname = strdup("nofuse.sqlite");
-#endif
 
 	if (fuse_opt_parse(&args, ctx, nofuse_options, NULL) < 0)
 		return 1;
@@ -210,7 +195,6 @@ int main(int argc, char *argv[])
 		etcd_debug = true;
 	}
 
-#ifdef NOFUSE_ETCD
 	ctx->etcd = etcd_init(ctx->prefix);
 	if (!ctx->etcd) {
 		fprintf(stderr, "cannot connect to etcd\n");
@@ -224,9 +208,6 @@ int main(int argc, char *argv[])
 	}
 
 	ret = etcd_lease_grant(ctx->etcd);
-#else
-	ret = configdb_open(ctx->dbname);
-#endif
 	if (ret)
 		return 1;
 
@@ -251,12 +232,8 @@ out_stop:
 	pthread_join(keepalive_thr, NULL);
 
 out_close:
-#ifdef NOFUSE_ETCD
 	etcd_lease_revoke(ctx->etcd);
 	etcd_exit(ctx->etcd);
-#else
-	configdb_close(ctx->dbname);
-#endif
 
 	free(ctx);
 

@@ -507,13 +507,13 @@ int etcd_add_ana_group(struct etcd_ctx *ctx, const char *port,
 }
 
 int etcd_get_ana_group(struct etcd_ctx *ctx, const char *port,
-		       const char *ana_grp, char *ana_state)
+		       int ana_grpid, char *ana_state)
 {
 	int ret = -ENOENT;
 	char *key;
 
-	ret = asprintf(&key, "%s/ports/%s/ana_groups/%s/ana_state",
-		       ctx->prefix, port, ana_grp);
+	ret = asprintf(&key, "%s/ports/%s/ana_groups/%d/ana_state",
+		       ctx->prefix, port, ana_grpid);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_get(ctx, key, ana_state);

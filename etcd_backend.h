@@ -39,7 +39,7 @@ int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 int etcd_add_ana_group(struct etcd_ctx *ctx, const char *port,
 		       int ana_grpid, int ana_state);
 int etcd_get_ana_group(struct etcd_ctx *ctx, const char *port,
-		       const char *ana_grp, char *ana_state);
+		       int ana_grpid, char *ana_state);
 int etcd_set_ana_group(struct etcd_ctx *ctx, const char *port,
 		       const char *ana_grp, char *ana_state);
 int etcd_del_ana_group(struct etcd_ctx *ctx, const char *port, int ana_grpid);

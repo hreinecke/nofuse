@@ -2,11 +2,7 @@
 
 #include "common.h"
 #include "ops.h"
-#ifdef NOFUSE_ETCD
 #include "etcd_backend.h"
-#else
-#include "configdb.h"
-#endif
 
 LINKED_LIST(device_linked_list);
 
@@ -34,11 +30,7 @@ int add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	ns->fd = -1;
 	strcpy(ns->subsysnqn, subsysnqn);
 	ns->nsid = nsid;
-#ifdef NOFUSE_ETCD
 	ret = etcd_add_namespace(ctx, subsysnqn, ns->nsid);
-#else
-	ret = configdb_add_namespace(subsysnqn, ns->nsid);
-#endif
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s failed to add nsid %d\n",
 			subsysnqn, ns->nsid);
@@ -63,12 +55,8 @@ int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	if (!ns)
 		return -ENOENT;
 
-#ifdef NOFUSE_ETCD
 	ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_path", path);
-#else
-	ret = configdb_get_namespace_attr(subsysnqn, nsid, "device_path", path);
-#endif
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d no device path, error %d\n",
 			subsysnqn, nsid, ret);
@@ -104,13 +92,8 @@ int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 		ns->blksize = st.st_blksize;
 		ns->ops = uring_register_ops();
 	}
-#ifdef NOFUSE_ETCD
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_enable", "1");
-#else
-	ret = configdb_set_namespace_attr(subsysnqn, nsid,
-				       "device_enable", "1");
-#endif
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d enable error %d\n",
 			subsysnqn, nsid, ret);
@@ -137,13 +120,8 @@ int disable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	ns = find_namespace(subsysnqn, nsid);
 	if (!ns)
 		return -ENOENT;
-#ifdef NOFUSE_ETCD
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_enable", "0");
-#else
-	ret = configdb_set_namespace_attr(subsysnqn, nsid,
-				       "device_enable", "0");
-#endif
 	if (ret < 0)
 		return ret;
 
@@ -167,11 +145,7 @@ int del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 		return ret;
 	printf("%s: subsys %s nsid %d\n",
 	       __func__, subsysnqn, nsid);
-#ifdef NOFUSE_ETCD
 	ret = etcd_del_namespace(ctx, subsysnqn, ns->nsid);
-#else
-	ret = configdb_del_namespace(subsysnqn, ns->nsid);
-#endif
 	if (ret < 0)
 		return ret;
 	list_del(&ns->node);
@@ -180,3 +154,92 @@ int del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	free(ns);
 	return 0;
 }
+
+int active_namespaces(struct etcd_ctx *ctx, const char *subsysnqn,
+		      u8 *idlist, size_t idlen)
+{
+	struct nofuse_namespace *ns;
+	u8 *id_ptr = idlist;
+
+	list_for_each_entry(ns, &device_linked_list, node) {
+		if (!strcmp(ns->subsysnqn, subsysnqn)) {
+			u32 nsid = htole32(ns->nsid);
+			memcpy(id_ptr, &nsid, sizeof(u32));
+			*id_ptr += sizeof(u32);
+		}
+	}
+	return 0;
+}
+
+int ana_log_entries(struct etcd_ctx *ctx, const char *subsysnqn,
+		    const char *port, u8 *log, int log_len)
+{
+	struct nvme_ana_rsp_hdr *hdr = (struct nvme_ana_rsp_hdr *)log;
+	struct nvme_ana_group_desc *grp_desc = hdr->entries;
+	u8 *p;	
+	int ret, ngrps = 0, grpid, desc_len = sizeof(*hdr);
+
+	for (grpid = 1; grpid <= MAX_ANAGRPID; grpid++) {
+		struct nofuse_namespace *ns;
+		u32 nnsids = 0;
+		char state[64], *eptr = NULL;
+		unsigned long ana_state;
+
+		memset(grp_desc, 0, sizeof(*grp_desc));
+
+		ret = etcd_get_ana_group(ctx, port, grpid,
+					 state);
+		if (ret < 0)
+			continue;
+		ana_state = strtoul(state, &eptr, 10);
+		if (state == eptr || ana_state == ULONG_MAX)
+			continue;
+		list_for_each_entry(ns, &device_linked_list, node) {
+			int _grpid;
+
+			if (strcmp(ns->subsysnqn, subsysnqn))
+				continue;
+			ret = etcd_get_namespace_anagrp(ctx, subsysnqn,
+							ns->nsid, &_grpid);
+			if (ret < 0 || _grpid != grpid)
+				continue;
+			nnsids++;
+		}
+		if (!nnsids)
+			continue;
+		grp_desc->nnsids = htole32(nnsids);
+		grp_desc->grpid = htole16(grpid);
+		grp_desc->state = ana_state;
+		printf("%s: grpid %u %d nsids state %d\n",
+		       __func__, grpid, nnsids, grp_desc->state);
+
+		p = (u8 *)grp_desc->nsids;
+		if (log_len - desc_len < sizeof(u32))
+			break;
+		list_for_each_entry(ns, &device_linked_list, node) {
+			u32 nsid;
+			int _grpid;
+
+			if (strcmp(ns->subsysnqn, subsysnqn))
+				continue;
+			ret = etcd_get_namespace_anagrp(ctx, subsysnqn,
+							ns->nsid, &_grpid);
+			if (ret < 0 || _grpid != grpid)
+				continue;
+			nsid = htole32(ns->nsid);
+			memcpy(p, &nsid, sizeof(u32));
+			p += sizeof(u32);
+			desc_len += sizeof(u32);
+			if (log_len - desc_len < sizeof(u32))
+				break;
+		}
+		ngrps++;
+		if (log_len - desc_len < sizeof(struct nvme_ana_group_desc))
+			break;
+		grp_desc = (struct nvme_ana_group_desc *)p;
+	}
+	hdr->ngrps = htole16(ngrps);
+	printf("%s: %d ana groups\n", __func__, ngrps);
+	return desc_len;
+}
+

@@ -16,11 +16,7 @@
 #include "ops.h"
 #include "nvme.h"
 #include "tcp.h"
-#ifdef NOFUSE_ETCD
 #include "etcd_backend.h"
-#else
-#include "configdb.h"
-#endif
 #include "firmware.h"
 
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
@@ -104,11 +100,7 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 		int ret;
 
 		reg_str = "vs";
-#ifdef NOFUSE_ETCD
 		ret = etcd_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
-#else
-		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
-#endif
 		if (ret < 0) {
 			ctrl_info(ep, "%s: failed to identify controller",
 				  __func__);
@@ -343,11 +335,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
 
-#ifdef NOFUSE_ETCD
 	ret = etcd_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
-#else
-	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
-#endif
 	if (ret < 0)
 		return ret;
 
@@ -376,13 +364,8 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 	if (!ns || !ns->size)
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
-#ifdef NOFUSE_ETCD
 	ret = etcd_get_namespace_anagrp(ep->port->ctx, ep->ctrl->subsysnqn,
 					nsid, &anagrp);
-#else
-	ret = configdb_get_namespace_anagrp(ep->ctrl->subsysnqn, nsid,
-					    &anagrp);
-#endif
 	if (ret < 0) {
 		ctrl_info(ep, "nsid %u error %d retrieving ana grp",
 			  nsid, ret);
@@ -411,15 +394,14 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 	return len;
 }
 
-#ifndef NOFUSE_ETCD
 static int handle_identify_active_ns(struct nofuse_queue *ep,
 				     u8 *id_buf, u64 len)
 {
 	int ret;
 
 	memset(id_buf, 0, len);
-	ret = configdb_identify_active_ns(ep->ctrl->subsysnqn,
-					  id_buf, len);
+	ret = active_namespaces(ep->port->ctx, ep->ctrl->subsysnqn,
+				id_buf, len);
 	if (ret < 0)
 		return ret;
 
@@ -459,8 +441,9 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	u8 *desc_list_save = desc_list;
 
 	memset(desc_list, 0, len);
-	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
-					  "device_uuid", uid_str);
+	ret = etcd_get_namespace_attr(ep->port->ctx,
+				      ep->ctrl->subsysnqn, nsid,
+				      "device_uuid", uid_str);
 	if (ret < 0)
 		return ret;
 	ret = uuid_parse(uid_str, uuid);
@@ -482,8 +465,9 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 		ctrl_info(ep, "no space for nguid");
 		goto parse_eui64;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
-					  "device_nguid", uid_str);
+	ret = etcd_get_namespace_attr(ep->port->ctx,
+				      ep->ctrl->subsysnqn, nsid,
+				      "device_nguid", uid_str);
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
 		desc->nidt = NVME_NIDT_NGUID;
@@ -506,8 +490,9 @@ parse_eui64:
 		ctrl_info(ep, "no space for eu64");
 		goto done;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
-					  "device_eui64", uid_str);
+	ret = etcd_get_namespace_attr(ep->port->ctx,
+				      ep->ctrl->subsysnqn, nsid,
+				      "device_eui64", uid_str);
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
 		desc->nidt = NVME_NIDT_EUI64;
@@ -541,7 +526,6 @@ done:
 
 	return len;
 }
-#endif
 
 static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
@@ -565,7 +549,6 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 			return NVME_SC_INTERNAL;
 		}
 		break;
-#ifndef NOFUSE_ETCD
 	case NVME_ID_CNS_NS_ACTIVE_LIST:
 		id_len = handle_identify_active_ns(ep, qe->data, qe->data_len);
 		break;
@@ -573,7 +556,6 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		id_len = handle_identify_ns_desc_list(ep, nsid,
 						      qe->data, qe->data_len);
 		break;
-#endif
 	case NVME_ID_CNS_CS_CTRL:
 		if (csi == 0) {
 			id_len = handle_identify_ctrl(ep, qe->data,
@@ -607,11 +589,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 	struct nvmf_disc_rsp_page_hdr *log_hdr;
 	struct nvmf_disc_rsp_page_entry *log_ptr;
 
-#ifdef NOFUSE_ETCD
 	len = etcd_host_disc_entries(ep->ctrl->hostnqn, NULL, 0);
-#else
-	len = configdb_host_disc_entries(ep->ctrl->hostnqn, NULL, 0);
-#endif
 	if (len < 0) {
 		ctrl_err(ep, "error formatting discovery log page");
 		return len;
@@ -628,24 +606,15 @@ static int format_disc_log(struct nofuse_queue *ep,
 	log_ptr = log_hdr->entries;
 
 	if (num_recs) {
-#ifdef NOFUSE_ETCD
 		len = etcd_host_disc_entries(ep->ctrl->hostnqn,
 					     (u8 *)log_ptr, len);
-#else
-		len = configdb_host_disc_entries(ep->ctrl->hostnqn,
-					      (u8 *)log_ptr, len);
-#endif
 		if (len < 0) {
 			ctrl_err(ep, "error fetching discovery log entries");
 			num_recs = 0;
 		}
 	}
 
-#ifdef NOFUSE_ETCD
 	ret = etcd_host_genctr(ep->ctrl->hostnqn, &genctr);
-#else
-	ret = configdb_host_genctr(ep->ctrl->hostnqn, &genctr);
-#endif
 	if (ret < 0) {
 		ctrl_err(ep, "error retrieving genctr");
 		genctr = 0;
@@ -670,12 +639,12 @@ static int format_disc_log(struct nofuse_queue *ep,
 	return log_len;
 }
 
-#ifndef NOFUSE_ETCD
 static int format_ana_log(struct nofuse_queue *ep,
 			  void *data, u64 data_offset, u64 data_len)
 {
 	int len, log_len;
 	u8 *log_buf, *grp_ptr;
+	char port[16];
 	struct nvme_ana_rsp_hdr *log_hdr;
 	struct nvme_ana_group_desc *desc;
 	int grp;
@@ -691,9 +660,9 @@ static int format_ana_log(struct nofuse_queue *ep,
 	memset(log_buf, 0, log_len);
 	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 
-	len = configdb_ana_log_entries(ep->ctrl->subsysnqn,
-				       ep->port->portid,
-				       log_buf, log_len);
+	sprintf(port, "%d", ep->port->portid);
+	len = ana_log_entries(ep->port->ctx, ep->ctrl->subsysnqn, port,
+			      log_buf, log_len);
 	if (len < 0) {
 		ctrl_err(ep, "error fetching ana log entries");
 		log_hdr->ngrps = 0;
@@ -724,6 +693,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 	return log_len;
 }
 
+#if 0
 static int format_ns_chg_log(struct nofuse_queue *ep,
 			     void *data, u64 data_offset, u64 data_len)
 {
@@ -780,7 +750,7 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 		log_len = qe->data_len;
 		memset(qe->data, 0, log_len);
 		break;
-#ifndef NOFUSE_ETCD
+#if 0
 	case NVME_LOG_CHANGED_NS:
 		/* Changed Namespace Log */
 		log_len = format_ns_chg_log(ep, qe->data, qe->data_pos,
@@ -791,6 +761,7 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			return NVME_SC_INTERNAL;
 		}
 		break;
+#endif
 	case NVME_LOG_ANA:
 		/* ANA Log */
 		log_len = format_ana_log(ep, qe->data, qe->data_pos,
@@ -801,7 +772,6 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			return NVME_SC_INTERNAL;
 		}
 		break;
-#endif
 	case NVME_LOG_DISC:
 		/* Discovery log */
 		log_len = format_disc_log(ep, qe->data, qe->data_pos,

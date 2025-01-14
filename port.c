@@ -13,11 +13,7 @@
 
 #include "common.h"
 #include "ops.h"
-#ifdef NOFUSE_ETCD
 #include "etcd_backend.h"
-#else
-#include "configdb.h"
-#endif
 
 LINKED_LIST(port_linked_list);
 pthread_mutex_t port_list_mutex = PTHREAD_MUTEX_INITIALIZER;

@@ -278,5 +278,9 @@ int add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
 int del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
 int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
 int disable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid);
+int active_namespaces(struct etcd_ctx *ctx, const char *subsysnqn,
+		      u8 *idlist, size_t idlen);
+int ana_log_entries(struct etcd_ctx *ctx, const char *subsysnqn,
+		    const char *port, u8 *log, int log_len);
 
 #endif

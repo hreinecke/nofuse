@@ -15,11 +15,7 @@
 
 #include "common.h"
 #include "ops.h"
-#ifdef NOFUSE_ETCD
 #include "etcd_backend.h"
-#else
-#include "configdb.h"
-#endif
 
 LINKED_LIST(ctrl_linked_list);
 pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -32,11 +28,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	int ret = 0;
 
 	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME)) {
-#ifdef NOFUSE_ETCD
 		ret = etcd_get_discovery_nqn(ep->port->ctx, nqn);
-#else
-		ret = configdb_get_discovery_nqn(nqn);
-#endif
 		if (ret < 0)
 			strcpy(nqn, subsysnqn);
 	} else
@@ -79,14 +71,6 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		goto out_unlock;
 	}
 
-#ifndef NOFUSE_ETCD
-	if (configdb_check_allowed_host(hostnqn, nqn, ep->port->portid) <= 0) {
-		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
-		       hostnqn, nqn);
-		ret = -EPERM;
-		goto out_unlock;
-	}
-#endif
 	ep_info(ep, "Allocating new controller '%s' for '%s'",
 		hostnqn, nqn);
 	ctrl = malloc(sizeof(*ctrl));
@@ -96,29 +80,13 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		goto out_unlock;
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
-#ifdef NOFUSE_ETCD
 	ret = etcd_get_cntlid(ep->port->ctx, nqn, &cntlid);
-#else
-	ret = configdb_get_cntlid(nqn, &cntlid);
-#endif
 	if (ret < 0) {
 		ep_err(ep, "error fetching cntlid");
 		free(ctrl);
 		goto out_unlock;
 	}
-#ifndef NOFUSE_ETCD
-	ret = configdb_add_ctrl(nqn, cntlid);
-	if (ret < 0) {
-		ep_err(ep, "error registering cntlid %d", cntlid);
-		free(ctrl);
-		goto out_unlock;
-	}
-#endif
-#ifdef NOFUSE_ETCD
 	ret = etcd_get_subsys_attr(ep->port->ctx, nqn, "attr_gid_max", value);
-#else
-	ret = configdb_get_subsys_attr(nqn, "attr_qid_max", value);
-#endif
 	if (ret < 0) {
 		ep_err(ep, "error fetching attr_qid_max");
 		ctrl->max_queues = NVMF_NUM_QUEUES;
@@ -171,9 +139,6 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	if (!ctrl->num_queues) {
 		printf("ctrl %u qid %d: deleting controller\n",
 		       ctrl->cntlid, ep->qid);
-#ifndef NOFUSE_ETCD
-		configdb_del_ctrl(ctrl->subsysnqn, ctrl->cntlid);
-#endif
 		list_del(&ctrl->node);
 		free(ctrl);
 	}
