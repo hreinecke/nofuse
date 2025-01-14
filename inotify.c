@@ -392,6 +392,23 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 				dirname, filename);
 			return TYPE_UNKNOWN;
 		}
+		/* Insert 'addr_node' attribute */
+		if (new_type == TYPE_PORT && ctx->etcd->node_name) {
+			int ret;
+			char *key;
+
+			ret = asprintf(&key, "%s/ports/%s:%s/addr_node",
+				       ctx->etcd->prefix,
+				       ctx->etcd->node_name, filename);
+			if (ret > 0) {
+				if (inotify_debug)
+					printf("%s: add key %s value '%s'",
+					       __func__, key, ctx->etcd->node_name);
+				etcd_kv_new(ctx->etcd, key,
+					    ctx->etcd->node_name);
+				free(key);
+			}
+		}
 	} else {
 		if (new_type == TYPE_UNKNOWN || type == TYPE_ROOT) {
 			if (inotify_debug) {
