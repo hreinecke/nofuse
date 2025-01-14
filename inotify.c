@@ -574,12 +574,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 			return ev_len;
 		}
 		watcher->wd = -1;
-		switch (watcher->type) {
-		default:
-			fprintf(stderr, "unhandled modify type %d\n",
-				watcher->type);
-			break;
-		}
+		update_value(watcher, false);
 		watcher->wd = inotify_add_watch(ifd, watcher->dirname,
 						watcher->flags);
 		if (watcher->wd < 0) {
