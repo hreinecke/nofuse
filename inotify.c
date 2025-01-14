@@ -344,6 +344,16 @@ static int update_value(struct watcher_ctx *ctx,
 			node_name = "localhost";
 		sprintf(key, "%s/ports/%s:%s",
 			ctx->etcd->prefix, node_name, p + 6);
+	} else if (type == TYPE_SUBSYS_NS &&
+		   !strcmp(name, "device_path") &&
+		   ctx->etcd->node_name) {
+		char *tmp = strdup(value);
+		/*
+		 * Prefix the device path with the node name to
+		 * indicate on which node the namespace resides.
+		 */
+		sprintf(value, "%s:%s\n", ctx->etcd->node_name, tmp);
+		free(tmp);
 	} else {
 		sprintf(key, "%s/%s", ctx->etcd->prefix, p);
 	}
