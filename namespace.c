@@ -45,16 +45,12 @@ int add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 
 int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 {
-	struct nofuse_namespace *ns;
+	struct nofuse_namespace *ns = NULL;
 	char path[PATH_MAX + 1], *eptr = NULL;
 	int ret = 0, size;
 
 	fprintf(stderr, "%s: subsys %s nsid %d\n",
 		__func__, subsysnqn, nsid);
-	ns = find_namespace(subsysnqn, nsid);
-	if (!ns)
-		return -ENOENT;
-
 	ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_path", path);
 	if (ret < 0) {
@@ -62,6 +58,13 @@ int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 			subsysnqn, nsid, ret);
 		return ret;
 	}
+	if (!strcmp(path, ctx->node_name))
+		goto enable;
+
+	ns = find_namespace(subsysnqn, nsid);
+	if (!ns)
+		return -ENOENT;
+
 	size = strtoul(path, &eptr, 10);
 	if (path != eptr) {
 		ns->size = size * 1024 * 1024;
@@ -92,18 +95,21 @@ int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 		ns->blksize = st.st_blksize;
 		ns->ops = uring_register_ops();
 	}
+enable:
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
 				      "device_enable", "1");
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d enable error %d\n",
 			subsysnqn, nsid, ret);
-		if (ns->fd > 0) {
-			close(ns->fd);
-			ns->fd = -1;
+		if (ns) {
+			if (ns->fd > 0) {
+				close(ns->fd);
+				ns->fd = -1;
+			}
+			ns->size = 0;
+			ns->blksize = 0;
+			ns->ops = NULL;
 		}
-		ns->size = 0;
-		ns->blksize = 0;
-		ns->ops = NULL;
 	}
 	printf("subsys %s nsid %d size %lu blksize %u\n",
 	       subsysnqn, nsid, ns->size, ns->blksize);

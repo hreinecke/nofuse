@@ -11,30 +11,6 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 
-struct etcd_kv {
-	const char *key;
-	const char *value;
-	int64_t create_revision;
-	int64_t mod_revision;
-	int64_t version;
-	int64_t lease;
-	int64_t ttl;
-	bool ignore_lease;
-	bool deleted;
-};
-
-struct etcd_kv_event {
-	int64_t ev_revision;
-	int error;
-	struct etcd_kv *kvs;
-	int num_kvs;
-	struct etcd_kv *prev_kvs;
-	int num_prev_kvs;
-	struct json_tokener *tokener;
-	void (*watch_cb)(struct etcd_kv_event *ev, void *p);
-	void *watch_arg;
-};
-
 struct etcd_ctx {
 	char *prefix;
 	char *proto;
@@ -57,6 +33,31 @@ struct etcd_conn_ctx {
 	int64_t revision;
 	int64_t watch_id;
 	struct json_tokener *tokener;
+};
+
+struct etcd_kv {
+	const char *key;
+	const char *value;
+	int64_t create_revision;
+	int64_t mod_revision;
+	int64_t version;
+	int64_t lease;
+	int64_t ttl;
+	bool ignore_lease;
+	bool deleted;
+};
+
+struct etcd_kv_event {
+	int64_t ev_revision;
+	int error;
+	struct etcd_kv *kvs;
+	int num_kvs;
+	struct etcd_kv *prev_kvs;
+	int num_prev_kvs;
+	struct json_tokener *tokener;
+	void (*watch_cb)(void *arg, char *key, char *value,
+			 bool deleted);
+	void *watch_arg;
 };
 
 extern bool etcd_debug;
@@ -99,7 +100,7 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
 int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv **ret_kvs);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
-int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
+int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id);
 int etcd_kv_watch_cancel(struct etcd_conn_ctx *conn, int64_t watch_id);
 void etcd_kv_watch_stop(struct etcd_conn_ctx *conn);

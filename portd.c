@@ -112,70 +112,53 @@ static int parse_port_key(char *key, unsigned int *portid,
 	return 0;
 }
 
-static void parse_ports(struct etcd_ctx *ctx,
-			struct etcd_kv *kvs, int num_kvs)
+static void update_port(struct etcd_ctx *ctx,
+			 char *key, char *value, bool deleted)
 {
-	int i;
+	char *attr = NULL, *subsys = NULL;
+	unsigned int portid, ana_grpid = 0;
+	int ret;
 
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		char *key, *attr = NULL, *subsys = NULL;
-		unsigned int portid, ana_grpid = 0;
-		int ret;
-
-		key = strdup(kv->key);
-		ret = parse_port_key(key, &portid, &attr,
-				     &subsys, &ana_grpid);
-		if (ret < 0)
-			continue;
-		if (attr) {
-			printf("%s: op %s port %d attr %s\n", __func__,
-			       kv->deleted ? "delete" : "add",
-			       portid, attr);
-			if (!kv->deleted)
-				find_and_add_port(ctx, portid);
-			else if (!strcmp(attr, "addr_traddr"))
-				find_and_del_port(portid);
-		} else if (subsys) {
-			struct nofuse_port *port;
-
-			port = find_port(portid);
-			if (port) {
-				printf("%s port %d subsys %s\n",
-				       kv->deleted ? "start" : "stop",
-				       portid, subsys);
-				if (!kv->deleted)
-					start_port(port);
-				else
-					stop_port(port);
-				put_port(port);
-			}
-		} else
-			printf("add port %d ana group %d\n",
-			       portid, ana_grpid);
-
+	key = strdup(key);
+	ret = parse_port_key(key, &portid, &attr,
+			     &subsys, &ana_grpid);
+	if (ret < 0) {
 		free(key);
+		return;
 	}
-}
 
-static void update_ports(struct etcd_kv_event *ev, void *arg)
-{
-	struct etcd_ctx *ctx = arg;
+	if (attr) {
+		printf("%s: op %s port %d attr %s\n", __func__,
+		       deleted ? "delete" : "add",
+		       portid, attr);
+		if (!deleted)
+			find_and_add_port(ctx, portid);
+		else if (!strcmp(attr, "addr_traddr"))
+			find_and_del_port(portid);
+	} else if (subsys) {
+		struct nofuse_port *port;
 
-	parse_ports(ctx, ev->kvs, ev->num_kvs);
-}
-
-static void delete_conn(void *arg)
-{
-	struct etcd_conn_ctx *conn = arg;
-
-	etcd_conn_delete(conn);
+		port = find_port(portid);
+		if (port) {
+			printf("%s port %d subsys %s\n",
+			       deleted ? "start" : "stop",
+			       portid, subsys);
+			if (!deleted)
+				start_port(port);
+			else
+				stop_port(port);
+			put_port(port);
+		}
+	} else
+		printf("add port %d ana group %d\n",
+		       portid, ana_grpid);
+	
+	free(key);
 }
 
 static void *etcd_watcher(void *arg)
 {
 	struct etcd_ctx *ctx = arg;
-	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	char *prefix;
 	int64_t start_revision = 0;
@@ -187,33 +170,14 @@ static void *etcd_watcher(void *arg)
 	if (ret < 0)
 		return NULL;
 
-	conn = etcd_conn_create(ctx);
-	if (!conn) {
-		free(prefix);
-		return NULL;
-	}
-
-	pthread_cleanup_push(delete_conn, conn);
-
 	ev.ev_revision = start_revision;
-	ev.watch_cb = update_ports;
+	ev.watch_cb = update_port;
 	ev.watch_arg = ctx;
-	ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
-	if (!ret)
-		goto out_pop;
-	if (ret != -EAGAIN) {
+	ret = etcd_kv_watch(ctx, prefix, &ev, pthread_self());
+	if (ret) {
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
-			goto out_pop;
 	}
-	while (!stopped) {
-		ret = etcd_conn_continue(conn);		
-	}
-
-	etcd_kv_watch_cancel(conn, pthread_self());
-
-out_pop:
-	pthread_cleanup_pop(1);
 
 	free(prefix);
 	pthread_exit(NULL);
@@ -249,7 +213,7 @@ int main(int argc, char **argv)
 	int getopt_ind;
 	struct etcd_ctx *ctx;
 	char *prefix;
-	int ret = 0;
+	int ret = 0, i;
 
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
@@ -306,7 +270,9 @@ int main(int argc, char **argv)
 		goto out_free;
 	}
 
-	parse_ports(ctx, kvs, ret);
+	for (i = 0; i < ret; i++) {
+		update_port(ctx, kvs[i].key, kvs[i].value, false);
+	}
 	free(kvs);
 
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
