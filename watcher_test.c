@@ -14,13 +14,12 @@
 #include <errno.h>
 
 #include <json-c/json.h>
-
+#include "http_parser.h"
 #include "base64.h"
 
-struct http_parser {
-	char *hdr;
-	int code;
-	bool chunked;
+struct http_parser_data {
+	json_tokener *tokener;
+	char *data;
 	size_t size;
 };
 
@@ -227,76 +226,28 @@ int send_cancel(int sockfd, int64_t watch_id)
 	return 0;
 }
 
-int parse_http_hdr(struct http_parser *http)
+int parse_http_body(http_parser *http, const char *body, size_t len)
 {
-	if (sscanf(http->hdr, "HTTP/1.1 %03d %*s", &http->code) != 1) {
-		fprintf(stderr, "invalid http header %s\n", http->hdr);
-		return -EINVAL;
-	}
-	if (http->code != 200) {
-		fprintf(stderr, "http code %d\n", http->code);
-	}
-	if (strstr(http->hdr, "Transfer-Encoding: chunked")) {
-		http->chunked = true;
-		printf("http code %d, chunked\n", http->code);
-	} else {
-		char *opt = strstr(http->hdr, "Content-Length:");
-		if (opt) {
-			char *end = strstr(opt, "\r\n");
-			if (end)
-				memset(end, 0, 4);
-			if (sscanf(opt, "Content-Length: %ld",
-				   &http->size) != 1) {
-				printf("invalid hdr %s\n", opt);
-			}
-		}
-		http->chunked = false;
-		printf("http code %d, len %ld\n", http->code, http->size);
-	}
-	return 0;
-}
-
-int parse_http_chunk(char *buf, size_t *chunk_len)
-{
-	char *ptr, *eptr = NULL;
-	unsigned long len;
-
-	ptr = strstr(buf, "\r\n");
-	if (!ptr) {
-		fprintf(stderr, "http chunked data parsing error\n");
-		return 0;
-	}
-	memset(ptr, 0, 2);
-	if (ptr == buf) {
-		*chunk_len = 0;
-		return 0;
-	}
-	len = strtoul(buf, &eptr, 16);
-	if (len == ULONG_MAX || buf == eptr) {
-		fprintf(stderr, "http chunked data decoding error\n");
-		return -EINVAL;
-	}
-	*chunk_len = len;
-	return strlen(buf) + 2;
-}
-
-int parse_http_body(struct http_parser *http, char *body, size_t len)
-{
+	struct http_parser_data *data = http->data;
 	json_object *etcd_resp, *result_obj, *rev_obj, *header_obj, *event_obj;
 	int num_kvs, i;
 	char *key, *value;
 
-	etcd_resp = json_tokener_parse(body);
+	etcd_resp = json_tokener_parse_ex(data->tokener, body, len);
 	if (!etcd_resp) {
+		if (json_tokener_get_error(data->tokener) ==
+		    json_tokener_continue) {
+			return len;
+		}
 		printf("%s: invalid response\n'%s'\n",
 		       __func__, body);
 		return -EBADMSG;
 	}
-
+#if 0
 	printf("http data (%ld bytes)\n%s\n", len,
 	       json_object_to_json_string_ext(etcd_resp,
 					      JSON_C_TO_STRING_PRETTY));
-
+#endif
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
 		printf("%s: invalid response, 'result' not found\n",
@@ -355,7 +306,7 @@ int parse_http_body(struct http_parser *http, char *body, size_t len)
 				printf("key %s: <none>\n", key);
 		} else {
 			value = __b64dec(json_object_get_string(value_obj));
-			printf("key %s: value '%s;\n", key, value);
+			printf("key %s: value '%s'\n", key, value);
 		}
 	}
 out:
@@ -363,96 +314,11 @@ out:
 	return 0;
 }
 
-int parse_http(struct http_parser *http, char *result, size_t result_size)
+int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 {
-	char *body;
-	size_t parsed = 0;
-	int ret;
-
-	printf("http raw hdr: %s\n", result);
-	if (!http->hdr) {
-		body = strstr(result, "\r\n\r\n");
-		if (!body) {
-			printf("http hdr retry\n");
-			return 0;
-		}
-		memset(body, 0, 4);
-		body += 4;
-		http->hdr = strdup(result);
-		ret = parse_http_hdr(http);
-		if (ret < 0) {
-			printf("http hdr parse error\n");
-			return ret;
-		}
-		parsed = strlen(result) - strlen(body);
-		result_size -= parsed;
-		result = body;
-		if (!result_size)
-			return parsed;
-	}
-	printf("http (parsed %ld) raw body: %s\n", parsed, result);
-	do {
-		size_t chunk_len;
-		char *next_chunk;
-
-		if (http->chunked) {
-			ret = parse_http_chunk(result, &chunk_len);
-			if (ret < 0)
-				return ret;
-			printf("http chunk (%ld bytes of %ld bytes)\n",
-			       chunk_len, result_size);
-			result += ret;
-			parsed += ret;
-			result_size -= ret;
-		} else {
-			chunk_len = http->size;
-		}
-		printf("http raw chunk: %s\n", result);
-		if (result_size < chunk_len) {
-			printf("http chunk incomplete, parsed %ld bytes\n",
-				parsed);
-			return parsed;
-		}
-		if (strcmp(result + chunk_len, "\r\n")) {
-			printf("http chunk parse error\n");
-			ret = -EINVAL;
-			break;
-		}
-		next_chunk = result + chunk_len;
-		memset(next_chunk, 0, 2);
-		if (!chunk_len) {
-			parsed += 2;
-			ret = 0;
-			break;
-		}
-		next_chunk += 2;
-		ret = parse_http_body(http, result, chunk_len);
-		if (!ret) {
-			printf("http chunk retry\n");
-			return 0;
-		}
-		result = next_chunk;
-		result_size -= chunk_len + 2;
-		parsed += chunk_len + 2;
-	} while (result_size);
-
-	if (result_size) {
-		printf("http parsing stopped, %ld/%ld bytes parsed\n",
-		       parsed, result_size);
-	} else {
-		printf("http response complete, %ld bytes parsed\n",
-			parsed);
-		free(http->hdr);
-		http->hdr = NULL;
-	}
-	return parsed;
-}
-	
-int recv_http(int sockfd, struct http_parser *http)
-{
-	size_t alloc_size, result_inc = 64, result_size, data_left, len;
+	size_t alloc_size, result_inc = 1024, result_size, data_left;
 	char *result, *data_ptr;
-	int ret, wait = 5;
+	int ret;
 
 	alloc_size = result_inc;
 	result_size = 0;
@@ -466,7 +332,6 @@ int recv_http(int sockfd, struct http_parser *http)
 	while (sockfd > 0) {
 		fd_set rfd;
 		struct timeval tmo;
-		char *tmp;
 
 		FD_ZERO(&rfd);
 		FD_SET(sockfd, &rfd);
@@ -478,11 +343,7 @@ int recv_http(int sockfd, struct http_parser *http)
 			break;
 		}
 		if (!FD_ISSET(sockfd, &rfd)) {
-			if (!--wait) {
-				send_cancel(sockfd, 17);
-				wait = 5;
-			} else
-				printf("no events, continue\n");
+			printf("no events, continue\n");
 			continue;
 		}
 		ret = read(sockfd, data_ptr, data_left);
@@ -499,45 +360,14 @@ int recv_http(int sockfd, struct http_parser *http)
 				result_size);
 			break;
 		}
-		len = ret;
-		result_size += len;
-		data_ptr += len;
-		data_left -= len;
-		ret = parse_http(http, result, result_size);
-		if (ret < 0) {
-			fprintf(stderr, "http parse error %d\n", ret);
-			break;
-		}
-		if (ret > 0) {
-			int rem = result_size - ret;
-			/* advance stream */
-			printf("advance by %d bytes (%ld total)\n",
+		result_size = ret;
+		ret = http_parser_execute(http, settings,
+					  result, result_size);
+		if (ret != result_size) {
+			printf("%d from %ld bytes processed\n",
 			       ret, result_size);
-			tmp = result + ret;
-			memmove(result, tmp, rem);
-			data_left = alloc_size - rem;
-			data_ptr = result + rem;
-			memset(data_ptr, 0, data_left);
-			printf("result %s\n", result);
-			continue;
-		}
-
-		printf("read %ld bytes (%ld total)\n",
-		       len, result_size);
-		if (data_left)
-			continue;
-		printf("expand buffer, %ld bytes read\n", result_size);
-		alloc_size += result_inc;
-		tmp = realloc(result, alloc_size);
-		if (!tmp) {
-			fprintf(stderr,
-				"failed to reallocate result\n");
 			break;
 		}
-		result = tmp;
-		data_ptr = result + result_size;
-		data_left = result_inc;
-		memset(data_ptr, 0, data_left);
 	}
 	free(result);
 	return ret;
@@ -548,7 +378,19 @@ int main(int argc, char **argv)
 	int sockfd, flags, ret, hdrlen;
 	size_t postlen;
 	char *hdr, *post;
-	struct http_parser http;
+	http_parser *http;
+	http_parser_settings settings;
+	struct http_parser_data data;
+
+	http = malloc(sizeof(*http));
+	memset(http, 0, sizeof(*http));
+	http_parser_init(http, HTTP_RESPONSE);
+	memset(&settings, 0, sizeof(settings));
+	settings.on_body = parse_http_body;
+	data.data = NULL;
+	data.size = 0;
+	data.tokener = json_tokener_new_ex(10);
+	http->data = &data;
 
 	sockfd = etcd_connect(default_hostname, default_port);
 	if (sockfd < 0)
@@ -585,9 +427,7 @@ int main(int argc, char **argv)
 		close(sockfd);
 		return 1;
 	}
-	http.hdr = NULL;
-	http.chunked = false;
-	ret = recv_http(sockfd, &http);
+	ret = recv_http(sockfd, http, &settings);
 	close(sockfd);
 	return 0;
 }
