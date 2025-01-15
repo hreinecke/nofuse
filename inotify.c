@@ -668,18 +668,8 @@ void *inotify_loop(void *arg)
 	struct watcher_ctx *ctx = arg;
 	fd_set rfd;
 	struct timeval tmo;
-	int ret;
 	char event_buffer[INOTIFY_BUFFER_SIZE]
 		__attribute__ ((aligned(__alignof__(struct inotify_event))));
-
-	ret = start_inotify(ctx);
-	if (ret < 0) {
-		fprintf(stderr, "failed to start inotify\n");
-		pthread_exit(NULL);
-		return NULL;
-	}
-
-	pthread_cleanup_push(stop_inotify, ctx);
 
 	while (!stopped) {
 		int rlen, ret;
@@ -732,7 +722,6 @@ void *inotify_loop(void *arg)
 		}
 	}
 
-	pthread_cleanup_pop(1);
 	pthread_exit(NULL);
 	return NULL;
 }
