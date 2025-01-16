@@ -82,6 +82,7 @@ void etcd_ev_free(struct etcd_kv_event *ev)
 	ev->error = 0;
 }
 
+#ifdef _USE_CURL
 int etcd_conn_continue(struct etcd_conn_ctx *conn)
 {
 	struct etcd_ctx *ctx = conn->ctx;
@@ -169,11 +170,13 @@ static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
 	curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
 	return ret;
 }
+#endif
 
 static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 			struct json_object *post_obj,
 			curl_write_callback write_cb, void *write_data)
 {
+#ifdef _USE_CURL
 	CURLcode err;
 	const char *post_data;
 
@@ -221,6 +224,9 @@ static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 	}
 
 	return etcd_kv_transfer(conn);
+#else
+	return -EOPNOTSUPP;
+#endif
 }
 
 static size_t
@@ -604,6 +610,7 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	return ret;
 }
 
+#ifdef _USE_CURL
 void etcd_kv_watch_stop(struct etcd_conn_ctx *ctx)
 {
 	if (ctx->curl_ctx) {
@@ -611,6 +618,7 @@ void etcd_kv_watch_stop(struct etcd_conn_ctx *ctx)
 		ctx->curl_ctx = NULL;
 	}
 }
+#endif
 
 static size_t
 etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
@@ -1028,6 +1036,7 @@ int etcd_member_id(struct etcd_ctx *ctx)
 	return ret;
 }
 
+#ifdef _USE_CURL
 static CURL *etcd_curl_init(struct etcd_ctx *ctx)
 {
 	CURL *curl;
@@ -1074,11 +1083,14 @@ out_err_opt:
 	curl_easy_cleanup(curl);
 	return NULL;
 }
+#endif
 
 struct etcd_ctx *etcd_init(const char *prefix)
 {
 	struct etcd_ctx *ctx;
+#ifdef _USE_CURL
 	int ret;
+#endif
 
 	ctx = malloc(sizeof(struct etcd_ctx));
 	if (!ctx) {
@@ -1095,18 +1107,19 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		ctx->prefix = strdup(default_etcd_prefix);
 	ctx->lease = 0;
 	ctx->ttl = default_etcd_ttl;
-	ctx->curlm_ctx = curl_multi_init();
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
 
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
-
+#ifdef _USE_CURL
+	ctx->curlm_ctx = curl_multi_init();
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
 		etcd_exit(ctx);
 		errno = -ret;
 		return NULL;
 	}
+#endif
 	return ctx;
 }
 
@@ -1116,8 +1129,10 @@ void etcd_exit(struct etcd_ctx *ctx)
 		return;
 	if (ctx->node_name)
 		free(ctx->node_name);
+#ifdef _USE_CURL
 	if (ctx->curlm_ctx)
 		curl_multi_cleanup(ctx->curlm_ctx);
+#endif
 	free(ctx->prefix);
 	free(ctx->host);
 	free(ctx->proto);
@@ -1135,16 +1150,18 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 	}
 	memset(conn, 0, sizeof(*conn));
 
+#ifdef _USE_CURL
 	conn->curl_ctx = etcd_curl_init(ctx);
 	if (!conn->curl_ctx) {
 		free(conn);
 		return NULL;
 	}
+	curl_easy_setopt(conn->curl_ctx, CURLOPT_PRIVATE, conn);
+#endif
 	conn->tokener = json_tokener_new_ex(10);
 
 	pthread_mutex_lock(&ctx->conn_mutex);
 	conn->ctx = ctx;
-	curl_easy_setopt(conn->curl_ctx, CURLOPT_PRIVATE, conn);
 	if (!ctx->conn)
 		ctx->conn = conn;
 	else {
@@ -1183,10 +1200,12 @@ void etcd_conn_delete(struct etcd_conn_ctx *conn)
 	}
 	conn->ctx = NULL;
 	pthread_mutex_unlock(&ctx->conn_mutex);
+#ifdef _USE_CURL
 	if (conn->curl_ctx) {
 		curl_easy_cleanup(conn->curl_ctx);
 		conn->curl_ctx = NULL;
 	}
+#endif
 	json_tokener_free(conn->tokener);
 	free(conn);
 }

@@ -29,6 +29,7 @@ struct etcd_ctx {
 struct etcd_conn_ctx {
 	struct etcd_ctx *ctx;
 	struct etcd_conn_ctx *next;
+	int sockfd;
 	CURL *curl_ctx;
 	int64_t revision;
 	int64_t watch_id;

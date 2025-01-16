@@ -17,14 +17,16 @@
 #include "http_parser.h"
 #include "base64.h"
 
+#include "common.h"
+#include "etcd_client.h"
+
 struct http_parser_data {
 	json_tokener *tokener;
 	char *body;
 	size_t len;
 };
 
-static char *default_hostname = "localhost";
-static char *default_port = "2379";
+bool etcd_debug = true;
 
 static char *__b64enc(const char *str, int str_len)
 {
@@ -53,19 +55,21 @@ static char *__b64dec(const char *encoded_str)
 	return str;
 }
 
-static int etcd_connect(char *hostname, char *port)
+static int etcd_connect(struct etcd_ctx *ctx)
 {
+	char port[16];
 	struct addrinfo hints, *ai, *aip;
 	int sockfd = -1, ret;
 
+	sprintf(port, "%d", ctx->port);
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
-	ret = getaddrinfo(hostname, port, &hints, &ai);
+	ret = getaddrinfo(ctx->host, port, &hints, &ai);
 	if (ret != 0) {
-		fprintf(stderr, "getaddrinfo() on %s:%s failed: %s\n",
-			hostname, port, gai_strerror(ret));
+		fprintf(stderr, "getaddrinfo() on %s:%d failed: %s\n",
+			ctx->host, ctx->port, gai_strerror(ret));
 		return -EINVAL;
 	}
 	if (!ai) {
@@ -86,8 +90,8 @@ static int etcd_connect(char *hostname, char *port)
 			if (aip->ai_family == AF_INET6)
 				fam = "IPv6";
 
-			printf("connected to %s:%s with %s\n",
-			       hostname, port, fam);
+			printf("connected to %s:%d with %s\n",
+			       ctx->host, ctx->port, fam);
 			break;
 		}
 		close(sockfd);
@@ -105,19 +109,19 @@ static int etcd_connect(char *hostname, char *port)
 }
 
 char *http_header =
-	"POST /v3/watch HTTP/1.1\r\n"
-	"Host: %s:%s\r\n"
+	"POST %s HTTP/1.1\r\n"
+	"Host: %s:%d\r\n"
 	"Accept: */*\r\n"
 	"Content-Type: application/json\r\n"
 	"Content-Length: %d\r\n\r\n";
 
-char *format_hdr(char *host, char *port, int len)
+char *format_hdr(struct etcd_ctx *ctx, char *url, int len)
 {
 	char *hdr;
 	int hdrlen;
 
-	hdrlen = asprintf(&hdr, http_header,
-			  host, port, len);
+	hdrlen = asprintf(&hdr, http_header, url,
+			  ctx->host, ctx->port, len);
 	if (hdrlen < 0)
 		return NULL;
 	return hdr;
@@ -161,7 +165,7 @@ char *format_watch(char *key, int64_t revision, int64_t watch_id)
 	return buf;
 }
 
-char *format_cancel(int64_t watch_id)
+char *format_cancel(struct etcd_ctx *ctx, int64_t watch_id)
 {
 	json_object *post_obj, *req_obj;
 	const char *tmp;
@@ -222,28 +226,28 @@ int send_http(int sockfd, char *hdr, size_t hdrlen,
 	return ret;
 }
 
-int send_cancel(int sockfd, int64_t watch_id)
+int send_cancel(struct etcd_conn_ctx *conn, int64_t watch_id)
 {
 	char *hdr, *post;
 	size_t postlen;
 	int ret;
 
-	post = format_cancel(watch_id);
+	post = format_cancel(conn->ctx, watch_id);
 	postlen = strlen(post);
 
-	hdr = format_hdr(default_hostname, default_port, postlen);
+	hdr = format_hdr(conn->ctx, "/v3/watch", postlen);
 	if (!hdr) {
 		free(post);
 		return -ENOMEM;
 	}
 
-	ret = send_http(sockfd, hdr, strlen(hdr), post, postlen);
+	ret = send_http(conn->sockfd, hdr, strlen(hdr), post, postlen);
 	free(post);
 	free(hdr);
 	return ret;
 }
 
-int send_watch(int sockfd, char *key, int64_t watch_id)
+int send_watch(struct etcd_conn_ctx *conn, char *key, int64_t watch_id)
 {
 	char *hdr, *post;
 	size_t postlen;
@@ -252,24 +256,22 @@ int send_watch(int sockfd, char *key, int64_t watch_id)
 	post = format_watch(key, 0, watch_id);
 	postlen = strlen(post);
 
-	hdr = format_hdr(default_hostname, default_port, postlen);
+	hdr = format_hdr(conn->ctx, "/v3/watch", postlen);
 	if (!hdr) {
 		free(post);
 		return -ENOMEM;
 	}
 
-	ret = send_http(sockfd, hdr, strlen(hdr), post, postlen);
+	ret = send_http(conn->sockfd, hdr, strlen(hdr), post, postlen);
 	free(post);
 	free(hdr);
 	return ret;
 }
 
-int parse_http_body(http_parser *http, const char *body, size_t len)
+int parse_json(http_parser *http, const char *body, size_t len)
 {
 	struct http_parser_data *data = http->data;
-	json_object *etcd_resp, *result_obj, *rev_obj, *header_obj, *event_obj;
-	int num_kvs, i;
-	char *key, *value;
+	json_object *etcd_resp;
 
 	if (data->body) {
 		char *tmp;
@@ -308,68 +310,6 @@ int parse_http_body(http_parser *http, const char *body, size_t len)
 	       json_object_to_json_string_ext(etcd_resp,
 					      JSON_C_TO_STRING_PRETTY));
 
-	result_obj = json_object_object_get(etcd_resp, "result");
-	if (!result_obj) {
-		printf("%s: invalid response, 'result' not found\n",
-		       __func__);
-		goto out;
-	}
-
-	header_obj = json_object_object_get(result_obj, "header");
-	if (!header_obj) {
-		printf("%s: invalid response, 'header' not found\n",
-		       __func__);
-		goto out;
-	}
-	rev_obj = json_object_object_get(header_obj, "revision");
-	if (rev_obj) {
-		int64_t revision = json_object_get_int64(rev_obj);
-
-		printf("%s: new revision %ld\n",
-		       __func__, revision);
-	}
-
-	/* 'created' set in response to a 'WatchRequest', no data is pending */
-	if (json_object_object_get(result_obj, "created"))
-		goto out;
-
-	event_obj = json_object_object_get(result_obj, "events");
-	if (!event_obj) {
-		printf("%s: invalid response, 'events' not found\n",
-		       __func__);
-		goto out;
-	}
-
-	num_kvs = json_object_array_length(event_obj);
-	for (i = 0; i < num_kvs; i++) {
-		struct json_object *kvs_obj, *kv_obj, *key_obj;
-		struct json_object *type_obj, *value_obj;
-		bool deleted = false;
-
-		kvs_obj = json_object_array_get_idx(event_obj, i);
-		type_obj = json_object_object_get(kvs_obj, "type");
-		if (type_obj &&
-		    strcmp(json_object_get_string(type_obj), "DELETE"))
-			deleted = true;
-		kv_obj = json_object_object_get(kvs_obj, "kv");
-		if (!kv_obj)
-			continue;
-		key_obj = json_object_object_get(kv_obj, "key");
-		if (!key_obj)
-			continue;
-		key = __b64dec(json_object_get_string(key_obj));
-		value_obj = json_object_object_get(kv_obj, "value");
-		if (!value_obj) {
-			if (deleted)
-				printf("key %s: deleted\n", key);
-			else
-				printf("key %s: <none>\n", key);
-		} else {
-			value = __b64dec(json_object_get_string(value_obj));
-			printf("key %s: value '%s'\n", key, value);
-		}
-	}
-out:
 	json_object_put(etcd_resp);
 	free(data->body);
 	data->body = NULL;
@@ -377,7 +317,8 @@ out:
 	return 0;
 }
 
-int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
+int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
+	      http_parser_settings *settings)
 {
 	size_t alloc_size, result_inc = 1024, result_size;
 	char *result;
@@ -390,24 +331,24 @@ int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 		return -ENOMEM;
 	memset(result, 0, alloc_size);
 
-	while (sockfd > 0) {
+	while (conn->sockfd > 0) {
 		fd_set rfd;
 		struct timeval tmo;
 
 		FD_ZERO(&rfd);
-		FD_SET(sockfd, &rfd);
+		FD_SET(conn->sockfd, &rfd);
 		tmo.tv_sec = 1;
 		tmo.tv_usec = 0;
-		ret = select(sockfd + 1, &rfd, NULL, NULL, &tmo);
+		ret = select(conn->sockfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
 			fprintf(stderr, "select error %d\n", errno);
 			break;
 		}
-		if (!FD_ISSET(sockfd, &rfd)) {
+		if (!FD_ISSET(conn->sockfd, &rfd)) {
 			printf("no events, continue\n");
 			continue;
 		}
-		ret = read(sockfd, result, alloc_size);
+		ret = read(conn->sockfd, result, alloc_size);
 		if (ret < 0) {
 			fprintf(stderr,
 				"error %d during read, %ld bytes read\n",
@@ -443,31 +384,40 @@ int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 
 int main(int argc, char **argv)
 {
-	int sockfd, ret;
+	struct etcd_ctx *ctx;
+	struct etcd_conn_ctx *conn;
+	int ret;
 	http_parser *http;
 	http_parser_settings settings;
 	struct http_parser_data data;
+
+	ctx = etcd_init(NULL);
 
 	http = malloc(sizeof(*http));
 	memset(http, 0, sizeof(*http));
 	http_parser_init(http, HTTP_RESPONSE);
 	memset(&settings, 0, sizeof(settings));
-	settings.on_body = parse_http_body;
+	settings.on_body = parse_json;
 	data.body = NULL;
 	data.len = 0;
 	data.tokener = json_tokener_new_ex(10);
 	http->data = &data;
 
-	sockfd = etcd_connect(default_hostname, default_port);
-	if (sockfd < 0)
+	conn = etcd_conn_create(ctx);
+	conn->sockfd = etcd_connect(ctx);
+	if (conn->sockfd < 0) {
+		etcd_conn_delete(conn);
 		return 1;
+	}
 
-	ret = send_watch(sockfd, "nofuse/ports", 17);
+	ret = send_watch(conn, "nofuse/ports", 0);
 	if (ret < 0) {
 		printf("error %d sending watch request\n", ret);
 	} else {
-		ret = recv_http(sockfd, http, &settings);
+		ret = recv_http(conn, http, &settings);
 	}
-	close(sockfd);
+	close(conn->sockfd);
+	etcd_conn_delete(conn);
+	etcd_exit(ctx);
 	return 0;
 }
