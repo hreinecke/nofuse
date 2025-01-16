@@ -8,8 +8,19 @@
 #ifndef _ETCD_CLIENT_H
 #define _ETCD_CLIENT_H
 
+#include <json-c/json.h>
 #include <curl/curl.h>
 #include <curl/easy.h>
+
+typedef void (*etcd_parse_cb)(struct json_object *obj, void *arg);
+
+struct etcd_parse_data {
+	struct json_tokener *tokener;
+	void (*parse_cb)(struct json_object *obj, void *arg);
+	void *parse_arg;
+	char *data;
+	size_t len;
+};
 
 struct etcd_ctx {
 	char *prefix;
