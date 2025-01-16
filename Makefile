@@ -4,7 +4,7 @@ DAEMON_OBJS := daemon.o
 OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o \
 	base64.o tls.o
 
-ETCD_OBJS := etcd_client.o etcd_watch.o etcd_backend.o http_parser.o
+ETCD_OBJS := etcd_watch.o etcd_backend.o http_parser.o
 
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3
 ETCD_LIBS := -ljson-c -lcurl
@@ -15,16 +15,16 @@ OBJS += $(ETCD_OBJS)
 
 all: nofuse portd nvmetd xdp_drop_port.o base64_test watcher_test
 
-nofuse: $(DAEMON_OBJS) $(OBJS)
+nofuse: $(DAEMON_OBJS) etcd_client_curl.o etcd_curl.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-portd: portd.o $(OBJS)
+portd: portd.o etcd_client_curl.o etcd_curl.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-nvmetd: nvmetd.o inotify.o $(OBJS)
+nvmetd: nvmetd.o inotify.o etcd_client_curl.o etcd_curl.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-watcher_test: watcher_test.o etcd_client.o http_parser.o base64.o
+watcher_test: watcher_test.o etcd_client_socket.o etcd_socket.o http_parser.o base64.o
 	$(CC) $(CFLAGS) -o $@ $^ -ljson-c
 
 xdp_drop_port.o: xdp_drop_port.c
@@ -37,6 +37,12 @@ base64_test: base64_test.o base64.o
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 tcp.o: tcp.c common.h utils.h tcp.h tls.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+etcd_client_curl.o: etcd_client.c
+	$(CC) $(CFLAGS) -D_USE_CURL -c -o $@ $<
+
+etcd_client_socket.o: etcd_client.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 firmware.h: gen_firmware_rev.sh

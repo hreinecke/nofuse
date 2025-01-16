@@ -99,7 +99,7 @@ static char *format_hdr(struct etcd_ctx *ctx, char *url, int len)
 	return hdr;
 }
 
-int send_data(int sockfd, const char *data, size_t data_len)
+static int send_data(int sockfd, const char *data, size_t data_len)
 {
 	const char *data_ptr;
 	size_t data_left, len;
@@ -126,54 +126,59 @@ int send_data(int sockfd, const char *data, size_t data_len)
 }
 
 int send_http(int sockfd, char *hdr, size_t hdrlen,
-	      char *post, size_t postlen)
+	      const char *post, size_t postlen)
 {
 	int ret;
 
-	printf("http header (%ld bytes)\n", hdrlen);
+	if (etcd_debug)
+		printf("%s: http header (%ld bytes)\n",
+		       __func__, hdrlen);
 	ret = send_data(sockfd, hdr, hdrlen);
 	if (ret < 0)
 		return ret;
-	printf("http post (%ld bytes)\n", postlen);
+	if (etcd_debug)
+		printf("%s: http post (%ld bytes)\n",
+		       __func__, postlen);
 	ret = send_data(sockfd, post, postlen);
 	return ret;
 }
 
 static int parse_json(http_parser *http, const char *body, size_t len)
 {
-	struct etcd_parse_data *data = http->data;
+	struct etcd_parse_data *arg = http->data;
 	json_object *resp;
 
-	if (data->body) {
+	if (arg->data) {
 		char *tmp;
-		tmp = malloc(data->len + len + 1);
-		memset(tmp, 0, data->len + len + 1);
-		strcpy(tmp, data->body);
-		strcpy(tmp + data->len, body);
-		free(data->body);
-		data->body = tmp;
-		data->len += len;
-		json_tokener_reset(data->tokener);
+		tmp = malloc(arg->len + len + 1);
+		memset(tmp, 0, arg->len + len + 1);
+		strcpy(tmp, arg->data);
+		strcpy(tmp + arg->len, body);
+		free(arg->data);
+		arg->data = tmp;
+		arg->len += len;
+		json_tokener_reset(arg->tokener);
 	} else {
-		data->body = malloc(len + 1);
-		memset(data->body, 0, len + 1);
-		strcpy(data->body, body);
-		data->len = len;
+		arg->data = malloc(len + 1);
+		memset(arg->data, 0, len + 1);
+		strcpy(arg->data, body);
+		arg->len = len;
 	}
-	resp = json_tokener_parse_ex(data->tokener,
-				     data->body, data->len);
+	resp = json_tokener_parse_ex(arg->tokener,
+				     arg->data, arg->len);
 	if (!resp) {
-		if (json_tokener_get_error(data->tokener) ==
+		if (json_tokener_get_error(arg->tokener) ==
 		    json_tokener_continue) {
 			printf("%s: continue after %ld bytes\n%s\n",
-			       __func__, len, data->body);
+			       __func__, len, arg->data);
 			return 0;
 		}
 		printf("%s: invalid response\n'%s'\n",
-		       __func__, data->body);
-		free(data->body);
-		data->body = NULL;
-		data->len = 0;
+		       __func__, arg->data);
+		arg->parse_cb(NULL, arg->parse_arg);
+		free(arg->data);
+		arg->data = NULL;
+		arg->len = 0;
 		return -EBADMSG;
 	}
 
@@ -182,16 +187,16 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		       json_object_to_json_string_ext(resp,
 						      JSON_C_TO_STRING_PRETTY));
 
-	data->parse_cb(resp, data->parse_arg);
+	arg->parse_cb(resp, arg->parse_arg);
 	json_object_put(resp);
-	free(data->body);
-	data->body = NULL;
-	data->len = 0;
+	free(arg->data);
+	arg->data = NULL;
+	arg->len = 0;
 	return 0;
 }
 
-static int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
-		     http_parser_settings *settings)
+int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
+	      http_parser_settings *settings)
 {
 	size_t alloc_size, result_inc = 1024, result_size;
 	char *result;
@@ -204,7 +209,7 @@ static int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 		return -ENOMEM;
 	memset(result, 0, alloc_size);
 
-	while (conn->sockfd > 0) {
+	while (!stopped) {
 		fd_set rfd;
 		struct timeval tmo;
 
@@ -259,58 +264,67 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg)
 {
-	int ret;
-	struct etcd_parse_data parse_data = {
-		.parse_cb = parse_cb,
-		.parse_arg = parse_arg,
-		.body = NULL,
-		.len = 0,
-	};
-	char *post, *uri;
+	struct etcd_parse_data *parse_data;
+	http_parser_settings settings;
+	http_parser *http;
+	const char *post;
+	char *hdr, *uri;
 	size_t postlen;
-
-	parse_data.tokener = json_tokener_new_ex(10);
+	int ret;
 
 	http = malloc(sizeof(*http));
 	memset(http, 0, sizeof(*http));
 	http_parser_init(http, HTTP_RESPONSE);
+	parse_data = malloc(sizeof(*parse_data));
+	memset(parse_data, 0, sizeof(*parse_data));
+	parse_data->parse_cb = parse_cb;
+	parse_data->parse_arg = parse_arg;
+	parse_data->tokener = json_tokener_new_ex(10);
+	http->data = parse_data;
+
 	memset(&settings, 0, sizeof(settings));
 	settings.on_body = parse_json;
-	parse_data.tokener = json_tokener_new_ex(10);
-	http->data = &parse_data;
 
-	conn->sockfd = etcd_socket_connect(ctx);
+	conn->sockfd = etcd_socket_connect(conn->ctx);
 	if (conn->sockfd < 0) {
 		free(http);
 		return -errno;
 	}
 
 	post = json_object_to_json_string_ext(post_obj,
-					      JSON_C_STRING_PRETTY);
+					      JSON_C_TO_STRING_PRETTY);
 	postlen = strlen(post);
 
 	uri = strchr(url, '/');
 	hdr = format_hdr(conn->ctx, uri, postlen);
 	if (!hdr) {
-		free(post);
 		ret = -ENOMEM;
 		goto out;
 	}
 
 	ret = send_http(conn->sockfd, hdr, strlen(hdr), post, postlen);
-	free(post);
 	free(hdr);
 
 	if (ret < 0) {
-		printf("%s: send_http failed with %d\n", errno);
-		return -errno;
+		ret = -errno;
+		goto out;
 	}
 	ret = recv_http(conn, http, &settings);
 out:
 	close(conn->sockfd);
 	conn->sockfd = -1;
 
+	json_tokener_free(parse_data->tokener);
+	free(parse_data);
 	free(http);
-	json_tokener_free(parse_data.tokener);
 	return ret;
+}
+
+int etcd_conn_init(struct etcd_conn_ctx *conn)
+{
+	return 0;
+}
+
+void etcd_conn_exit(struct etcd_conn_ctx *conn)
+{
 }

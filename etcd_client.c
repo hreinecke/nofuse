@@ -13,7 +13,6 @@
 #include <pthread.h>
 #include <json-c/json.h>
 
-#define _USE_CURL
 #include "base64.h"
 
 #include "etcd_client.h"
@@ -81,190 +80,6 @@ void etcd_ev_free(struct etcd_kv_event *ev)
 		ev->num_prev_kvs = 0;
 	}
 	ev->error = 0;
-}
-
-#ifdef _USE_CURL
-int etcd_conn_continue(struct etcd_conn_ctx *conn)
-{
-	struct etcd_ctx *ctx = conn->ctx;
-	int ret = 0, running = 0;
-
-	curl_multi_add_handle(ctx->curlm_ctx, conn->curl_ctx);
-
-	do {
-		CURLMcode merr;
-		int numfds = 0;
-
-		/* wait for activity, timeout or "nothing" */
-		merr = curl_multi_poll(ctx->curlm_ctx,
-				       NULL, 0, 1000,
-				       &numfds);
-		if (merr) {
-			fprintf(stderr,
-				"curl_multi_poll() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		} else if (!numfds) {
-			fprintf(stderr,
-				"curl_multi_poll(), %d transfers pending\n",
-				running);
-			ret = -EAGAIN;
-			break;
-		}
-
-		pthread_mutex_lock(&ctx->conn_mutex);
-		merr = curl_multi_perform(ctx->curlm_ctx, &running);
-		pthread_mutex_unlock(&ctx->conn_mutex);
-		if (merr) {
-			fprintf(stderr, "curl_multi_perform() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		}
-	} while (running);
-
-	curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
-	return ret;
-}
-
-static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
-{
-	struct etcd_ctx *ctx = conn->ctx;
-	int ret = 0, running;
-
-	curl_multi_add_handle(ctx->curlm_ctx, conn->curl_ctx);
-
-	do {
-		CURLMcode merr;
-
-		pthread_mutex_lock(&ctx->conn_mutex);
-		merr = curl_multi_perform(ctx->curlm_ctx, &running);
-		pthread_mutex_unlock(&ctx->conn_mutex);
-		if (merr) {
-			fprintf(stderr, "curl_multi_perform() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		}
-
-		if (running) {
-			int numfds = 0;
-
-			/* wait for activity, timeout or "nothing" */
-			merr = curl_multi_poll(ctx->curlm_ctx,
-					       NULL, 0, 1000,
-					       &numfds);
-			if (merr) {
-				fprintf(stderr,
-					"curl_multi_poll() failed, %s\n",
-					curl_multi_strerror(merr));
-				ret = -EIO;
-				break;
-			} else if (!numfds) {
-				fprintf(stderr,
-					"curl_multi_poll(), %d transfers pending\n", running);
-			}
-		}
-	} while (running);
-
-	curl_multi_remove_handle(ctx->curlm_ctx, conn->curl_ctx);
-	return ret;
-}
-#endif
-
-static size_t
-etcd_parse_response(char *ptr, size_t size, size_t nmemb, void *arg)
-{
-	struct etcd_parse_data *data = arg;
-	struct json_object *resp;
-
-	resp = json_tokener_parse_ex(data->tokener, ptr,
-				     size * nmemb);
-	if (!resp) {
-		if (json_tokener_get_error(data->tokener) == json_tokener_continue) {
-			/* Partial / chunked response; continue */
-			return size * nmemb;
-		}
-		if (etcd_debug)
-			printf("%s: ERROR:\n%s\n", __func__, ptr);
-	} else if (etcd_debug)
-		printf("%s\n%s\n", __func__,
-		       json_object_to_json_string_ext(resp,
-						      JSON_C_TO_STRING_PRETTY));
-
-	data->parse_cb(resp, data->parse_arg);
-	json_object_put(resp);
-	return size * nmemb;
-}
-
-static int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
-			struct json_object *post_obj,
-			etcd_parse_cb parse_cb, void *parse_arg)
-{
-	int ret;
-	struct etcd_parse_data parse_data = {
-		.parse_cb = parse_cb,
-		.parse_arg = parse_arg,
-	};
-
-	parse_data.tokener = json_tokener_new_ex(10);
-
-#ifdef _USE_CURL
-	CURLcode err;
-	const char *post_data;
-
-	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_URL, url);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt url failed, %s\n",
-			curl_easy_strerror(err));
-		return -EINVAL;
-	}
-	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEFUNCTION,
-			       etcd_parse_response);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writefunction failed, %s\n",
-			curl_easy_strerror(err));
-		return -EINVAL;
-	}
-	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEDATA,
-			       &parse_data);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writedata failed, %s\n",
-			curl_easy_strerror(err));
-		return -EINVAL;
-	}
-
-	if (post_obj) {
-		if (etcd_debug)
-			printf("%s: POST %s:\n%s\n", __func__, url,
-			       json_object_to_json_string_ext(post_obj,
-						      JSON_C_TO_STRING_PRETTY));
-
-		post_data = json_object_to_json_string(post_obj);
-		err = curl_easy_setopt(conn->curl_ctx, CURLOPT_POSTFIELDS,
-				       post_data);
-		if (err != CURLE_OK) {
-			fprintf(stderr, "curl setop postfields failed, %s\n",
-				curl_easy_strerror(err));
-			return -EINVAL;
-		}
-
-		err = curl_easy_setopt(conn->curl_ctx, CURLOPT_POSTFIELDSIZE,
-				       strlen(post_data));
-		if (err != CURLE_OK) {
-			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
-				curl_easy_strerror(err));
-			return -EINVAL;
-		}
-	}
-
-	ret = etcd_kv_transfer(conn);
-#else
-	ret = -EOPNOTSUPP;
-#endif
-	json_tokener_free(parse_data.tokener);
-	return ret;
 }
 
 static void
@@ -610,16 +425,6 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	etcd_conn_delete(conn);
 	return ret;
 }
-
-#ifdef _USE_CURL
-void etcd_kv_watch_stop(struct etcd_conn_ctx *ctx)
-{
-	if (ctx->curl_ctx) {
-		curl_easy_cleanup(ctx->curl_ctx);
-		ctx->curl_ctx = NULL;
-	}
-}
-#endif
 
 static void
 etcd_parse_lease_response(struct json_object *etcd_resp, void *arg)
@@ -993,55 +798,6 @@ int etcd_member_id(struct etcd_ctx *ctx)
 	return ret;
 }
 
-#ifdef _USE_CURL
-static CURL *etcd_curl_init(struct etcd_ctx *ctx)
-{
-	CURL *curl;
-	CURLoption opt;
-	CURLcode err;
-	struct curl_slist *headers = NULL;
-
-	curl = curl_easy_init();
-	if (!curl) {
-		fprintf(stderr, "curl easy init failed\n");
-		return NULL;
-	}
-
-	opt = CURLOPT_FOLLOWLOCATION;
-	err = curl_easy_setopt(curl, opt, 1L);
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	opt = CURLOPT_FORBID_REUSE;
-	err = curl_easy_setopt(curl, opt, 1L);
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	opt = CURLOPT_POST;
-	err = curl_easy_setopt(curl, opt, 1L);
-	if (err != CURLE_OK)
-		goto out_err_opt;
-	if (ctx->ttl > 0) {
-		opt = CURLOPT_TIMEOUT;
-		err = curl_easy_setopt(curl, opt, ctx->ttl);
-	}
-	if (err != CURLE_OK)
-		goto out_err_opt;
-
-	headers = curl_slist_append(headers, "Expect:");
-	headers = curl_slist_append(headers, "Content-Type: application/json");
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-	if (curl_debug)
-		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-	return curl;
-
-out_err_opt:
-	fprintf(stderr, "curl setopt %d, error %d: %s\n",
-		opt, err, curl_easy_strerror(err));
-	curl_easy_cleanup(curl);
-	return NULL;
-}
-#endif
-
 struct etcd_ctx *etcd_init(const char *prefix)
 {
 	struct etcd_ctx *ctx;
@@ -1107,14 +863,10 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 	}
 	memset(conn, 0, sizeof(*conn));
 
-#ifdef _USE_CURL
-	conn->curl_ctx = etcd_curl_init(ctx);
-	if (!conn->curl_ctx) {
+	if (etcd_conn_init(conn) < 0) {
 		free(conn);
 		return NULL;
 	}
-	curl_easy_setopt(conn->curl_ctx, CURLOPT_PRIVATE, conn);
-#endif
 	conn->tokener = json_tokener_new_ex(10);
 
 	pthread_mutex_lock(&ctx->conn_mutex);
@@ -1157,12 +909,7 @@ void etcd_conn_delete(struct etcd_conn_ctx *conn)
 	}
 	conn->ctx = NULL;
 	pthread_mutex_unlock(&ctx->conn_mutex);
-#ifdef _USE_CURL
-	if (conn->curl_ctx) {
-		curl_easy_cleanup(conn->curl_ctx);
-		conn->curl_ctx = NULL;
-	}
-#endif
+	etcd_conn_exit(conn);
 	json_tokener_free(conn->tokener);
 	free(conn);
 }

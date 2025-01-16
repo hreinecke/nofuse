@@ -77,9 +77,15 @@ extern bool curl_debug;
 struct etcd_ctx *etcd_init(const char *prefix);
 void etcd_exit(struct etcd_ctx *ctx);
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
+int etcd_conn_init(struct etcd_conn_ctx *conn);
+void etcd_conn_exit(struct etcd_conn_ctx *conn);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
 void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
+
+int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
+		 struct json_object *post_obj,
+		 etcd_parse_cb parse_cb, void *parse_arg);
 
 int etcd_conn_continue(struct etcd_conn_ctx *conn);
 
