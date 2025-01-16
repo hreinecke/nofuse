@@ -38,8 +38,7 @@ int main(int argc, char **argv)
 
 	ctx = etcd_init(NULL);
 	memset(&ev, 0, sizeof(ev));
-	ret = etcd_kv_watch(ctx, "nofuse/ports", 0, 0,
-			    NULL, NULL);
+	ret = etcd_kv_watch(ctx, "nofuse/ports", &ev, 0);
 	etcd_exit(ctx);
 	return ret ? 1 : 0;
 }

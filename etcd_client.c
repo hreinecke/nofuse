@@ -451,7 +451,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		return;
 	}
 	rev_obj = json_object_object_get(header_obj, "revision");
-	if (rev_obj) {
+	if (rev_obj && ev) {
 		ev->ev_revision = json_object_get_int64(rev_obj);
 
 		if (etcd_debug)
@@ -474,9 +474,10 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 	num_kvs = json_object_array_length(event_obj);
 	for (i = 0; i < num_kvs; i++) {
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
-		struct json_object *type_obj, *value_obj;
+		struct json_object *type_obj, *obj;
 		struct etcd_kv kv;
 
+		memset(&kv, 0, sizeof(kv));
 		kvs_obj = json_object_array_get_idx(event_obj, i);
 		type_obj = json_object_object_get(kvs_obj, "type");
 		if (type_obj &&
@@ -489,10 +490,23 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		if (!key_obj)
 			continue;
 		kv.key = __b64dec(json_object_get_string(key_obj));
-		value_obj = json_object_object_get(kv_obj, "value");
-		if (value_obj)
-			kv.value = __b64dec(json_object_get_string(value_obj));
-		ev->watch_cb(ev->watch_arg, &kv);
+		obj = json_object_object_get(kv_obj, "value");
+		if (obj)
+			kv.value = __b64dec(json_object_get_string(obj));
+		obj = json_object_object_get(kv_obj, "create_revision");
+		if (obj)
+			kv.create_revision = json_object_get_int64(obj);
+		obj = json_object_object_get(kv_obj, "mod_revision");
+		if (obj)
+			kv.mod_revision = json_object_get_int64(obj);
+		obj = json_object_object_get(kv_obj, "version");
+		if (obj)
+			kv.version = json_object_get_int64(obj);
+		obj = json_object_object_get(kv_obj, "lease");
+		if (obj)
+			kv.lease = json_object_get_int64(obj);
+		if (ev && ev->watch_cb)
+			ev->watch_cb(ev->watch_arg, &kv);
 		if (kv.value)
 			free(kv.value);
 		free(kv.key);
