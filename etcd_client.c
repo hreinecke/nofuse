@@ -426,10 +426,81 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	return ret;
 }
 
+static void parse_watch_response(struct json_object *resp, void *arg)
+{
+	struct etcd_kv_event *ev = arg;
+	json_object *result_obj, *rev_obj, *header_obj, *event_obj;
+	int num_kvs, i;
+
+	if (!resp)
+		return;
+
+	result_obj = json_object_object_get(resp, "result");
+	if (!result_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'result' not found\n",
+			       __func__);
+		return;
+	}
+
+	header_obj = json_object_object_get(result_obj, "header");
+	if (!header_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'header' not found\n",
+			       __func__);
+		return;
+	}
+	rev_obj = json_object_object_get(header_obj, "revision");
+	if (rev_obj) {
+		ev->ev_revision = json_object_get_int64(rev_obj);
+
+		if (etcd_debug)
+			printf("%s: new revision %ld\n",
+			       __func__, ev->ev_revision);
+	}
+
+	/* 'created' set in response to a 'WatchRequest', no data is pending */
+	if (json_object_object_get(result_obj, "created"))
+		return;
+
+	event_obj = json_object_object_get(result_obj, "events");
+	if (!event_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'events' not found\n",
+			       __func__);
+		return;
+	}
+
+	num_kvs = json_object_array_length(event_obj);
+	for (i = 0; i < num_kvs; i++) {
+		struct json_object *kvs_obj, *kv_obj, *key_obj;
+		struct json_object *type_obj, *value_obj;
+		struct etcd_kv kv;
+
+		kvs_obj = json_object_array_get_idx(event_obj, i);
+		type_obj = json_object_object_get(kvs_obj, "type");
+		if (type_obj &&
+		    strcmp(json_object_get_string(type_obj), "DELETE"))
+			kv.deleted = true;
+		kv_obj = json_object_object_get(kvs_obj, "kv");
+		if (!kv_obj)
+			continue;
+		key_obj = json_object_object_get(kv_obj, "key");
+		if (!key_obj)
+			continue;
+		kv.key = __b64dec(json_object_get_string(key_obj));
+		value_obj = json_object_object_get(kv_obj, "value");
+		if (value_obj)
+			kv.value = __b64dec(json_object_get_string(value_obj));
+		ev->watch_cb(ev->watch_arg, &kv);
+		if (kv.value)
+			free(kv.value);
+		free(kv.key);
+	}
+}
+
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
-		  int64_t revision, int64_t watch_id,
-		  void (*parse_cb)(struct json_object *obj, void *arg),
-		  void *parse_arg)
+		  struct etcd_kv_event *ev, int64_t watch_id)
 {
 	struct etcd_conn_ctx *conn;
 	json_object *post_obj, *req_obj;
@@ -450,16 +521,16 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
-	if (revision > 0)
+	if (ev->ev_revision > 0)
 		json_object_object_add(req_obj, "start_revision",
-				       json_object_new_int64(revision));
+				       json_object_new_int64(ev->ev_revision));
 	if (watch_id > 0)
 		json_object_object_add(req_obj, "watch_id",
 				       json_object_new_int64(watch_id));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(conn, "/v3/watch", post_obj,
-			   parse_cb, parse_arg);
+			   parse_watch_response, ev);
 	if (ret < 0) {
 		printf("error %d executing watch request\n", ret);
 	}
