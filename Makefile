@@ -4,7 +4,7 @@ DAEMON_OBJS := daemon.o
 OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o \
 	base64.o tls.o
 
-ETCD_OBJS := etcd_watch.o etcd_backend.o http_parser.o
+ETCD_OBJS := etcd_backend.o http_parser.o
 
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3
 ETCD_LIBS := -ljson-c -lcurl

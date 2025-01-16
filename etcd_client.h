@@ -118,10 +118,11 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
 int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv **ret_kvs);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
+
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
-		  struct etcd_kv_event *ev, int64_t watch_id);
-int etcd_kv_watch_cancel(struct etcd_conn_ctx *conn, int64_t watch_id);
-void etcd_kv_watch_stop(struct etcd_conn_ctx *conn);
+		  int64_t revision, int64_t watch_id,
+		  void (*parse_cb)(struct json_object *obj, void *arg),
+		  void *parse_arg);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);
 int etcd_lease_keepalive(struct etcd_ctx *ctx);

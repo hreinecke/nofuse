@@ -426,6 +426,51 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	return ret;
 }
 
+int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
+		  int64_t revision, int64_t watch_id,
+		  void (*parse_cb)(struct json_object *obj, void *arg),
+		  void *parse_arg)
+{
+	struct etcd_conn_ctx *conn;
+	json_object *post_obj, *req_obj;
+	char *encoded_key, end, *end_key, *encoded_end;
+	int ret;
+
+	conn = etcd_conn_create(ctx);
+
+	post_obj = json_object_new_object();
+	req_obj = json_object_new_object();
+	encoded_key = __b64enc(key, strlen(key));
+	json_object_object_add(req_obj, "key",
+			       json_object_new_string(encoded_key));
+	end_key = strdup(key);
+	end = end_key[strlen(end_key) - 1];
+	end++;
+	end_key[strlen(end_key) - 1] = end;
+	encoded_end = __b64enc(end_key, strlen(end_key));
+	json_object_object_add(req_obj, "range_end",
+			       json_object_new_string(encoded_end));
+	if (revision > 0)
+		json_object_object_add(req_obj, "start_revision",
+				       json_object_new_int64(revision));
+	if (watch_id > 0)
+		json_object_object_add(req_obj, "watch_id",
+				       json_object_new_int64(watch_id));
+	json_object_object_add(post_obj, "create_request", req_obj);
+
+	ret = etcd_kv_exec(conn, "/v3/watch", post_obj,
+			   parse_cb, parse_arg);
+	if (ret < 0) {
+		printf("error %d executing watch request\n", ret);
+	}
+
+	etcd_conn_delete(conn);
+	free(encoded_key);
+	free(encoded_end);
+	json_object_put(post_obj);
+	return ret;
+}
+
 static void
 etcd_parse_lease_response(struct json_object *etcd_resp, void *arg)
 {

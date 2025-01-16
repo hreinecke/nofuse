@@ -187,7 +187,9 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		       json_object_to_json_string_ext(resp,
 						      JSON_C_TO_STRING_PRETTY));
 
-	arg->parse_cb(resp, arg->parse_arg);
+	if (arg->parse_cb)
+		arg->parse_cb(resp, arg->parse_arg);
+
 	json_object_put(resp);
 	free(arg->data);
 	arg->data = NULL;
