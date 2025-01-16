@@ -239,9 +239,9 @@ static char *watch_format_request(const char *key, int64_t revision,
 	return buf;
 }
 
-char *http_header =
+char http_header[] =
 	"POST /v3/watch HTTP/1.1\r\n"
-	"Host: %s:%s\r\n"
+	"Host: %s:%d\r\n"
 	"Accept: */*\r\n"
 	"Content-Type: application/json\r\n"
 	"Content-Length: %d\r\n\r\n";
@@ -396,6 +396,15 @@ out:
 	return 0;
 }
 
+static int status_watch_response(http_parser *http,
+				 const char *data, size_t len)
+{
+	if (http->status_code != 200)
+		printf("%s: http status code %d, ignoring\n",
+		       __func__, http->status_code);
+	return 0;
+}
+
 int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id)
 {
@@ -409,6 +418,7 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 	http_parser_init(http, HTTP_RESPONSE);
 	memset(&settings, 0, sizeof(settings));
 	settings.on_body = parse_watch_response;
+	settings.on_status = status_watch_response;
 	data.data = NULL;
 	data.size = 0;
 	data.tokener = json_tokener_new_ex(10);
