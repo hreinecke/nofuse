@@ -19,8 +19,8 @@
 
 struct http_parser_data {
 	json_tokener *tokener;
-	char *data;
-	size_t size;
+	char *body;
+	size_t len;
 };
 
 static char *default_hostname = "localhost";
@@ -233,21 +233,43 @@ int parse_http_body(http_parser *http, const char *body, size_t len)
 	int num_kvs, i;
 	char *key, *value;
 
-	etcd_resp = json_tokener_parse_ex(data->tokener, body, len);
+	if (data->body) {
+		char *tmp;
+		tmp = malloc(data->len + len + 1);
+		memset(tmp, 0, data->len + len + 1);
+		strcpy(tmp, data->body);
+		strcpy(tmp + data->len, body);
+		free(data->body);
+		data->body = tmp;
+		data->len += len;
+		json_tokener_reset(data->tokener);
+	} else {
+		data->body = malloc(len + 1);
+		memset(data->body, 0, len + 1);
+		strcpy(data->body, body);
+		data->len = len;
+	}
+	etcd_resp = json_tokener_parse_ex(data->tokener,
+					  data->body, data->len);
 	if (!etcd_resp) {
 		if (json_tokener_get_error(data->tokener) ==
 		    json_tokener_continue) {
-			return len;
+			printf("%s: continue after %ld bytes\n%s\n",
+			       __func__, len, data->body);
+			return 0;
 		}
 		printf("%s: invalid response\n'%s'\n",
-		       __func__, body);
+		       __func__, data->body);
+		free(data->body);
+		data->body = NULL;
+		data->len = 0;
 		return -EBADMSG;
 	}
-#if 0
+
 	printf("http data (%ld bytes)\n%s\n", len,
 	       json_object_to_json_string_ext(etcd_resp,
 					      JSON_C_TO_STRING_PRETTY));
-#endif
+
 	result_obj = json_object_object_get(etcd_resp, "result");
 	if (!result_obj) {
 		printf("%s: invalid response, 'result' not found\n",
@@ -311,13 +333,16 @@ int parse_http_body(http_parser *http, const char *body, size_t len)
 	}
 out:
 	json_object_put(etcd_resp);
+	free(data->body);
+	data->body = NULL;
+	data->len = 0;
 	return 0;
 }
 
 int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 {
-	size_t alloc_size, result_inc = 1024, result_size, data_left;
-	char *result, *data_ptr;
+	size_t alloc_size, result_inc = 1024, result_size;
+	char *result;
 	int ret;
 
 	alloc_size = result_inc;
@@ -325,9 +350,7 @@ int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 	result = malloc(alloc_size);
 	if (!result)
 		return -ENOMEM;
-	data_ptr = result;
-	data_left = result_inc;
-	memset(data_ptr, 0, data_left);
+	memset(result, 0, alloc_size);
 
 	while (sockfd > 0) {
 		fd_set rfd;
@@ -346,7 +369,7 @@ int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 			printf("no events, continue\n");
 			continue;
 		}
-		ret = read(sockfd, data_ptr, data_left);
+		ret = read(sockfd, result, alloc_size);
 		if (ret < 0) {
 			fprintf(stderr,
 				"error %d during read, %ld bytes read\n",
@@ -361,13 +384,20 @@ int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 			break;
 		}
 		result_size = ret;
+		printf("%ld bytes read\n", result_size);
 		ret = http_parser_execute(http, settings,
 					  result, result_size);
+		if (!ret) {
+			printf("No bytes processed\n%s\n",
+				result);
+			break;
+		}
 		if (ret != result_size) {
 			printf("%d from %ld bytes processed\n",
 			       ret, result_size);
 			break;
 		}
+		memset(result, 0, alloc_size);
 	}
 	free(result);
 	return ret;
@@ -387,8 +417,8 @@ int main(int argc, char **argv)
 	http_parser_init(http, HTTP_RESPONSE);
 	memset(&settings, 0, sizeof(settings));
 	settings.on_body = parse_http_body;
-	data.data = NULL;
-	data.size = 0;
+	data.body = NULL;
+	data.len = 0;
 	data.tokener = json_tokener_new_ex(10);
 	http->data = &data;
 
