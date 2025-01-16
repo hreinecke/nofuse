@@ -140,6 +140,66 @@ static int watch_send(int sockfd, const char *data, size_t data_len)
 	return data_left;
 }
 
+int watch_recv(int sockfd, http_parser *http,
+	       http_parser_settings *settings)
+{
+	size_t alloc_size, result_inc = 1024, result_size, data_left;
+	char *result, *data_ptr;
+	int ret;
+
+	alloc_size = result_inc;
+	result_size = 0;
+	result = malloc(alloc_size);
+	if (!result)
+		return -ENOMEM;
+	data_ptr = result;
+	data_left = result_inc;
+	memset(data_ptr, 0, data_left);
+
+	while (!stopped) {
+		fd_set rfd;
+		struct timeval tmo;
+
+		FD_ZERO(&rfd);
+		FD_SET(sockfd, &rfd);
+		tmo.tv_sec = 1;
+		tmo.tv_usec = 0;
+		ret = select(sockfd + 1, &rfd, NULL, NULL, &tmo);
+		if (ret < 0) {
+			fprintf(stderr, "select error %d\n", errno);
+			break;
+		}
+		if (!FD_ISSET(sockfd, &rfd)) {
+			printf("no events, continue\n");
+			continue;
+		}
+		ret = read(sockfd, data_ptr, data_left);
+		if (ret < 0) {
+			fprintf(stderr,
+				"error %d during read, %ld bytes read\n",
+				errno, result_size);
+			ret = -errno;
+			break;
+		}
+		if (ret == 0) {
+			fprintf(stderr,
+				"socket closed during read, %ld bytes read\n",
+				result_size);
+			break;
+		}
+		result_size = ret;
+		ret = http_parser_execute(http, settings,
+					  result, result_size);
+		if (ret != result_size) {
+			printf("%d from %ld bytes processed\n",
+			       ret, result_size);
+			break;
+		}
+	}
+	free(result);
+	return ret;
+}
+
 static char *watch_format_request(const char *key, int64_t revision,
 				  int64_t watch_id)
 {
@@ -309,98 +369,36 @@ static int parse_watch_response(http_parser *http,
 	for (i = 0; i < num_kvs; i++) {
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
 		struct json_object *type_obj, *value_obj;
-		char *key, *value = NULL;
-		bool deleted = false;
+		struct etcd_kv kv;
 
 		kvs_obj = json_object_array_get_idx(event_obj, i);
 		type_obj = json_object_object_get(kvs_obj, "type");
 		if (type_obj &&
 		    strcmp(json_object_get_string(type_obj), "DELETE"))
-			deleted = true;
+			kv.deleted = true;
 		kv_obj = json_object_object_get(kvs_obj, "kv");
 		if (!kv_obj)
 			continue;
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		key = __b64dec(json_object_get_string(key_obj));
+		kv.key = __b64dec(json_object_get_string(key_obj));
 		value_obj = json_object_object_get(kv_obj, "value");
 		if (value_obj)
-			value = __b64dec(json_object_get_string(value_obj));
-		ev->watch_cb(ev->watch_arg, key, value, deleted);
-		if (value)
-			free(value);
-		free(key);
+			kv.value = __b64dec(json_object_get_string(value_obj));
+		ev->watch_cb(ev->watch_arg, &kv);
+		if (kv.value)
+			free(kv.value);
+		free(kv.key);
 	}
 out:
 	json_object_put(etcd_resp);
 	return 0;
 }
 
-int watch_recv_response(int sockfd, http_parser *http,
-			http_parser_settings *settings)
-{
-	size_t alloc_size, result_inc = 1024, result_size, data_left;
-	char *result, *data_ptr;
-	int ret;
-
-	alloc_size = result_inc;
-	result_size = 0;
-	result = malloc(alloc_size);
-	if (!result)
-		return -ENOMEM;
-	data_ptr = result;
-	data_left = result_inc;
-	memset(data_ptr, 0, data_left);
-
-	while (sockfd > 0) {
-		fd_set rfd;
-		struct timeval tmo;
-
-		FD_ZERO(&rfd);
-		FD_SET(sockfd, &rfd);
-		tmo.tv_sec = 1;
-		tmo.tv_usec = 0;
-		ret = select(sockfd + 1, &rfd, NULL, NULL, &tmo);
-		if (ret < 0) {
-			fprintf(stderr, "select error %d\n", errno);
-			break;
-		}
-		if (!FD_ISSET(sockfd, &rfd)) {
-			printf("no events, continue\n");
-			continue;
-		}
-		ret = read(sockfd, data_ptr, data_left);
-		if (ret < 0) {
-			fprintf(stderr,
-				"error %d during read, %ld bytes read\n",
-				errno, result_size);
-			ret = -errno;
-			break;
-		}
-		if (ret == 0) {
-			fprintf(stderr,
-				"socket closed during read, %ld bytes read\n",
-				result_size);
-			break;
-		}
-		result_size = ret;
-		ret = http_parser_execute(http, settings,
-					  result, result_size);
-		if (ret != result_size) {
-			printf("%d from %ld bytes processed\n",
-			       ret, result_size);
-			break;
-		}
-	}
-	free(result);
-	return ret;
-}
-
-int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
+int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id)
 {
-	struct etcd_ctx *ctx = conn->ctx;
 	int sockfd, flags, ret;
 	http_parser *http;
 	http_parser_settings settings;
@@ -425,7 +423,7 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 
 	ret = watch_send_request(sockfd, ctx, key, ev, watch_id);
 	if (ret > 0)
-		ret = watch_recv_response(sockfd, http, &settings);
+		ret = watch_recv(sockfd, http, &settings);
 	close(sockfd);
 
 	free(http);

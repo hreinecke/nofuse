@@ -50,36 +50,31 @@ static char *__b64dec(const char *encoded_str)
 	return str;
 }
 
-void etcd_ev_free(struct etcd_kv_event *ev)
+void etcd_kv_free(struct etcd_kv *kvs, int num_kvs)
 {
 	int i;
 
-	if (ev->kvs) {
-		for (i = 0; i < ev->num_kvs; i++) {
-			struct etcd_kv *kv = &ev->kvs[i];
-			char *key = (char *)kv->key;
-			char *value = (char *)kv->value;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
 
-			if (key)
-				free(key);
-			if (value)
-				free(value);
-		}
+		if (kv->key)
+			free(kv->key);
+		if (kv->value)
+			free(kv->value);
+	}
+	free(kvs);
+}
+
+void etcd_ev_free(struct etcd_kv_event *ev)
+{
+	if (ev->kvs) {
+		etcd_kv_free(ev->kvs, ev->num_kvs);
 		free(ev->kvs);
 		ev->kvs = NULL;
 		ev->num_kvs = 0;
 	}
 	if (ev->prev_kvs) {
-		for (i = 0; i < ev->num_prev_kvs; i++) {
-			struct etcd_kv *kv = &ev->prev_kvs[i];
-			char *key = (char *)kv->key;
-			char *value = (char *)kv->value;
-
-			if (key)
-				free(key);
-			if (value)
-				free(value);
-		}
+		etcd_kv_free(ev->prev_kvs, ev->num_prev_kvs);
 		free(ev->prev_kvs);
 		ev->prev_kvs = NULL;
 		ev->num_prev_kvs = 0;
@@ -456,7 +451,7 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 				break;
 			}
 		}
-		etcd_ev_free(&ev);
+		etcd_kv_free(ev.kvs, ev.num_kvs);
 	}
 
 out_free:

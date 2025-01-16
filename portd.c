@@ -112,14 +112,14 @@ static int parse_port_key(char *key, unsigned int *portid,
 	return 0;
 }
 
-static void update_port(struct etcd_ctx *ctx,
-			 char *key, char *value, bool deleted)
+static void update_port(void *arg, struct etcd_kv *kv)
 {
-	char *attr = NULL, *subsys = NULL;
+	struct etcd_ctx *ctx = arg;
+	char *key, *attr = NULL, *subsys = NULL;
 	unsigned int portid, ana_grpid = 0;
 	int ret;
 
-	key = strdup(key);
+	key = strdup(kv->key);
 	ret = parse_port_key(key, &portid, &attr,
 			     &subsys, &ana_grpid);
 	if (ret < 0) {
@@ -129,9 +129,9 @@ static void update_port(struct etcd_ctx *ctx,
 
 	if (attr) {
 		printf("%s: op %s port %d attr %s\n", __func__,
-		       deleted ? "delete" : "add",
+		       kv->deleted ? "delete" : "add",
 		       portid, attr);
-		if (!deleted)
+		if (!kv->deleted)
 			find_and_add_port(ctx, portid);
 		else if (!strcmp(attr, "addr_traddr"))
 			find_and_del_port(portid);
@@ -141,9 +141,9 @@ static void update_port(struct etcd_ctx *ctx,
 		port = find_port(portid);
 		if (port) {
 			printf("%s port %d subsys %s\n",
-			       deleted ? "start" : "stop",
+			       kv->deleted ? "start" : "stop",
 			       portid, subsys);
-			if (!deleted)
+			if (!kv->deleted)
 				start_port(port);
 			else
 				stop_port(port);
@@ -269,11 +269,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to retrieve port information\n");
 		goto out_free;
 	}
-
 	for (i = 0; i < ret; i++) {
-		update_port(ctx, kvs[i].key, kvs[i].value, false);
+		update_port(ctx, &kvs[i]);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {

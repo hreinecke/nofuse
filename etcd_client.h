@@ -36,8 +36,8 @@ struct etcd_conn_ctx {
 };
 
 struct etcd_kv {
-	const char *key;
-	const char *value;
+	char *key;
+	char *value;
 	int64_t create_revision;
 	int64_t mod_revision;
 	int64_t version;
@@ -55,8 +55,7 @@ struct etcd_kv_event {
 	struct etcd_kv *prev_kvs;
 	int num_prev_kvs;
 	struct json_tokener *tokener;
-	void (*watch_cb)(void *arg, char *key, char *value,
-			 bool deleted);
+	void (*watch_cb)(void *arg, struct etcd_kv *kv);
 	void *watch_arg;
 };
 
@@ -67,6 +66,7 @@ struct etcd_ctx *etcd_init(const char *prefix);
 void etcd_exit(struct etcd_ctx *ctx);
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
+void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
 
 int etcd_conn_continue(struct etcd_conn_ctx *conn);
@@ -77,8 +77,8 @@ static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
 				 const char *value)
 {
 	struct etcd_kv kv = {
-		.key = key,
-		.value = value,
+		.key = (char *)key,
+		.value = (char *)value,
 		.ignore_lease = true,
 	};
 	return etcd_kv_put(ctx, &kv);
@@ -88,8 +88,8 @@ static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 			      const char *value)
 {
 	struct etcd_kv kv = {
-		.key = key,
-		.value = value,
+		.key = (char *)key,
+		.value = (char *)value,
 		.ignore_lease = false,
 		.lease = ctx->lease,
 	};

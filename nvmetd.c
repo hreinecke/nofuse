@@ -60,13 +60,13 @@ static void *signal_handler(void *arg)
 	return NULL;
 }
 
-static void update_nvmetd(void *arg, char *key, char *value, bool deleted)
+static void update_nvmetd(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
 
 	printf("%s: %s key %s value %s\n", __func__,
-	       deleted ? "delete" : "add",
-	       key, value);
+	       kv->deleted ? "delete" : "add",
+	       kv->key, kv->value);
 }
 
 static void *etcd_watcher(void *arg)

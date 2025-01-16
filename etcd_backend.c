@@ -24,7 +24,7 @@ int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 	if (ret < 0)
 		return ret;
 	kv.key = key;
-	kv.value = buf;
+	kv.value = (char *)buf;
 	kv.ignore_lease = false;
 	kv.lease = 0;
 	ret = etcd_kv_put(ctx, &kv);
@@ -60,10 +60,8 @@ static int _count_key_range(struct etcd_ctx *ctx, char *key, int *num)
 
 		if (!strncmp(kv->key, key, strlen(key)))
 			val++;
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	*num = val;
 	return 0;
 }
@@ -101,11 +99,9 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 			if (!strcmp(p, attr))
 				num++;
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
 	printf("%s: root %s %d elements\n", __func__, root, num);
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	*nlinks = num;
 	return 0;
 }
@@ -153,10 +149,8 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 				free(val);
 			}
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	return 0;
 }
 
@@ -465,10 +459,8 @@ int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 				free(val);
 			}
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	return 0;
 }
 
@@ -621,7 +613,7 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type,
 			kv.value = firmware_rev;
 			ret = etcd_kv_put(ctx, &kv);
 		} else {
-			kv.value = kvt->value;
+			kv.value = (char *)kvt->value;
 			ret = etcd_kv_put(ctx, &kv);
 		}
 		free(key);
@@ -746,10 +738,8 @@ int etcd_fill_subsys_port(struct etcd_ctx *ctx, const char *port,
 				num++;
 			}
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	free(key);
 	printf("%s: %d elements\n", __func__, num);
 	return 0;
@@ -837,10 +827,8 @@ int etcd_fill_host_subsys(struct etcd_ctx *ctx, const char *subsysnqn,
 				num++;
 			}
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	free(key);
 	printf("%s: %d elements\n", __func__, num);
 	return 0;
@@ -959,10 +947,8 @@ int etcd_fill_namespace_dir(struct etcd_ctx *ctx, const char *subsysnqn,
 				free(val);
 			}
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	return 0;
 }
 
@@ -1163,10 +1149,8 @@ int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 				ret = 0;
 			}
 		}
-		free((char *)kv->key);
-		free((char *)kv->value);
 	}
-	free(kvs);
+	etcd_kv_free(kvs, ret);
 	return ret;
 }
 
