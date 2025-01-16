@@ -96,7 +96,31 @@ static int etcd_connect(char *hostname, char *port)
 
 	freeaddrinfo(ai);
 
+	if (sockfd > 0) {
+		int flags = fcntl(sockfd, F_GETFL);
+		fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+	}
+
 	return sockfd;
+}
+
+char *http_header =
+	"POST /v3/watch HTTP/1.1\r\n"
+	"Host: %s:%s\r\n"
+	"Accept: */*\r\n"
+	"Content-Type: application/json\r\n"
+	"Content-Length: %d\r\n\r\n";
+
+char *format_hdr(char *host, char *port, int len)
+{
+	char *hdr;
+	int hdrlen;
+
+	hdrlen = asprintf(&hdr, http_header,
+			  host, port, len);
+	if (hdrlen < 0)
+		return NULL;
+	return hdr;
 }
 
 char *format_watch(char *key, int64_t revision, int64_t watch_id)
@@ -158,7 +182,7 @@ char *format_cancel(int64_t watch_id)
 	return buf;
 }
 
-int send_http(int sockfd, const char *data, size_t data_len)
+int send_data(int sockfd, const char *data, size_t data_len)
 {
 	const char *data_ptr;
 	size_t data_left, len;
@@ -170,13 +194,13 @@ int send_http(int sockfd, const char *data, size_t data_len)
 		if (len < 0) {
 			fprintf(stderr, "error %d sending http header\n",
 				errno);
-			break;
+			return -errno;
 		}
 		if (len == 0) {
 			fprintf(stderr,
 				"connection closed, %ld bytes pending\n",
 				data_left);
-			break;
+			return -ENOTCONN;
 		}
 		data_left -= len;
 		data_ptr += len;
@@ -184,46 +208,60 @@ int send_http(int sockfd, const char *data, size_t data_len)
 	return data_left;
 }
 
-char *http_header =
-	"POST /v3/watch HTTP/1.1\r\n"
-	"Host: %s:%s\r\n"
-	"Accept: */*\r\n"
-	"Content-Type: application/json\r\n"
-	"Content-Length: %d\r\n\r\n";
+int send_http(int sockfd, char *hdr, size_t hdrlen,
+	      char *post, size_t postlen)
+{
+	int ret;
+
+	printf("http header (%ld bytes)\n", hdrlen);
+	ret = send_data(sockfd, hdr, hdrlen);
+	if (ret < 0)
+		return ret;
+	printf("http post (%ld bytes)\n", postlen);
+	ret = send_data(sockfd, post, postlen);
+	return ret;
+}
 
 int send_cancel(int sockfd, int64_t watch_id)
 {
 	char *hdr, *post;
 	size_t postlen;
-	int hdrlen, ret;
+	int ret;
 
 	post = format_cancel(watch_id);
 	postlen = strlen(post);
 
-	hdrlen = asprintf(&hdr, http_header,
-		       default_hostname, default_port,
-		       postlen);
-	if (hdrlen < 0) {
+	hdr = format_hdr(default_hostname, default_port, postlen);
+	if (!hdr) {
 		free(post);
 		return -ENOMEM;
 	}
 
-	printf("http header (%d bytes)\n", hdrlen);
-	ret = send_http(sockfd, hdr, hdrlen);
-	free(hdr);
-	if (ret != 0) {
-		printf("error sending http header, %d bytes left\n", ret);
-		free(post);
-		return -errno;
-	}
-	printf("http post (%ld bytes)\n%s\n", postlen, post);
-	ret = send_http(sockfd, post, postlen);
+	ret = send_http(sockfd, hdr, strlen(hdr), post, postlen);
 	free(post);
-	if (ret != 0) {
-		printf("error sending http post, %d bytes left\n", ret);
-		return -errno;
+	free(hdr);
+	return ret;
+}
+
+int send_watch(int sockfd, char *key, int64_t watch_id)
+{
+	char *hdr, *post;
+	size_t postlen;
+	int ret;
+
+	post = format_watch(key, 0, watch_id);
+	postlen = strlen(post);
+
+	hdr = format_hdr(default_hostname, default_port, postlen);
+	if (!hdr) {
+		free(post);
+		return -ENOMEM;
 	}
-	return 0;
+
+	ret = send_http(sockfd, hdr, strlen(hdr), post, postlen);
+	free(post);
+	free(hdr);
+	return ret;
 }
 
 int parse_http_body(http_parser *http, const char *body, size_t len)
@@ -405,9 +443,7 @@ int recv_http(int sockfd, http_parser *http, http_parser_settings *settings)
 
 int main(int argc, char **argv)
 {
-	int sockfd, flags, ret, hdrlen;
-	size_t postlen;
-	char *hdr, *post;
+	int sockfd, ret;
 	http_parser *http;
 	http_parser_settings settings;
 	struct http_parser_data data;
@@ -426,38 +462,12 @@ int main(int argc, char **argv)
 	if (sockfd < 0)
 		return 1;
 
-	flags = fcntl(sockfd, F_GETFL);
-	fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
-
-	post = format_watch("nofuse/ports", 0, 17);
-	postlen = strlen(post);
-
-	hdrlen = asprintf(&hdr, http_header,
-		       default_hostname, default_port,
-		       postlen);
-	if (hdrlen < 0) {
-		free(post);
-		return 1;
+	ret = send_watch(sockfd, "nofuse/ports", 17);
+	if (ret < 0) {
+		printf("error %d sending watch request\n", ret);
+	} else {
+		ret = recv_http(sockfd, http, &settings);
 	}
-
-	printf("sending http header (%d bytes)\n", hdrlen);
-	ret = send_http(sockfd, hdr, hdrlen);
-	free(hdr);
-	if (ret != 0) {
-		printf("error sending http header, %d bytes left\n", ret);
-		free(post);
-		close(sockfd);
-		return 1;
-	}
-	printf("http post (%ld bytes)\n%s\n", postlen, post);
-	ret = send_http(sockfd, post, postlen);
-	free(post);
-	if (ret != 0) {
-		printf("error sending http post, %d bytes left\n", ret);
-		close(sockfd);
-		return 1;
-	}
-	ret = recv_http(sockfd, http, &settings);
 	close(sockfd);
 	return 0;
 }
