@@ -209,7 +209,10 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 
 		FD_ZERO(&rfd);
 		FD_SET(conn->sockfd, &rfd);
-		tmo.tv_sec = 1;
+		if (conn->ctx->ttl > 0)
+			tmo.tv_sec = conn->ctx->ttl / 2;
+		else
+			tmo.tv_sec = 1;
 		tmo.tv_usec = 0;
 		ret = select(conn->sockfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
