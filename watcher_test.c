@@ -27,7 +27,7 @@ struct http_parser_data {
 };
 
 bool etcd_debug = true;
-
+bool curl_debug = true;
 int stopped = 0;
 
 int main(int argc, char **argv)

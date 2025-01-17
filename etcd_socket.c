@@ -27,6 +27,8 @@
 #include "common.h"
 #include "etcd_client.h"
 
+extern bool curl_debug;
+
 static int etcd_socket_connect(struct etcd_ctx *ctx)
 {
 	char port[16];
@@ -123,13 +125,13 @@ int send_http(int sockfd, char *hdr, size_t hdrlen,
 {
 	int ret;
 
-	if (etcd_debug)
+	if (curl_debug)
 		printf("%s: http header (%ld bytes)\n%s\n",
 		       __func__, hdrlen, hdr);
 	ret = send_data(sockfd, hdr, hdrlen);
 	if (ret < 0)
 		return ret;
-	if (etcd_debug)
+	if (curl_debug)
 		printf("%s: http post (%ld bytes)\n%s\n",
 		       __func__, postlen, post);
 	ret = send_data(sockfd, post, postlen);
@@ -162,8 +164,9 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 	if (!resp) {
 		if (json_tokener_get_error(arg->tokener) ==
 		    json_tokener_continue) {
-			printf("%s: continue after %ld bytes\n%s\n",
-			       __func__, len, arg->data);
+			if (curl_debug)
+				printf("%s: continue after %ld bytes\n%s\n",
+				       __func__, len, arg->data);
 			return 0;
 		}
 		printf("%s: invalid response\n'%s'\n",
@@ -175,7 +178,7 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		return -EBADMSG;
 	}
 
-	if (etcd_debug)
+	if (curl_debug)
 		printf("http data (%ld bytes)\n%s\n", len,
 		       json_object_to_json_string_ext(resp,
 						      JSON_C_TO_STRING_PRETTY));
@@ -216,34 +219,38 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 		tmo.tv_usec = 0;
 		ret = select(conn->sockfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
-			fprintf(stderr, "select error %d\n", errno);
+			fprintf(stderr, "%s: select error %d\n",
+				__func__, errno);
 			break;
 		}
 		if (!FD_ISSET(conn->sockfd, &rfd)) {
-			printf("no events, continue\n");
+			if (curl_debug)
+				printf("%s: no events, continue\n", __func__);
 			continue;
 		}
 		ret = read(conn->sockfd, result, alloc_size);
 		if (ret < 0) {
 			fprintf(stderr,
-				"error %d during read, %ld bytes read\n",
-				errno, result_size);
+				"%s: error %d during read, %ld bytes read\n",
+				__func__, errno, result_size);
 			ret = -errno;
 			break;
 		}
 		if (ret == 0) {
 			fprintf(stderr,
-				"socket closed during read, %ld bytes read\n",
-				result_size);
+				"%s: socket closed during read, %ld bytes read\n",
+				__func__, result_size);
 			break;
 		}
 		result_size = ret;
-		printf("%ld bytes read\n%s\n", result_size, result);
+		if (curl_debug)
+			printf("%s: %ld bytes read\n%s\n",
+			       __func__, result_size, result);
 		ret = http_parser_execute(http, settings,
 					  result, result_size);
 		if (!ret) {
-			printf("No bytes processed\n%s\n",
-				result);
+			printf("%s: No bytes processed\n%s\n",
+			       __func__, result);
 			break;
 		}
 		if (result_size < alloc_size)

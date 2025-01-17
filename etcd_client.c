@@ -650,7 +650,7 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 	int ret;
 
 	if (!ctx->lease) {
-		fprintf(stderr, "%s: no lease granted\n", __func__);
+		printf("%s: no lease granted\n", __func__);
 		return -ENOKEY;
 	}
 	ev.kvs = malloc(sizeof(struct etcd_kv));
@@ -692,7 +692,7 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 	int ret;
 
 	if (!ctx->lease) {
-		fprintf(stderr, "%s: no lease granted\n", __func__);
+		printf("%s: no lease granted\n", __func__);
 		return -ENOKEY;
 	}
 	memset(&ev, 0, sizeof(ev));
@@ -753,7 +753,7 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	int ret;
 
 	if (!ctx->lease) {
-		fprintf(stderr, "%s: no lease granted\n", __func__);
+		printf("%s: no lease granted\n", __func__);
 		return -ENOKEY;
 	}
 
