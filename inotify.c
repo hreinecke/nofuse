@@ -358,8 +358,8 @@ static int update_value(struct watcher_ctx *ctx,
 		sprintf(key, "%s/%s", ctx->etcd->prefix, p);
 	}
 	if (inotify_debug)
-		printf("%s: %s key %s value '%s'\n", __func__,
-		       t, key, value);
+		printf("%s: %s %s key %s value '%s'\n", __func__,
+		       create ? "create" : "update", t, key, value);
 	if (ret > 0) {
 		if (create)
 			ret = etcd_kv_new(ctx->etcd, key, value);

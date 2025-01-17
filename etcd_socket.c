@@ -56,14 +56,9 @@ static int etcd_socket_connect(struct etcd_ctx *ctx)
 			fprintf(stderr, "socket error %d\n", errno);
 			continue;
 		}
-		if (connect(sockfd, aip->ai_addr, aip->ai_addrlen) == 0) {
-			const char *fam = "IPv4";
-
-			if (aip->ai_family == AF_INET6)
-				fam = "IPv6";
-
+		if (connect(sockfd, aip->ai_addr, aip->ai_addrlen) == 0)
 			break;
-		}
+
 		close(sockfd);
 		sockfd = -ENOTCONN;
 	}

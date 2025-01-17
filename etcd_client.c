@@ -941,9 +941,7 @@ int etcd_member_id(struct etcd_ctx *ctx)
 struct etcd_ctx *etcd_init(const char *prefix)
 {
 	struct etcd_ctx *ctx;
-#ifdef _USE_CURL
 	int ret;
-#endif
 
 	ctx = malloc(sizeof(struct etcd_ctx));
 	if (!ctx) {
@@ -966,13 +964,13 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
 #ifdef _USE_CURL
 	ctx->curlm_ctx = curl_multi_init();
+#endif
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
 		etcd_exit(ctx);
 		errno = -ret;
 		return NULL;
 	}
-#endif
 	return ctx;
 }
 
