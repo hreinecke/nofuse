@@ -17,7 +17,7 @@ OBJS += $(ETCD_OBJS)
 
 all: nofuse portd nvmetd xdp_drop_port.o base64_test watcher_test
 
-nofuse: $(DAEMON_OBJS) $(CURL_OBJS) $(OBJS)
+nofuse: $(DAEMON_OBJS) $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 portd: portd.o $(CURL_OBJS) $(OBJS)
