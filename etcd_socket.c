@@ -171,7 +171,8 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		}
 		printf("%s: invalid response\n'%s'\n",
 		       __func__, arg->data);
-		arg->parse_cb(NULL, arg->parse_arg);
+		if (arg->parse_cb)
+			arg->parse_cb(NULL, arg->parse_arg);
 		free(arg->data);
 		arg->data = NULL;
 		arg->len = 0;
@@ -198,7 +199,10 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 {
 	ssize_t result_size;
 	char *result = conn->recv_buf;
-	int ret;
+	int ret = 0;
+
+	if (!result)
+		return -EINVAL;
 
 	memset(result, 0, conn->recv_len);
 
@@ -269,7 +273,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 	const char *post;
 	char *hdr;
 	size_t postlen;
-	int ret;
+	int ret = 0;
 
 	if (!http || !http->data) {
 		fprintf(stderr, "%s: connection not initialized\n", __func__);
@@ -299,6 +303,9 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 	ret = recv_http(conn, http, &settings);
 	if (ret > 0)
 		ret = 0;
+
+	parse_data->parse_cb = NULL;
+	parse_data->parse_arg = NULL;
 
 	return ret;
 }
