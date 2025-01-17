@@ -631,6 +631,8 @@ etcd_parse_keepalive_response(struct json_object *etcd_resp, void *arg)
 	if (!ttl_obj) {
 		printf("%s: lease expired\n", __func__);
 		ev->error = -EKEYEXPIRED;
+	} else if (ev->num_kvs) {
+		ev->kvs->ttl = json_object_get_int64(ttl_obj);
 	}
 }
 
@@ -648,6 +650,7 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 	ev.kvs = malloc(sizeof(struct etcd_kv));
 	if (!ev.kvs)
 		return -ENOMEM;
+	memset(ev.kvs, 0, sizeof(struct etcd_kv));
 	ev.num_kvs = 1;
 	ev.kvs->lease = ctx->lease;
 
@@ -668,6 +671,10 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 	if (!ret) {
 		if (ev.error < 0) {
 			ret = ev.error;
+		} else if (ev.kvs->ttl != ctx->ttl) {
+			printf("%s: ttl update to %ld\n",
+			       __func__, ev.kvs->ttl);
+			ctx->ttl = ev.kvs->ttl;
 		}
 	}
 	json_object_put(post_obj);
