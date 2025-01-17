@@ -132,10 +132,11 @@ etcd_parse_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	return size * nmemb;
 }
 
-int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
+int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg)
 {
+	char *url;
 	CURLcode err;
 	const char *post_data;
 	int ret;
@@ -144,12 +145,19 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		.parse_arg = parse_arg,
 	};
 
+	ret = asprintf(&url, "%s://%s:%u/%s\n",
+		       conn->ctx->proto, conn->ctx->host,
+		       conn->ctx->port, uri);
+	if (ret < 0)
+		return -ENOMEM;
+
 	parse_data.tokener = json_tokener_new_ex(10);
 
 	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt url failed, %s\n",
 			curl_easy_strerror(err));
+		free(url);
 		return -EINVAL;
 	}
 	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEFUNCTION,
@@ -157,6 +165,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s\n",
 			curl_easy_strerror(err));
+		free(url);
 		return -EINVAL;
 	}
 	err = curl_easy_setopt(conn->curl_ctx, CURLOPT_WRITEDATA,
@@ -164,6 +173,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writedata failed, %s\n",
 			curl_easy_strerror(err));
+		free(url);
 		return -EINVAL;
 	}
 
@@ -179,6 +189,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfields failed, %s\n",
 				curl_easy_strerror(err));
+			free(url);
 			return -EINVAL;
 		}
 
@@ -187,12 +198,14 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
 				curl_easy_strerror(err));
+			free(url);
 			return -EINVAL;
 		}
 	}
 
 	ret = etcd_kv_transfer(conn);
 	json_tokener_free(parse_data.tokener);
+	free(url);
 	return ret;
 }
 

@@ -254,7 +254,7 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 	return ret;
 }
 
-int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
+int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg)
 {
@@ -262,7 +262,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 	http_parser_settings settings;
 	http_parser *http;
 	const char *post;
-	char *hdr, *uri;
+	char *hdr;
 	size_t postlen;
 	int ret;
 
@@ -289,13 +289,6 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 					      JSON_C_TO_STRING_PLAIN);
 	postlen = strlen(post);
 
-	if (!strncmp(url, "https://", 8)) {
-		uri = strchr(url + 9, '/');
-	} else if (!strncmp(url, "http://", 7)) {
-		uri = strchr(url + 8, '/');
-	} else {
-		uri = url;
-	}
 	hdr = format_hdr(conn->ctx, uri, postlen);
 	if (!hdr) {
 		ret = -ENOMEM;

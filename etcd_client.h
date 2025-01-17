@@ -83,7 +83,7 @@ void etcd_conn_delete(struct etcd_conn_ctx *ctx);
 void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
 
-int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
+int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg);
 

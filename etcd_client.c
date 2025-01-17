@@ -116,7 +116,6 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
 	char *encoded_value = NULL;
@@ -125,10 +124,6 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		return -ENOMEM;
-	ret = asprintf(&url, "%s://%s:%u/v3/kv/put",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0)
-		return ret;
 
 	memset(&ev, 0, sizeof(ev));
 	ev.ev_revision = -1;
@@ -149,7 +144,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		json_object_object_add(post_obj, "lease",
 				       json_object_new_int64(kv->lease));
 	}
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/kv/put", post_obj,
 			   etcd_parse_set_response, &ev);
 	if (!ret) {
 		if (ev.error < 0)
@@ -240,7 +235,6 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
 	int ret, i;
@@ -252,19 +246,12 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	memset(&ev, 0, sizeof(ev));
 	ev.tokener = conn->tokener;
 
-	ret = asprintf(&url, "%s://%s:%u/v3/kv/range",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		return -ENOMEM;
-	}
-
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
 			   etcd_parse_kvs_response, &ev);
 	if (ret)
 		goto out_free;
@@ -292,7 +279,6 @@ out_free:
 	free(encoded_key);
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
-	free(url);
 	return ret;
 }
 
@@ -301,7 +287,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL, end;
 	char *encoded_range = NULL, *range;
@@ -313,14 +298,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 
 	memset(&ev, 0, sizeof(ev));
 	ev.tokener = conn->tokener;
-
-	ret = asprintf(&url, "%s://%s:%u/v3/kv/range",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		*ret_kvs = NULL;
-		return -ENOMEM;
-	}
 
 	post_obj = json_object_new_object();
 	range = strdup(key);
@@ -334,7 +311,7 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
 			   etcd_parse_kvs_response, &ev);
 	if (!ret) {
 		ret = ev.error;
@@ -348,7 +325,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
-	free(url);
 	etcd_conn_delete(conn);
 	return ret;
 }
@@ -382,7 +358,6 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL, *end_key, *encoded_end, end;
 	int ret;
@@ -392,13 +367,6 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		return -ENOMEM;
-
-	ret = asprintf(&url, "%s://%s:%u/v3/kv/deleterange",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		return ret;
-	}
 
 	end_key = strdup(key);
 	end = key[strlen(key) - 1];
@@ -414,7 +382,7 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	json_object_object_add(post_obj, "prev_kv",
 			       json_object_new_boolean(true));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/kv/deleterange", post_obj,
 			   etcd_parse_delete_response, &ev);
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
@@ -518,19 +486,12 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 {
 	struct etcd_conn_ctx *conn;
 	json_object *post_obj, *req_obj;
-	char *url, *encoded_key, end, *end_key, *encoded_end;
+	char *encoded_key, end, *end_key, *encoded_end;
 	int ret;
 
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		return -ENOMEM;
-
-	ret = asprintf(&url, "%s://%s:%u/v3/watch",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		return ret;
-	}
 
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
@@ -552,7 +513,7 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 				       json_object_new_int64(watch_id));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/watch", post_obj,
 			   parse_watch_response, ev);
 	if (ret < 0) {
 		printf("error %d executing watch request\n", ret);
@@ -562,7 +523,6 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 	free(encoded_key);
 	free(encoded_end);
 	json_object_put(post_obj);
-	free(url);
 	return ret < 0 ? ret : 0;
 }
 
@@ -598,7 +558,6 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj;
 	int ret;
 
@@ -614,21 +573,13 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 		return -ENOMEM;
 	}
 
-	ret = asprintf(&url, "%s://%s:%u/v3/lease/grant",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		free(ev.kvs);
-		return -ENOMEM;
-	}
-
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(0));
 	json_object_object_add(post_obj, "TTL",
 			       json_object_new_int(ctx->ttl));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/lease/grant", post_obj,
 			   etcd_parse_lease_response, &ev);
 	if (!ret) {
 		if (ev.error < 0) {
@@ -695,7 +646,6 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj;
 	int ret;
 
@@ -715,21 +665,13 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 		return -ENOMEM;
 	}
 
-	ret = asprintf(&url, "%s://%s:%u/v3/lease/keepalive",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		free(ev.kvs);
-		return -ENOMEM;
-	}
-
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
 	json_object_object_add(post_obj, "TTL",
 			       json_object_new_int(ctx->ttl));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/lease/keepalive", post_obj,
 			   etcd_parse_keepalive_response, &ev);
 	if (!ret) {
 		if (ev.error < 0) {
@@ -737,7 +679,6 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 		}
 	}
 	json_object_put(post_obj);
-	free(url);
 	etcd_conn_delete(conn);
 	free(ev.kvs);
 	return ret;
@@ -747,7 +688,6 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj;
 	int ret;
 
@@ -764,18 +704,11 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 	if (!conn)
 		return -ENOMEM;
 
-	ret = asprintf(&url, "%s://%s:%u/v3/lease/timetolive",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		return -ENOMEM;
-	}
-
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/lease/timetolive", post_obj,
 			   etcd_parse_keepalive_response, &ev);
 	if (!ret) {
 		if (ev.error < 0) {
@@ -784,7 +717,6 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 	}
 
 	json_object_put(post_obj);
-	free(url);
 	free(ev.kvs);
 	etcd_conn_delete(conn);
 	return ret;
@@ -817,7 +749,6 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *url;
 	struct json_object *post_obj;
 	int ret;
 
@@ -832,17 +763,10 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	if (!conn)
 		return -ENOMEM;
 
-	ret = asprintf(&url, "%s://%s:%u/v3/lease/revoke",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		return ret;
-	}
-
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/lease/revoke", post_obj,
 			   etcd_parse_revoke_response, &ev);
 	if (!ret && ev.error < 0)
 		ret = ev.error;
@@ -850,7 +774,6 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	if (!ret)
 		ctx->lease = 0;
 	json_object_put(post_obj);
-	free(url);
 	etcd_conn_delete(conn);
 	return ret;
 }
@@ -925,30 +848,21 @@ int etcd_member_id(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 	struct json_object *post_obj;
-	char *url;
 	int ret;
 
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		return -ENOMEM;
 
-	ret = asprintf(&url, "%s://%s:%u/v3/cluster/member/list",
-		       ctx->proto, ctx->host, ctx->port);
-	if (ret < 0) {
-		etcd_conn_delete(conn);
-		return ret;
-	}
-
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "linearizable",
 			       json_object_new_boolean(true));
 
-	ret = etcd_kv_exec(conn, url, post_obj,
+	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
 			   etcd_parse_member_response, ctx);
 	if (!ret && !ctx->node_name)
 		ret = -ENOENT;
 	json_object_put(post_obj);
-	free(url);
 	etcd_conn_delete(conn);
 	return ret;
 }
