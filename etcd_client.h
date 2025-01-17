@@ -41,8 +41,6 @@ struct etcd_conn_ctx {
 	struct etcd_ctx *ctx;
 	struct etcd_conn_ctx *next;
 	int sockfd;
-	char *recv_buf;
-	size_t recv_len;
 	void *priv;
 	int64_t revision;
 	int64_t watch_id;
