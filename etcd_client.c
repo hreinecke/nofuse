@@ -699,6 +699,10 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 	struct json_object *post_obj;
 	int ret;
 
+	if (!ctx->lease) {
+		fprintf(stderr, "%s: no lease granted\n", __func__);
+		return -ENOKEY;
+	}
 	ev.kvs = malloc(sizeof(struct etcd_kv));
 	if (!ev.kvs)
 		return -ENOMEM;
@@ -747,6 +751,10 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 	struct json_object *post_obj;
 	int ret;
 
+	if (!ctx->lease) {
+		fprintf(stderr, "%s: no lease granted\n", __func__);
+		return -ENOKEY;
+	}
 	memset(&ev, 0, sizeof(ev));
 	ev.kvs = malloc(sizeof(struct etcd_kv));
 	ev.num_kvs = 1;
@@ -813,6 +821,11 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	struct json_object *post_obj;
 	int ret;
 
+	if (!ctx->lease) {
+		fprintf(stderr, "%s: no lease granted\n", __func__);
+		return -ENOKEY;
+	}
+
 	memset(&ev, 0, sizeof(ev));
 
 	conn = etcd_conn_create(ctx);
@@ -834,6 +847,8 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	if (!ret && ev.error < 0)
 		ret = ev.error;
 
+	if (!ret)
+		ctx->lease = 0;
 	json_object_put(post_obj);
 	free(url);
 	etcd_conn_delete(conn);
