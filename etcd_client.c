@@ -518,10 +518,19 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 {
 	struct etcd_conn_ctx *conn;
 	json_object *post_obj, *req_obj;
-	char *encoded_key, end, *end_key, *encoded_end;
+	char *url, *encoded_key, end, *end_key, *encoded_end;
 	int ret;
 
 	conn = etcd_conn_create(ctx);
+	if (!conn)
+		return -ENOMEM;
+
+	ret = asprintf(&url, "%s://%s:%u/v3/watch",
+		       ctx->proto, ctx->host, ctx->port);
+	if (ret < 0) {
+		etcd_conn_delete(conn);
+		return ret;
+	}
 
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
@@ -543,7 +552,7 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 				       json_object_new_int64(watch_id));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
-	ret = etcd_kv_exec(conn, "/v3/watch", post_obj,
+	ret = etcd_kv_exec(conn, url, post_obj,
 			   parse_watch_response, ev);
 	if (ret < 0) {
 		printf("error %d executing watch request\n", ret);
@@ -553,7 +562,8 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 	free(encoded_key);
 	free(encoded_end);
 	json_object_put(post_obj);
-	return ret;
+	free(url);
+	return ret < 0 ? ret : 0;
 }
 
 static void

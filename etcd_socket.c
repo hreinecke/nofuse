@@ -62,8 +62,6 @@ static int etcd_socket_connect(struct etcd_ctx *ctx)
 			if (aip->ai_family == AF_INET6)
 				fam = "IPv6";
 
-			printf("connected to %s:%d with %s\n",
-			       ctx->host, ctx->port, fam);
 			break;
 		}
 		close(sockfd);
@@ -87,12 +85,12 @@ char *http_header =
 	"Content-Type: application/json\r\n"
 	"Content-Length: %d\r\n\r\n";
 
-static char *format_hdr(struct etcd_ctx *ctx, char *url, int len)
+static char *format_hdr(struct etcd_ctx *ctx, char *uri, int len)
 {
 	char *hdr;
 	int hdrlen;
 
-	hdrlen = asprintf(&hdr, http_header, url,
+	hdrlen = asprintf(&hdr, http_header, uri,
 			  ctx->host, ctx->port, len);
 	if (hdrlen < 0)
 		return NULL;
@@ -131,14 +129,14 @@ int send_http(int sockfd, char *hdr, size_t hdrlen,
 	int ret;
 
 	if (etcd_debug)
-		printf("%s: http header (%ld bytes)\n",
-		       __func__, hdrlen);
+		printf("%s: http header (%ld bytes)\n%s\n",
+		       __func__, hdrlen, hdr);
 	ret = send_data(sockfd, hdr, hdrlen);
 	if (ret < 0)
 		return ret;
 	if (etcd_debug)
-		printf("%s: http post (%ld bytes)\n",
-		       __func__, postlen);
+		printf("%s: http post (%ld bytes)\n%s\n",
+		       __func__, postlen, post);
 	ret = send_data(sockfd, post, postlen);
 	return ret;
 }
@@ -200,11 +198,10 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 	      http_parser_settings *settings)
 {
-	size_t alloc_size, result_inc = 1024, result_size;
+	size_t alloc_size = 1024, result_size;
 	char *result;
 	int ret;
 
-	alloc_size = result_inc;
 	result_size = 0;
 	result = malloc(alloc_size);
 	if (!result)
@@ -243,7 +240,7 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 			break;
 		}
 		result_size = ret;
-		printf("%ld bytes read\n", result_size);
+		printf("%ld bytes read\n%s\n", result_size, result);
 		ret = http_parser_execute(http, settings,
 					  result, result_size);
 		if (!ret) {
@@ -251,11 +248,8 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 				result);
 			break;
 		}
-		if (ret != result_size) {
-			printf("%d from %ld bytes processed\n",
-			       ret, result_size);
+		if (result_size < alloc_size)
 			break;
-		}
 		memset(result, 0, alloc_size);
 	}
 	free(result);
@@ -294,10 +288,16 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *url,
 	}
 
 	post = json_object_to_json_string_ext(post_obj,
-					      JSON_C_TO_STRING_PRETTY);
+					      JSON_C_TO_STRING_PLAIN);
 	postlen = strlen(post);
 
-	uri = strchr(url, '/');
+	if (!strncmp(url, "https://", 8)) {
+		uri = strchr(url + 9, '/');
+	} else if (!strncmp(url, "http://", 7)) {
+		uri = strchr(url + 8, '/');
+	} else {
+		uri = url;
+	}
 	hdr = format_hdr(conn->ctx, uri, postlen);
 	if (!hdr) {
 		ret = -ENOMEM;

@@ -21,7 +21,7 @@ nofuse: $(DAEMON_OBJS) etcd_client_curl.o etcd_curl.o $(OBJS)
 portd: portd.o etcd_client_curl.o etcd_curl.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-nvmetd: nvmetd.o inotify.o etcd_client_curl.o etcd_curl.o $(OBJS)
+nvmetd: nvmetd.o inotify.o etcd_client_socket.o etcd_socket.o $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 watcher_test: watcher_test.o etcd_client_socket.o etcd_socket.o http_parser.o base64.o
