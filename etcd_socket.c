@@ -143,12 +143,17 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 	struct etcd_parse_data *arg = http->data;
 	json_object *resp;
 
+	if (!len) {
+		if (curl_debug)
+			printf("%s: no data to parse\n", __func__);
+		return 0;
+	}
 	if (arg->data) {
 		char *tmp;
 		tmp = malloc(arg->len + len + 1);
 		memset(tmp, 0, arg->len + len + 1);
 		strcpy(tmp, arg->data);
-		strcpy(tmp + arg->len, body);
+		memcpy(tmp + arg->len, body, len);
 		free(arg->data);
 		arg->data = tmp;
 		arg->len += len;
@@ -156,7 +161,7 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 	} else {
 		arg->data = malloc(len + 1);
 		memset(arg->data, 0, len + 1);
-		strcpy(arg->data, body);
+		memcpy(arg->data, body, len);
 		arg->len = len;
 	}
 	resp = json_tokener_parse_ex(arg->tokener,
