@@ -69,24 +69,49 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 	       kv->key, kv->value);
 }
 
+static void delete_conn(void *arg)
+{
+	struct etcd_conn_ctx *conn = arg;
+
+	etcd_conn_delete(conn);
+}
+
 static void *etcd_watcher(void *arg)
 {
 	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	int64_t start_revision = 0;
 	int ret;
 
 	memset(&ev, 0, sizeof(ev));
 
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		goto out;
+
+	pthread_cleanup_push(delete_conn, conn);
+
 	ev.ev_revision = start_revision;
 	ev.watch_cb = update_nvmetd;
 	ev.watch_arg = ctx;
-	ret = etcd_kv_watch(ctx, ctx->prefix, &ev, pthread_self());
-	if (ret) {
+
+	ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
+	if (ret < 0) {
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
+		goto out_cleanup_pop;
+	}
+	while (!stopped) {
+		ret = etcd_conn_continue(conn);
+		if (ret < 0 && ret != -EAGAIN)
+			break;
 	}
 
+out_cleanup_pop:
+	pthread_cleanup_pop(1);
+
+out:
 	pthread_exit(NULL);
 	return NULL;
 }
@@ -161,7 +186,7 @@ int main(int argc, char **argv)
 			etcd_debug = true;
 			port_debug = true;
 			ep_debug = true;
-			inotify_debug = true;
+			curl_debug = true;
 			break;
 		case '?':
 			usage();

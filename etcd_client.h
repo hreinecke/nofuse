@@ -41,10 +41,11 @@ struct etcd_conn_ctx {
 	struct etcd_ctx *ctx;
 	struct etcd_conn_ctx *next;
 	int sockfd;
-	CURL *curl_ctx;
+	char *recv_buf;
+	size_t recv_len;
+	void *priv;
 	int64_t revision;
 	int64_t watch_id;
-	struct json_tokener *tokener;
 };
 
 struct etcd_kv {
@@ -66,7 +67,6 @@ struct etcd_kv_event {
 	int num_kvs;
 	struct etcd_kv *prev_kvs;
 	int num_prev_kvs;
-	struct json_tokener *tokener;
 	void (*watch_cb)(void *arg, struct etcd_kv *kv);
 	void *watch_arg;
 };
@@ -119,7 +119,7 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv **ret_kvs);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 
-int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
+int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);

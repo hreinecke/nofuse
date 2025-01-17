@@ -20,12 +20,6 @@
 #include "common.h"
 #include "etcd_client.h"
 
-struct http_parser_data {
-	json_tokener *tokener;
-	char *body;
-	size_t len;
-};
-
 bool etcd_debug = true;
 bool curl_debug = true;
 int stopped = 0;
@@ -33,12 +27,24 @@ int stopped = 0;
 int main(int argc, char **argv)
 {
 	struct etcd_ctx *ctx;
+	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	int ret;
 
 	ctx = etcd_init(NULL);
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		return 1;
+
 	memset(&ev, 0, sizeof(ev));
-	ret = etcd_kv_watch(ctx, "nofuse/ports", &ev, 0);
+	ret = etcd_kv_watch(conn, "nofuse/ports", &ev, 0);
+
+	while (ret >= 0) {
+		ret = etcd_conn_continue(conn);
+		if (ret < 0 && ret != -EAGAIN)
+			break;
+	}
+	etcd_conn_delete(conn);
 	etcd_exit(ctx);
 	return ret ? 1 : 0;
 }

@@ -196,15 +196,11 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 	      http_parser_settings *settings)
 {
-	size_t alloc_size = 1024, result_size;
-	char *result;
+	ssize_t result_size;
+	char *result = conn->recv_buf;
 	int ret;
 
-	result_size = 0;
-	result = malloc(alloc_size);
-	if (!result)
-		return -ENOMEM;
-	memset(result, 0, alloc_size);
+	memset(result, 0, conn->recv_len);
 
 	while (!stopped) {
 		fd_set rfd;
@@ -228,36 +224,38 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 				printf("%s: no events, continue\n", __func__);
 			continue;
 		}
-		ret = read(conn->sockfd, result, alloc_size);
-		if (ret < 0) {
+		result_size = read(conn->sockfd, result, conn->recv_len);
+		if (result_size < 0) {
 			fprintf(stderr,
-				"%s: error %d during read, %ld bytes read\n",
-				__func__, errno, result_size);
+				"%s: error %d during read\n",
+				__func__, errno);
 			ret = -errno;
 			break;
 		}
-		if (ret == 0) {
+		if (result_size == 0) {
 			fprintf(stderr,
-				"%s: socket closed during read, %ld bytes read\n",
-				__func__, result_size);
+				"%s: socket closed during read\n",
+				__func__);
+			ret = -ENOTCONN;
 			break;
 		}
-		result_size = ret;
 		if (curl_debug)
 			printf("%s: %ld bytes read\n%s\n",
 			       __func__, result_size, result);
 		ret = http_parser_execute(http, settings,
 					  result, result_size);
 		if (!ret) {
-			printf("%s: No bytes processed\n%s\n",
-			       __func__, result);
+			printf("%s: No bytes processed, error %d\n%s\n",
+			       __func__, http->http_errno, result);
+			ret = -http->http_errno;
 			break;
 		}
-		if (result_size < alloc_size)
+		if (result_size < conn->recv_len) {
+			ret = result_size;
 			break;
-		memset(result, 0, alloc_size);
+		}
+		memset(result, 0, conn->recv_len);
 	}
-	free(result);
 	return ret;
 }
 
@@ -267,64 +265,121 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 {
 	struct etcd_parse_data *parse_data;
 	http_parser_settings settings;
-	http_parser *http;
+	http_parser *http = conn->priv;
 	const char *post;
 	char *hdr;
 	size_t postlen;
 	int ret;
 
-	http = malloc(sizeof(*http));
-	memset(http, 0, sizeof(*http));
-	http_parser_init(http, HTTP_RESPONSE);
-	parse_data = malloc(sizeof(*parse_data));
-	memset(parse_data, 0, sizeof(*parse_data));
+	if (!http || !http->data) {
+		fprintf(stderr, "%s: connection not initialized\n", __func__);
+		return -EINVAL;
+	}
+	parse_data = http->data;
 	parse_data->parse_cb = parse_cb;
 	parse_data->parse_arg = parse_arg;
-	parse_data->tokener = json_tokener_new_ex(10);
-	http->data = parse_data;
 
 	memset(&settings, 0, sizeof(settings));
 	settings.on_body = parse_json;
-
-	conn->sockfd = etcd_socket_connect(conn->ctx);
-	if (conn->sockfd < 0) {
-		free(http);
-		return -errno;
-	}
 
 	post = json_object_to_json_string_ext(post_obj,
 					      JSON_C_TO_STRING_PLAIN);
 	postlen = strlen(post);
 
 	hdr = format_hdr(conn->ctx, uri, postlen);
-	if (!hdr) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!hdr)
+		return -ENOMEM;
 
 	ret = send_http(conn->sockfd, hdr, strlen(hdr), post, postlen);
 	free(hdr);
 
 	if (ret < 0) {
-		ret = -errno;
-		goto out;
+		return -errno;
 	}
 	ret = recv_http(conn, http, &settings);
-out:
-	close(conn->sockfd);
-	conn->sockfd = -1;
+	if (ret > 0)
+		ret = 0;
 
-	json_tokener_free(parse_data->tokener);
-	free(parse_data);
-	free(http);
 	return ret;
+}
+
+int etcd_conn_continue(struct etcd_conn_ctx *conn)
+{
+	http_parser_settings settings;
+
+	memset(&settings, 0, sizeof(settings));
+	settings.on_body = parse_json;
+
+	return recv_http(conn, conn->priv, &settings);
 }
 
 int etcd_conn_init(struct etcd_conn_ctx *conn)
 {
+	struct etcd_parse_data *parse_data;
+	http_parser *http;
+
+	conn->sockfd = etcd_socket_connect(conn->ctx);
+	if (conn->sockfd < 0) {
+		fprintf(stderr, "%s: failed to connect, error %d\n",
+			__func__, errno);
+		return -errno;
+	}
+
+	conn->recv_len = 1024;
+	conn->recv_buf = malloc(conn->recv_len);
+	if (!conn->recv_buf) {
+		conn->recv_len = 0;
+		goto out_close;
+	}
+
+	http = malloc(sizeof(*http));
+	if (!http)
+		goto out_free;
+
+	memset(http, 0, sizeof(*http));
+	http_parser_init(http, HTTP_RESPONSE);
+	parse_data = malloc(sizeof(*parse_data));
+	if (!parse_data) {
+		free(http);
+		goto out_free;
+	}
+	memset(parse_data, 0, sizeof(*parse_data));
+	parse_data->tokener = json_tokener_new_ex(10);
+	http->data = parse_data;
+	conn->priv = http;
+
 	return 0;
+out_free:
+	free(conn->recv_buf);
+	conn->recv_buf = NULL;
+	conn->recv_len = 0;
+out_close:
+	close(conn->sockfd);
+	conn->sockfd = -1;
+	return -ENOMEM;
 }
 
 void etcd_conn_exit(struct etcd_conn_ctx *conn)
 {
+	http_parser *http = conn->priv;
+	struct etcd_parse_data *parse_data;
+
+	if (http) {
+		if (http->data) {
+			parse_data = http->data;
+			json_tokener_free(parse_data->tokener);
+			free(parse_data);
+			http->data = NULL;
+		}
+		free(http);
+	}
+	if (conn->recv_buf) {
+		free(conn->recv_buf);
+		conn->recv_buf = NULL;
+		conn->recv_len = 0;
+	}
+	if (conn->sockfd > 0) {
+		close(conn->sockfd);
+		conn->sockfd = -1;
+	}
 }

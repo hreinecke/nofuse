@@ -244,7 +244,6 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 		return -ENOMEM;
 
 	memset(&ev, 0, sizeof(ev));
-	ev.tokener = conn->tokener;
 
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
@@ -297,7 +296,6 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		return -ENOMEM;
 
 	memset(&ev, 0, sizeof(ev));
-	ev.tokener = conn->tokener;
 
 	post_obj = json_object_new_object();
 	range = strdup(key);
@@ -481,17 +479,12 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 	}
 }
 
-int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
+int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id)
 {
-	struct etcd_conn_ctx *conn;
 	json_object *post_obj, *req_obj;
 	char *encoded_key, end, *end_key, *encoded_end;
 	int ret;
-
-	conn = etcd_conn_create(ctx);
-	if (!conn)
-		return -ENOMEM;
 
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
@@ -519,7 +512,6 @@ int etcd_kv_watch(struct etcd_ctx *ctx, const char *key,
 		printf("error %d executing watch request\n", ret);
 	}
 
-	etcd_conn_delete(conn);
 	free(encoded_key);
 	free(encoded_end);
 	json_object_put(post_obj);
@@ -929,15 +921,14 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 		return NULL;
 	}
 	memset(conn, 0, sizeof(*conn));
+	conn->ctx = ctx;
 
 	if (etcd_conn_init(conn) < 0) {
 		free(conn);
 		return NULL;
 	}
-	conn->tokener = json_tokener_new_ex(10);
 
 	pthread_mutex_lock(&ctx->conn_mutex);
-	conn->ctx = ctx;
 	if (!ctx->conn)
 		ctx->conn = conn;
 	else {
@@ -974,9 +965,7 @@ void etcd_conn_delete(struct etcd_conn_ctx *conn)
 			}
 		}
 	}
-	conn->ctx = NULL;
 	pthread_mutex_unlock(&ctx->conn_mutex);
 	etcd_conn_exit(conn);
-	json_tokener_free(conn->tokener);
 	free(conn);
 }

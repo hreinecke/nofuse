@@ -158,7 +158,7 @@ static void update_port(void *arg, struct etcd_kv *kv)
 
 static void *etcd_watcher(void *arg)
 {
-	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn = arg;
 	struct etcd_kv_event ev;
 	char *prefix;
 	int64_t start_revision = 0;
@@ -166,17 +166,23 @@ static void *etcd_watcher(void *arg)
 
 	memset(&ev, 0, sizeof(ev));
 
-	ret = asprintf(&prefix, "%s/ports", ctx->prefix);
+	ret = asprintf(&prefix, "%s/ports", conn->ctx->prefix);
 	if (ret < 0)
 		return NULL;
 
 	ev.ev_revision = start_revision;
 	ev.watch_cb = update_port;
-	ev.watch_arg = ctx;
-	ret = etcd_kv_watch(ctx, prefix, &ev, pthread_self());
+	ev.watch_arg = conn->ctx;
+	ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
 	if (ret) {
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
+	} else {
+		while (!stopped) {
+			ret = etcd_conn_continue(conn);
+			if (ret < 0 && ret != -EAGAIN)
+				break;
+		}
 	}
 
 	free(prefix);
@@ -212,6 +218,7 @@ int main(int argc, char **argv)
 	char c;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
+	struct etcd_conn_ctx *conn;
 	char *prefix;
 	int ret = 0, i;
 
@@ -274,12 +281,16 @@ int main(int argc, char **argv)
 	}
 	etcd_kv_free(kvs, ret);
 
-	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		goto out_cleanup;
+
+	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, conn);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_cleanup;
+		goto out_conn;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -293,6 +304,8 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
+out_conn:
+	etcd_conn_delete(conn);
 out_cleanup:
 	cleanup_ports();
 out_free:
