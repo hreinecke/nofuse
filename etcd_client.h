@@ -9,8 +9,10 @@
 #define _ETCD_CLIENT_H
 
 #include <json-c/json.h>
+#ifdef _USE_CURL
 #include <curl/curl.h>
 #include <curl/easy.h>
+#endif
 
 typedef void (*etcd_parse_cb)(struct json_object *obj, void *arg);
 
@@ -32,7 +34,9 @@ struct etcd_ctx {
 	bool tls;
 	int64_t lease;
 	int ttl;
+#ifdef _USE_CURL
 	CURLM *curlm_ctx;
+#endif
 	pthread_mutex_t conn_mutex;
 	struct etcd_conn_ctx *conn;
 };

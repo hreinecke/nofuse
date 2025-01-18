@@ -9,7 +9,7 @@ CURL_OBJS := etcd_client_curl.o etcd_curl.o
 SOCKET_OBJS := etcd_client_socket.o etcd_socket.o
 
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3
-ETCD_LIBS := -ljson-c -lcurl
+ETCD_LIBS := -ljson-c
 
 DAEMON_OBJS += fuse_etcd.o
 LIBS += $(ETCD_LIBS)
@@ -20,14 +20,14 @@ all: nofuse portd nvmetd xdp_drop_port.o base64_test watcher_test
 nofuse: $(DAEMON_OBJS) $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-portd: portd.o $(CURL_OBJS) $(OBJS)
+portd: portd.o $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 nvmetd: nvmetd.o inotify.o $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 watcher_test: watcher_test.o $(SOCKET_OBJS) http_parser.o base64.o
-	$(CC) $(CFLAGS) -o $@ $^ -ljson-c
+	$(CC) $(CFLAGS) -o $@ $^ $(ETCD_LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@

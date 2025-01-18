@@ -782,25 +782,31 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 {
 	struct json_object *hdr_obj, *mbs_obj;
 	struct etcd_ctx *ctx = arg;
-	char default_url[PATH_MAX];
-	int i;
+	char *default_url;
+	int i, ret;
 
 	if (!etcd_resp)
 		return;
 
-	sprintf(default_url, "%s://%s:%d",
-		ctx->proto, ctx->host, ctx->port);
+	ret = asprintf(&default_url, "%s://%s:%d",
+		       ctx->proto, ctx->host, ctx->port);
+	if (ret < 0) {
+		printf("%s: out of memory\n", __func__);
+		return;
+	}
 
 	hdr_obj = json_object_object_get(etcd_resp, "header");
 	if (!hdr_obj) {
 		printf("%s: invalid response, 'header' not found\n",
 		       __func__);
+		free(default_url);
 		return;
 	}
 	mbs_obj = json_object_object_get(etcd_resp, "members");
 	if (!mbs_obj) {
 		printf("%s: invalid response, 'members' not found\n",
 		       __func__);
+		free(default_url);
 		return;
 	}
 
@@ -841,6 +847,7 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 			}
 		}
 	}
+	free(default_url);
 }
 
 int etcd_member_id(struct etcd_ctx *ctx)
