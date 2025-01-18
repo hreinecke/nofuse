@@ -21,7 +21,7 @@
 #include "etcd_client.h"
 
 bool etcd_debug = true;
-bool curl_debug = true;
+bool http_debug = true;
 int stopped = 0;
 
 int main(int argc, char **argv)

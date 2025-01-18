@@ -74,7 +74,7 @@ struct etcd_kv_event {
 };
 
 extern bool etcd_debug;
-extern bool curl_debug;
+extern bool http_debug;
 
 struct etcd_ctx *etcd_init(const char *prefix);
 void etcd_exit(struct etcd_ctx *ctx);

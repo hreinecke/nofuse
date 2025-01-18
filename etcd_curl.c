@@ -17,8 +17,6 @@
 
 #include "etcd_client.h"
 
-extern bool curl_debug;
-
 int etcd_conn_continue(struct etcd_conn_ctx *conn)
 {
 	struct etcd_ctx *ctx = conn->ctx;
@@ -251,7 +249,7 @@ int etcd_conn_init(struct etcd_conn_ctx *conn)
 
 	curl_easy_setopt(curl_ctx, CURLOPT_PRIVATE, conn);
 
-	if (curl_debug)
+	if (http_debug)
 		curl_easy_setopt(curl_ctx, CURLOPT_VERBOSE, 1L);
 
 	conn->priv = curl_ctx;

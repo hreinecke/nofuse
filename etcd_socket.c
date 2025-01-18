@@ -24,10 +24,7 @@
 #include "http_parser.h"
 #include "base64.h"
 
-#include "common.h"
 #include "etcd_client.h"
-
-extern bool curl_debug;
 
 static int etcd_socket_connect(struct etcd_ctx *ctx)
 {
@@ -125,13 +122,13 @@ int send_http(int sockfd, char *hdr, size_t hdrlen,
 {
 	int ret;
 
-	if (curl_debug)
+	if (http_debug)
 		printf("%s: http header (%ld bytes)\n%s\n",
 		       __func__, hdrlen, hdr);
 	ret = send_data(sockfd, hdr, hdrlen);
 	if (ret < 0)
 		return ret;
-	if (curl_debug)
+	if (http_debug)
 		printf("%s: http post (%ld bytes)\n%s\n",
 		       __func__, postlen, post);
 	ret = send_data(sockfd, post, postlen);
@@ -144,7 +141,7 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 	json_object *resp;
 
 	if (!len) {
-		if (curl_debug)
+		if (http_debug)
 			printf("%s: no data to parse\n", __func__);
 		return 0;
 	}
@@ -169,7 +166,7 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 	if (!resp) {
 		if (json_tokener_get_error(arg->tokener) ==
 		    json_tokener_continue) {
-			if (curl_debug)
+			if (http_debug)
 				printf("%s: continue after %ld bytes\n%s\n",
 				       __func__, len, arg->data);
 			return 0;
@@ -184,7 +181,7 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		return -EBADMSG;
 	}
 
-	if (curl_debug)
+	if (http_debug)
 		printf("http data (%ld bytes)\n%s\n", len,
 		       json_object_to_json_string_ext(resp,
 						      JSON_C_TO_STRING_PRETTY));
@@ -211,7 +208,7 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 		return -ENOMEM;
 	memset(result, 0, alloc_size);
 
-	while (!stopped) {
+	while (true) {
 		fd_set rfd;
 		struct timeval tmo;
 
@@ -229,7 +226,7 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 			break;
 		}
 		if (!FD_ISSET(conn->sockfd, &rfd)) {
-			if (curl_debug)
+			if (http_debug)
 				printf("%s: no events, continue\n", __func__);
 			continue;
 		}
@@ -248,7 +245,7 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 			break;
 		}
 		result_size = ret;
-		if (curl_debug)
+		if (http_debug)
 			printf("%s: %ld bytes read\n%s\n",
 			       __func__, result_size, result);
 		ret = http_parser_execute(http, settings,

@@ -22,7 +22,7 @@
 
 bool fuse_debug;
 bool etcd_debug;
-bool curl_debug;
+bool http_debug;
 
 const char hosts_dir[] = "hosts";
 const char ports_dir[] = "ports";
@@ -1175,14 +1175,14 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
-			sprintf(buf, "%ctcp,%ccmd,%cep,%cport,%cfuse,%cetcd,%ccurl",
+			sprintf(buf, "%ctcp,%ccmd,%cep,%cport,%cfuse,%cetcd,%chttp",
 				tcp_debug ? '+' : '-',
 				cmd_debug ? '+' : '-',
 				ep_debug ? '+' : '-',
 				port_debug ? '+' : '-',
 				fuse_debug ? '+' : '-',
 				etcd_debug ? '+' : '-',
-				curl_debug ? '+' : '-');
+				http_debug ? '+' : '-');
 		} else
 			goto out_free;
 	} else if (!strcmp(root, ports_dir)) {
@@ -1421,8 +1421,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				fuse_debug = enable;
 			} else if (!strcmp(level, "etcd")) {
 				etcd_debug = enable;
-			} else if (!strcmp(level, "curl")) {
-				curl_debug = enable;
+			} else if (!strcmp(level, "http")) {
+				http_debug = enable;
 			} else {
 				ret = -EINVAL;
 				goto out_free;

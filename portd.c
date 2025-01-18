@@ -22,7 +22,7 @@ bool cmd_debug;
 bool port_debug;
 bool tcp_debug;
 bool etcd_debug;
-bool curl_debug;
+bool http_debug;
 
 int stopped = 0;
 sigset_t mask;

@@ -4,12 +4,13 @@ DAEMON_OBJS := daemon.o
 OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o \
 	base64.o tls.o
 
-ETCD_OBJS := etcd_backend.o http_parser.o
+ETCD_OBJS := etcd_backend.o
 CURL_OBJS := etcd_client_curl.o etcd_curl.o
-SOCKET_OBJS := etcd_client_socket.o etcd_socket.o
+SOCKET_OBJS := etcd_client_socket.o etcd_socket.o http_parser.o
 
 LIBS := -luring -lpthread -luuid -lcrypto -lssl -lz -lkeyutils -lfuse3
 ETCD_LIBS := -ljson-c
+CURL_LIBS := -lcurl
 
 DAEMON_OBJS += fuse_etcd.o
 LIBS += $(ETCD_LIBS)
