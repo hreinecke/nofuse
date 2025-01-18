@@ -215,7 +215,7 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 		FD_ZERO(&rfd);
 		FD_SET(conn->sockfd, &rfd);
 		if (conn->ctx->ttl > 0)
-			tmo.tv_sec = conn->ctx->ttl / 2;
+			tmo.tv_sec = conn->ctx->ttl;
 		else
 			tmo.tv_sec = 1;
 		tmo.tv_usec = 0;
@@ -227,8 +227,9 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 		}
 		if (!FD_ISSET(conn->sockfd, &rfd)) {
 			if (http_debug)
-				printf("%s: no events, continue\n", __func__);
-			continue;
+				printf("%s: no events\n", __func__);
+			ret = -ENODATA;
+			break;
 		}
 		ret = read(conn->sockfd, result, alloc_size);
 		if (ret < 0) {
