@@ -331,8 +331,8 @@ static void
 etcd_parse_delete_response (struct json_object *etcd_resp, void *arg)
 {
 	struct etcd_kv_event *ev = arg;
-	struct json_object *deleted_obj;
-	int deleted = 0;
+	struct json_object *deleted_obj, *kvs_obj;
+	int deleted = 0, i;
 
 	if (!etcd_resp) {
 		ev->error = -EBADMSG;
@@ -349,6 +349,18 @@ etcd_parse_delete_response (struct json_object *etcd_resp, void *arg)
 		printf("%s: delete key failed, key not deleted\n",
 		       __func__);
 		ev->error = -EKEYREJECTED;
+	}
+	kvs_obj = json_object_object_get(etcd_resp, "prev_kvs");
+	for (i = 0; i < deleted; i++) {
+		struct json_object *kv_obj, *key_obj;
+
+		kv_obj = json_object_array_get_idx(kvs_obj, i);
+		key_obj = json_object_object_get(kv_obj, "key");
+		if (key_obj) {
+			char *key = __b64dec(json_object_get_string(key_obj));
+			printf("%s: deleted %s\n", __func__, key);
+			free(key);
+		}
 	}
 }
 
