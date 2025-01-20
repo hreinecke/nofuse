@@ -16,18 +16,13 @@ struct key_value_template {
 
 int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 {
-	struct etcd_kv kv;
 	char *key;
 	int ret;
 
 	ret = asprintf(&key, "%s/discovery_nqn", ctx->prefix);
 	if (ret < 0)
 		return ret;
-	kv.key = key;
-	kv.value = (char *)buf;
-	kv.ignore_lease = false;
-	kv.lease = 0;
-	ret = etcd_kv_put(ctx, &kv);
+	ret = etcd_kv_store(ctx, key, buf);
 	free(key);
 	return ret;
 }
@@ -584,37 +579,28 @@ int etcd_fill_subsys(struct etcd_ctx *ctx, const char *subsys,
 	return 0;
 }
 
-int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type,
-		    bool permanent)
+int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
 {
 	int ret, i;
 
 	for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
 		struct key_value_template *kvt = &subsys_template[i];
-		struct etcd_kv kv;
 		char *key;
 
 		ret = asprintf(&key, "%s/subsystems/%s/%s",
 			       ctx->prefix, nqn, kvt->key);
 		if (ret < 0)
 			return ret;
-		kv.key = key;
-		kv.ignore_lease = false;
-		if (permanent)
-			kv.lease = 0;
-		else
-			kv.lease = ctx->lease;
+
 		if (!strcmp(kvt->key, "attr_type")) {
 			char type_str[3];
 
 			sprintf(type_str, "%d", type);
-			ret = etcd_kv_new(ctx, key, type_str);
+			ret = etcd_kv_store(ctx, key, type_str);
 		} else if (!strcmp(kvt->key, "attr_firmware")) {
-			kv.value = firmware_rev;
-			ret = etcd_kv_put(ctx, &kv);
+			ret = etcd_kv_store(ctx, key, firmware_rev);
 		} else {
-			kv.value = (char *)kvt->value;
-			ret = etcd_kv_put(ctx, &kv);
+			ret = etcd_kv_store(ctx, key, kvt->value);
 		}
 		free(key);
 		if (ret < 0)

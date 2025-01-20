@@ -113,6 +113,22 @@ static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 		.ignore_lease = false,
 		.lease = ctx->lease,
 	};
+	if (!ctx->lease) {
+		if (etcd_debug)
+			printf("%s: no lease\n", __func__);
+		return -EINVAL;
+	}
+	return etcd_kv_put(ctx, &kv);
+}
+
+static inline int etcd_kv_store(struct etcd_ctx *ctx, const char *key,
+				const char *value)
+{
+	struct etcd_kv kv = {
+		.key = (char *)key,
+		.value = (char *)value,
+		.ignore_lease = false,
+	};
 	return etcd_kv_put(ctx, &kv);
 }
 
