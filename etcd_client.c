@@ -468,7 +468,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		kvs_obj = json_object_array_get_idx(event_obj, i);
 		type_obj = json_object_object_get(kvs_obj, "type");
 		if (type_obj &&
-		    strcmp(json_object_get_string(type_obj), "DELETE"))
+		    !strcmp(json_object_get_string(type_obj), "DELETE"))
 			kv.deleted = true;
 		kv_obj = json_object_object_get(kvs_obj, "kv");
 		if (!kv_obj)
