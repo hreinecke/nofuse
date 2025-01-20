@@ -595,6 +595,7 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 			   etcd_parse_lease_response, &ev);
 	if (!ret) {
 		if (ev.error < 0) {
+			fprintf(stderr, "lease error %d\n", ret);
 			ret = ev.error;
 		} else if (!ev.kvs->lease) {
 			fprintf(stderr, "no lease has been granted\n");
@@ -608,6 +609,8 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 			printf("Granted lease %ld ttl %d\n",
 			       ctx->lease, ctx->ttl);
 		}
+	} else {
+		fprintf(stderr, "etcd lease call failed with %d\n", ret);
 	}
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);

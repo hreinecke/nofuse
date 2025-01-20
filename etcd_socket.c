@@ -338,7 +338,7 @@ int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
 	free(parse_data->uri);
 	parse_data->uri = NULL;
 
-	return ret;
+	return ret < 0 ? ret : 0;
 }
 
 int etcd_conn_init(struct etcd_conn_ctx *conn)
