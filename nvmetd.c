@@ -97,7 +97,7 @@ static void *etcd_watcher(void *arg)
 	ev.watch_cb = update_nvmetd;
 	ev.watch_arg = ctx;
 
-	ret = etcd_kv_watch(conn, "nofuse/", &ev, pthread_self());
+	ret = etcd_kv_watch(conn, "nofuse/", &ev, 0);
 	if (ret < 0) {
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
@@ -138,12 +138,14 @@ int main(int argc, char **argv)
 		{"ssl", no_argument, 0, 's'},
 		{"key_prefix", required_argument, 0, 'k'},
 		{"verbose", no_argument, 0, 'v'},
+		{"--no-watcher", no_argument, 0, 'w'},
 		{"help", no_argument, 0, '?'},
 	};
 	pthread_t inotify_thr;
 	pthread_t watcher_thr;
 	pthread_t signal_thr;
 	sigset_t oldmask;
+	bool disable_watcher = false;
 	struct watcher_ctx *ctx;
 	int ret = 0, getopt_ind;
 	char c;
@@ -170,7 +172,7 @@ int main(int argc, char **argv)
 		goto out_close;
 	}
 	ctx->etcd->ttl = 10;
-	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
+	while ((c = getopt_long(argc, argv, "ae:p:h:sv?w",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'e':
@@ -191,6 +193,9 @@ int main(int argc, char **argv)
 			port_debug = true;
 			ep_debug = true;
 			inotify_debug = true;
+			break;
+		case 'w':
+			disable_watcher = true;
 			break;
 		case '?':
 			usage();
@@ -230,12 +235,15 @@ int main(int argc, char **argv)
 		goto out_cancel_signal;
 	}
 
-	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx->etcd);
-	if (ret) {
-		watcher_thr = 0;
-		fprintf(stderr, "failed to start etcd watcher, error %d\n",
-			ret);
-		goto out_cancel_inotify;
+	if (!disable_watcher) {
+		ret = pthread_create(&watcher_thr, NULL,
+				     etcd_watcher, ctx->etcd);
+		if (ret) {
+			watcher_thr = 0;
+			fprintf(stderr, "failed to start etcd watcher, error %d\n",
+				ret);
+			goto out_cancel_inotify;
+		}
 	}
 
 	pthread_mutex_lock(&lock);
@@ -243,10 +251,12 @@ int main(int argc, char **argv)
 		pthread_cond_wait(&wait, &lock);
 	pthread_mutex_unlock(&lock);
 
-	printf("cancelling watcher\n");
-	pthread_cancel(watcher_thr);
-	printf("waiting for watcher to terminate\n");
-	pthread_join(watcher_thr, NULL);
+	if (!disable_watcher) {
+		printf("cancelling watcher\n");
+		pthread_cancel(watcher_thr);
+		printf("waiting for watcher to terminate\n");
+		pthread_join(watcher_thr, NULL);
+	}
 
 out_cancel_inotify:
 	printf("cancelling inotify loop\n");
