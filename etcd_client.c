@@ -639,6 +639,8 @@ etcd_parse_keepalive_response(struct json_object *etcd_resp, void *arg)
 	int64_t lease;
 
 	if (!etcd_resp) {
+		printf("%s: keepalive failed, not valid json response\n",
+		       __func__);
 		ev->error = -EBADMSG;
 		return;
 	}
@@ -682,6 +684,7 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 		printf("%s: no lease granted\n", __func__);
 		return -ENOKEY;
 	}
+	memset(&ev, 0, sizeof(ev));
 	ev.kvs = malloc(sizeof(struct etcd_kv));
 	if (!ev.kvs)
 		return -ENOMEM;
@@ -705,13 +708,16 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 			   etcd_parse_keepalive_response, &ev);
 	if (!ret) {
 		if (ev.error < 0) {
+			printf("%s: etcd error %d\n", __func__, ev.error);
 			ret = ev.error;
 		} else if (ev.kvs->ttl != ctx->ttl) {
 			printf("%s: ttl update to %ld\n",
 			       __func__, ev.kvs->ttl);
 			ctx->ttl = ev.kvs->ttl;
 		}
-	}
+	} else
+		printf("%s: etcd_kv_exec error %d\n", __func__, ret);
+
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
 	free(ev.kvs);
