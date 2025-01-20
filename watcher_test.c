@@ -24,6 +24,15 @@ bool etcd_debug = true;
 bool http_debug = true;
 int stopped = 0;
 
+static void update_nvmetd(void *arg, struct etcd_kv *kv)
+{
+	struct etcd_ctx *ctx = arg;
+
+	printf("%s: %s key %s value %s\n", __func__,
+	       kv->deleted ? "delete" : "add",
+	       kv->key, kv->value);
+}
+
 int main(int argc, char **argv)
 {
 	struct etcd_ctx *ctx;
@@ -37,6 +46,8 @@ int main(int argc, char **argv)
 		return 1;
 
 	memset(&ev, 0, sizeof(ev));
+	ev.watch_cb = update_nvmetd;
+
 	ret = etcd_kv_watch(conn, "nofuse/ports", &ev, 0);
 
 	while (ret >= 0) {
