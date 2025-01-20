@@ -112,6 +112,7 @@ static void *keepalive_loop(void *arg)
 			break;
 		sleep(ctx->etcd->ttl / 2);
 	}
+	printf("%s: terminated, error %d\n", __func__, ret);
 	return NULL;
 }
 

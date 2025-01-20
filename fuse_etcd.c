@@ -1528,7 +1528,6 @@ int run_fuse(struct fuse_args *args, struct etcd_ctx *ctx_in)
 	int ret;
 
 	ctx = ctx_in;
-	fuse_debug = true;
 	ret = fuse_main(args->argc, args->argv, &nofuse_oper, NULL);
 	if (ret)
 		fuse_err("fuse terminated with %d", ret);
