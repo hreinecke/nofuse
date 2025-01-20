@@ -189,12 +189,12 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		return -EBADMSG;
 	}
 
-	if (http_debug) {
+	if (http_debug)
 		printf("%s: http data (%ld bytes)\n", __func__, len);
-		printf("%s: %s\n", __func__,
+	if (etcd_debug)
+		printf("%s: %s\n%s\n", __func__, arg->uri,
 		       json_object_to_json_string_ext(resp,
 						      JSON_C_TO_STRING_PRETTY));
-	}
 
 	if (arg->parse_cb)
 		arg->parse_cb(resp, arg->parse_arg);
@@ -282,23 +282,9 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg)
 {
-	struct etcd_parse_data *parse_data;
-	http_parser_settings settings;
-	http_parser *http = conn->priv;
 	char *hdr, *post;
 	size_t postlen;
 	int ret = 0;
-
-	if (!http || !http->data) {
-		fprintf(stderr, "%s: connection not initialized\n", __func__);
-		return -EINVAL;
-	}
-	parse_data = http->data;
-	parse_data->parse_cb = parse_cb;
-	parse_data->parse_arg = parse_arg;
-
-	memset(&settings, 0, sizeof(settings));
-	settings.on_body = parse_json;
 
 	post = strdup(json_object_to_json_string_ext(post_obj,
 						     JSON_C_TO_STRING_PLAIN));
@@ -309,35 +295,50 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		free(post);
 		return -ENOMEM;
 	}
-	if (http_debug) {
-		printf("%s: uri %s\n", __func__, uri);
+
+	if (http_debug)
 		printf("%s: %s\n", __func__, post);
-	}
+
 	ret = send_http(conn->sockfd, hdr, strlen(hdr), post, postlen);
 	free(hdr);
-
-	if (ret < 0) {
-		free(post);
-		return -errno;
-	}
-	ret = recv_http(conn, http, &settings);
-	if (ret > 0)
-		ret = 0;
-
-	parse_data->parse_cb = NULL;
-	parse_data->parse_arg = NULL;
 	free(post);
-	return ret;
+
+	if (ret < 0)
+		return -errno;
+
+	return etcd_conn_recv(conn, uri,
+			      parse_cb, parse_arg);
 }
 
-int etcd_conn_continue(struct etcd_conn_ctx *conn)
+int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
+		   etcd_parse_cb parse_cb, void *parse_arg)
+
 {
+	struct etcd_parse_data *parse_data;
 	http_parser_settings settings;
+	http_parser *http = conn->priv;
+	int ret;
+
+	if (!http || !http->data) {
+		printf("%s: connection not initialized\n", __func__);
+		return -EINVAL;
+	}
+	parse_data = http->data;
+	parse_data->parse_cb = parse_cb;
+	parse_data->parse_arg = parse_arg;
+	parse_data->uri = strdup(uri);
 
 	memset(&settings, 0, sizeof(settings));
 	settings.on_body = parse_json;
 
-	return recv_http(conn, conn->priv, &settings);
+	ret = recv_http(conn, http, &settings);
+
+	parse_data->parse_cb = NULL;
+	parse_data->parse_arg = NULL;
+	free(parse_data->uri);
+	parse_data->uri = NULL;
+
+	return ret;
 }
 
 int etcd_conn_init(struct etcd_conn_ctx *conn)

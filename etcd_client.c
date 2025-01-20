@@ -502,14 +502,9 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	json_object_object_add(req_obj, "key",
 			       json_object_new_string(encoded_key));
 	end_key = strdup(key);
-#if 1
 	end = end_key[strlen(end_key) - 1];
 	end++;
 	end_key[strlen(end_key) - 1] = end;
-#else
-	end = 0;
-	sprintf(end_key, "%d", end);
-#endif
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
@@ -534,6 +529,13 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	free(encoded_end);
 	json_object_put(post_obj);
 	return ret < 0 ? ret : 0;
+}
+
+int etcd_kv_watch_continue(struct etcd_conn_ctx *conn,
+			   struct etcd_kv_event *ev)
+{
+	return etcd_conn_recv(conn, "/v3/watch",
+			      parse_watch_response, ev);
 }
 
 static void

@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 	ret = etcd_kv_watch(conn, "nofuse/ports", &ev, 0);
 
 	while (ret >= 0) {
-		ret = etcd_conn_continue(conn);
+		ret = etcd_kv_watch_continue(conn, &ev);
 		if (ret < 0 && ret != -EAGAIN)
 			break;
 	}

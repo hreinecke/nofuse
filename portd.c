@@ -179,7 +179,7 @@ static void *etcd_watcher(void *arg)
 				__func__, ret);
 	} else {
 		while (!stopped) {
-			ret = etcd_conn_continue(conn);
+			ret = etcd_kv_watch_continue(conn, &ev);
 			if (ret < 0 && ret != -EAGAIN)
 				break;
 		}

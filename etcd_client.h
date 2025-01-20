@@ -20,6 +20,7 @@ struct etcd_parse_data {
 	struct json_tokener *tokener;
 	void (*parse_cb)(struct json_object *obj, void *arg);
 	void *parse_arg;
+	char *uri;
 	char *data;
 	size_t len;
 };
@@ -82,14 +83,14 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 int etcd_conn_init(struct etcd_conn_ctx *conn);
 void etcd_conn_exit(struct etcd_conn_ctx *conn);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
+int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
+		   etcd_parse_cb parse_cb, void *parse_arg);
 void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
 
 int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg);
-
-int etcd_conn_continue(struct etcd_conn_ctx *conn);
 
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 
@@ -139,6 +140,8 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 
 int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id);
+int etcd_kv_watch_continue(struct etcd_conn_ctx *ctx,
+			   struct etcd_kv_event *ev);
 
 int etcd_lease_grant(struct etcd_ctx *ctx);
 int etcd_lease_keepalive(struct etcd_ctx *ctx);

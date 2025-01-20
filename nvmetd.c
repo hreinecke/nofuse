@@ -105,7 +105,7 @@ static void *etcd_watcher(void *arg)
 		goto out_cleanup_pop;
 	}
 	while (!stopped) {
-		ret = etcd_conn_continue(conn);
+		ret = etcd_kv_watch_continue(conn, &ev);
 		if (ret < 0 && ret != -EAGAIN)
 			break;
 	}
@@ -190,7 +190,7 @@ int main(int argc, char **argv)
 			etcd_debug = true;
 			port_debug = true;
 			ep_debug = true;
-			http_debug = true;
+			inotify_debug = true;
 			break;
 		case '?':
 			usage();
