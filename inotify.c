@@ -30,7 +30,6 @@
 
 #define INOTIFY_BUFFER_SIZE 4096
 
-int debug_inotify = 1;
 LINKED_LIST(dir_watcher_list);
 
 #define NUM_WATCHER_TYPES 25

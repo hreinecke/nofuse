@@ -36,6 +36,7 @@ bool tcp_debug;
 bool cmd_debug;
 bool inotify_debug;
 
+static pthread_t main_thr;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wait = PTHREAD_COND_INITIALIZER;
 
@@ -96,10 +97,11 @@ static void *etcd_watcher(void *arg)
 	ev.watch_cb = update_nvmetd;
 	ev.watch_arg = ctx;
 
-	ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
+	ret = etcd_kv_watch(conn, "nofuse/", &ev, pthread_self());
 	if (ret < 0) {
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
+		pthread_kill(main_thr, SIGTERM);
 		goto out_cleanup_pop;
 	}
 	while (!stopped) {
@@ -145,6 +147,8 @@ int main(int argc, char **argv)
 	struct watcher_ctx *ctx;
 	int ret = 0, getopt_ind;
 	char c;
+
+	main_thr = pthread_self();
 
 	ctx = malloc(sizeof(*ctx));
 	if (!ctx)

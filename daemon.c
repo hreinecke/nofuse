@@ -33,6 +33,7 @@ bool tcp_debug;
 bool cmd_debug;
 bool ep_debug;
 bool port_debug;
+bool http_debug;
 
 struct nofuse_context {
 	struct etcd_ctx *etcd;
@@ -193,6 +194,7 @@ int main(int argc, char *argv[])
 		ep_debug = true;
 		port_debug = true;
 		etcd_debug = true;
+		http_debug = true;
 	}
 
 	ctx->etcd = etcd_init(ctx->prefix);

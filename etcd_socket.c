@@ -26,6 +26,8 @@
 
 #include "etcd_client.h"
 
+bool http_data_debug = false;
+
 static int etcd_socket_connect(struct etcd_ctx *ctx)
 {
 	char port[16];
@@ -122,15 +124,21 @@ int send_http(int sockfd, char *hdr, size_t hdrlen,
 {
 	int ret;
 
-	if (http_debug)
-		printf("%s: http header (%ld bytes)\n%s\n",
-		       __func__, hdrlen, hdr);
+	if (http_debug) {
+		printf("%s: http header (%ld bytes)\n",
+		       __func__, hdrlen);
+		if (http_data_debug)
+			printf("%s: %s\n", __func__, hdr);
+	}
 	ret = send_data(sockfd, hdr, hdrlen);
 	if (ret < 0)
 		return ret;
-	if (http_debug)
-		printf("%s: http post (%ld bytes)\n%s\n",
-		       __func__, postlen, post);
+	if (http_debug) {
+		printf("%s: http post (%ld bytes)\n",
+		       __func__, postlen);
+		if (http_data_debug)
+			printf("%s: %s\n", __func__, post);
+	}
 	ret = send_data(sockfd, post, postlen);
 	return ret;
 }
@@ -181,10 +189,12 @@ static int parse_json(http_parser *http, const char *body, size_t len)
 		return -EBADMSG;
 	}
 
-	if (http_debug)
-		printf("http data (%ld bytes)\n%s\n", len,
+	if (http_debug) {
+		printf("%s: http data (%ld bytes)\n", __func__, len);
+		printf("%s: %s\n", __func__,
 		       json_object_to_json_string_ext(resp,
 						      JSON_C_TO_STRING_PRETTY));
+	}
 
 	if (arg->parse_cb)
 		arg->parse_cb(resp, arg->parse_arg);
@@ -246,9 +256,13 @@ int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 			break;
 		}
 		result_size = ret;
-		if (http_debug)
-			printf("%s: %ld bytes read\n%s\n",
-			       __func__, result_size, result);
+		if (http_debug) {
+			printf("%s: %ld bytes read\n",
+			       __func__, result_size);
+			if (http_data_debug)
+				printf("%s: %s\n",
+				       __func__, result);
+		}
 		ret = http_parser_execute(http, settings,
 					  result, result_size);
 		if (!ret) {
@@ -295,7 +309,10 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		free(post);
 		return -ENOMEM;
 	}
-
+	if (http_debug) {
+		printf("%s: uri %s\n", __func__, uri);
+		printf("%s: %s\n", __func__, post);
+	}
 	ret = send_http(conn->sockfd, hdr, strlen(hdr), post, postlen);
 	free(hdr);
 

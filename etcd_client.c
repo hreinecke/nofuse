@@ -406,6 +406,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		if (etcd_debug)
 			printf("%s: invalid response, 'result' not found\n",
 			       __func__);
+		ev->error = -EBADMSG;
 		return;
 	}
 
@@ -414,6 +415,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		if (etcd_debug)
 			printf("%s: invalid response, 'header' not found\n",
 			       __func__);
+		ev->error = -EBADMSG;
 		return;
 	}
 	rev_obj = json_object_object_get(header_obj, "revision");
@@ -426,13 +428,20 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 	}
 
 	/* 'created' set in response to a 'WatchRequest', no data is pending */
-	if (json_object_object_get(result_obj, "created"))
+	if (json_object_object_get(result_obj, "created")) {
+		if (json_object_object_get(result_obj, "canceled")) {
+			/* Watch got canceled */
+			if (etcd_debug)
+				printf("%s: watch canceled\n", __func__);
+			ev->error = -ECANCELED;
+		}
 		return;
+	}
 
 	event_obj = json_object_object_get(result_obj, "events");
 	if (!event_obj) {
 		if (etcd_debug)
-			printf("%s: invalid response, 'events' not found\n",
+			printf("%s: empty response ('events' not found)\n",
 			       __func__);
 		return;
 	}
@@ -483,7 +492,8 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id)
 {
 	json_object *post_obj, *req_obj;
-	char *encoded_key, end, *end_key, *encoded_end;
+	char *encoded_key, end;
+	char *end_key, *encoded_end;
 	int ret;
 
 	post_obj = json_object_new_object();
@@ -492,9 +502,14 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	json_object_object_add(req_obj, "key",
 			       json_object_new_string(encoded_key));
 	end_key = strdup(key);
+#if 1
 	end = end_key[strlen(end_key) - 1];
 	end++;
 	end_key[strlen(end_key) - 1] = end;
+#else
+	end = 0;
+	sprintf(end_key, "%d", end);
+#endif
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
@@ -510,6 +525,9 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 			   parse_watch_response, ev);
 	if (ret < 0) {
 		printf("error %d executing watch request\n", ret);
+	} else if (ev->error) {
+		printf("watch response error %d\n", ev->error);
+		ret = ev->error;
 	}
 
 	free(encoded_key);
