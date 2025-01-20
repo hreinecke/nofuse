@@ -141,8 +141,10 @@ static void show_help(void)
 
 static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 {
+#if 0
 	const char *traddr = "127.0.0.1";
 	int ret;
+#endif
 
 	if (ctx->help) {
 		show_help();
@@ -150,7 +152,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 	}
 
 	init_discovery(ctx);
-
+#if 0
 	if (!ctx->traddr)
 		ctx->traddr = strdup(traddr);
 
@@ -166,7 +168,7 @@ static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
 		etcd_del_port(ctx->etcd, "1");
 		return 1;
 	}
-
+#endif
 	if (init_subsys(ctx))
 		return 1;
 
