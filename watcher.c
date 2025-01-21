@@ -25,11 +25,44 @@ bool etcd_debug = true;
 bool http_debug = false;
 int stopped = 0;
 
+static char *key_to_attr(struct etcd_ctx *ctx, char *configfs, char *key)
+{
+	char *attr, *path;
+	int ret;
+
+	attr = key + strlen(ctx->prefix) + 1;
+	if (!strncmp(attr, "ports/", 6)) {
+		char *p = attr + 6, *node_name = ctx->node_name;
+
+		if (!node_name)
+			node_name = "localhost";
+		if (strncmp(p, ctx->node_name, strlen(ctx->node_name))) {
+			printf("%s: ignoring foreign port %s\n",
+			       __func__, attr);
+			return NULL;
+		}
+		p = strchr(attr, ':');
+		if (!p) {
+			printf("%s: invalid port %s\n",
+			       __func__, attr);
+			return NULL;
+		}
+		ret = asprintf(&path, "/sys/kernel/config/nvmet/ports/%s",
+			       p + 1);
+	} else
+		ret = asprintf(&path, "/sys/kernel/config/nvmet/%s", attr);
+	if (ret < 0) {
+		printf("%s: out of memory\n", __func__);
+		return NULL;
+	}
+	return path;
+}
+
 static void update_nvmetd(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
 	struct stat st;
-	char *attr, *path;
+	char *path;
 	int fd, ret;
 
 	if (kv->deleted)
@@ -39,28 +72,8 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 		printf("%s: add key %s value %s\n", __func__,
 		       kv->key, kv->value);
 
-	attr = kv->key + strlen(ctx->prefix) + 1;
-	if (!strncmp(attr, "ports/", 6)) {
-		char *p = attr + 6, *node_name = ctx->node_name;
-
-		if (!node_name)
-			node_name = "localhost";
-		if (strncmp(p, ctx->node_name, strlen(ctx->node_name))) {
-			printf("%s: ignoring foreign port %s\n",
-			       __func__, attr);
-			return;
-		}
-		p = strchr(attr, ':');
-		if (!p) {
-			printf("%s: invalid port %s\n",
-			       __func__, attr);
-			return;
-		}
-		ret = asprintf(&path, "/sys/kernel/config/nvmet/ports/%s",
-			       p + 1);
-	} else
-		ret = asprintf(&path, "/sys/kernel/config/nvmet/%s", attr);
-	if (ret < 0) {
+	path = key_to_attr(ctx, "/sys/kernel/config/nvmet", kv->key);
+	if (!path) {
 		return;
 	}
 	ret = stat(path, &st);
@@ -70,18 +83,20 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 		if (errno != ENOENT) {
 			printf("%s: error %d accessing %s\n",
 			       __func__, errno, path);
-			return;
+			goto out_free;
 		}
 		if (kv->deleted)
 			/* KV deleted and path not present, all done */
-			return;
+			goto out_free;
+
 		/* Trying to create parent */
 		parent = strdup(path);
 		ptr = strrchr(parent, '/');
 		if (!ptr) {
 			printf("%s: invalid parent %s\n",
 			       __func__, parent);
-			return;
+			free(parent);
+			goto out_free;
 		}
 		*ptr = '\0';
 		ret = stat(parent, &st);
@@ -89,26 +104,31 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 			if (errno != ENOENT) {
 				printf("%s: error %d accessing parent %s\n",
 				       __func__, errno, parent);
-				return;
+				free(parent);
+				goto out_free;
 			}
+			printf("%s: create parent %s\n", __func__, parent);
 			ret = mkdir(parent, 0755);
 			if (ret < 0) {
 				printf("%s: error %d creating parent %s\n",
 				       __func__, errno, parent);
-				return;
+				free(parent);
+				goto out_free;
 			}
 			ret = stat(path, &st);
 			if (ret < 0) {
 				printf("%s: error %d accessing new path %s\n",
 				       __func__, errno, path);
-				return;
+				free(parent);
+				goto out_free;
 			}
-		}
-		if ((st.st_mode & S_IFMT) != S_IFDIR) {
+		} else if ((st.st_mode & S_IFMT) != S_IFDIR) {
 			printf("%s: parent %s is not a directory\n",
 			       __func__, parent);
-			return;
+			free(parent);
+			goto out_free;
 		}
+		free(parent);
 	}
 	if (kv->deleted) {
 		printf("%s: delete %s\n",
@@ -138,6 +158,7 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 			printf("update from %s to %s\n", buf, kv->value);
 		close(fd);
 	}
+out_free:
 	free(path);
 }
 
@@ -157,7 +178,7 @@ int main(int argc, char **argv)
 	ev.watch_cb = update_nvmetd;
 	ev.watch_arg = ctx;
 
-	ret = etcd_kv_watch(conn, "nofuse", &ev, 0);
+	ret = etcd_kv_watch(conn, ctx->prefix, &ev, 0);
 
 	while (ret >= 0) {
 		ret = etcd_kv_watch_continue(conn, &ev);
