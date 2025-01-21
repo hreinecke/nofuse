@@ -611,9 +611,8 @@ int process_inotify_event(char *iev_buf, int iev_len)
 		unmark_inotify(watcher->ctx, watcher, watcher->dirname);
 	} else if (ev->mask & IN_DELETE) {
 		char subdir[FILENAME_MAX + 1];
-		char *key, *p;
+		char *key;
 
-		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
 		if (inotify_debug) {
 			if (ev->mask & IN_ISDIR)
@@ -622,17 +621,10 @@ int process_inotify_event(char *iev_buf, int iev_len)
 				printf("unlink %s\n", subdir);
 		}
 		unmark_inotify(watcher->ctx, NULL, subdir);
-		if (!strncmp(p, "ports", 5)) {
-			char *node_name = watcher->ctx->etcd->node_name;
-
-			if (!node_name)
-				node_name = "localhost";
-			ret = asprintf(&key, "%s/%s/%s:%s",
-				       watcher->ctx->etcd->prefix,
-				       p, node_name, ev->name);
-		} else
-			ret = asprintf(&key, "%s/%s",
-				       watcher->ctx->etcd->prefix, p);
+		key = path_to_key(watcher->ctx, subdir);
+		if (inotify_debug)
+			printf("%s: delete key %s\n",
+			       __func__, key);
 		ret = etcd_kv_delete(watcher->ctx->etcd, key);
 		if (ret)
 			fprintf(stderr, "%s: delete key %s error %d\n",
