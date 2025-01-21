@@ -157,11 +157,11 @@ int main(int argc, char **argv)
 		exit(1);
 
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->pathname = strdup("/sys/kernel/config/nvmet");
-	ctx->path_fd = open(ctx->pathname, O_DIRECTORY | O_RDONLY);
+	ctx->configfs = strdup("/sys/kernel/config/nvmet");
+	ctx->path_fd = open(ctx->configfs, O_DIRECTORY | O_RDONLY);
 	if (ctx->path_fd < 0) {
 		fprintf(stderr, "cannot open path '%s', error %d\n",
-			ctx->pathname, errno);
+			ctx->configfs, errno);
 		ret = errno;
 		goto out_free;
 	}
@@ -279,7 +279,7 @@ out_restore:
 out_close:
 	close(ctx->path_fd);
 out_free:
-	free(ctx->pathname);
+	free(ctx->configfs);
 	free(ctx);
 
 	return ret ? 1 : 0;

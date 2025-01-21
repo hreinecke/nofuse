@@ -155,7 +155,7 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 		return watcher;
 	}
 	if (inotify_debug) {
-		p = watcher->dirname + strlen(watcher->ctx->pathname) + 1;
+		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
 		printf("add inotify watch %d type %s (%d) flags %d to %s\n",
 		       watcher->wd, watcher->type_name, watcher->type,
 		       watcher->flags, p);
@@ -174,7 +174,7 @@ static int remove_watch(struct dir_watcher *watcher)
 		fprintf(stderr, "Failed to remove inotify watch on '%s'\n",
 			watcher->dirname);
 	if (inotify_debug) {
-		p = watcher->dirname + strlen(watcher->ctx->pathname) + 1;
+		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
 		printf("remove inotify watch %d type %s (%d) from '%s'\n",
 		       watcher->wd, watcher->type_name,
 		       watcher->type, p);
@@ -317,44 +317,62 @@ static int read_attr(char *attr_path, char *value, size_t value_len)
 	return len;
 }
 
+static char *path_to_key(struct watcher_ctx *ctx, const char *path)
+{
+	const char *attr = path + strlen(ctx->configfs) + 1;
+	char *key;
+	int ret;
+
+	if (!strncmp(attr, "ports/", 6)) {
+		char *node_name = ctx->etcd->node_name;
+		const char *suffix = attr + 6;
+
+		if (!node_name)
+			node_name = "localhost";
+		ret = asprintf(&key, "%s/ports/%s:%s",
+			       ctx->etcd->prefix, node_name, suffix);
+	} else {
+		ret = asprintf(&key, "%s/%s",
+			       ctx->etcd->prefix, attr);
+	}
+	if (ret < 0)
+		return NULL;
+	return key;
+}
+
 static int update_value(struct watcher_ctx *ctx,
 			const char *dirname, const char *name,
 			enum watcher_type type, bool create)
 {
-	char *pathname, value[PATH_MAX + 1], *t, *p;
-	char key[PATH_MAX + 1];
+	char *pathname, value[PATH_MAX + 1], *t, *key;
 	int ret;
 
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
 	if (ret < 0)
 		return ret;
-	p = pathname + strlen(ctx->pathname) + 1;
 	if (type == TYPE_SUBSYS_HOST || type == TYPE_PORT_SUBSYS) {
 		t = "link";
 		ret = readlink(pathname, value, sizeof(value));
-	} else {
-		t = "attr";
-		ret = read_attr(pathname, value, sizeof(value));
-	}
-	if (!strncmp(p, "ports/", 6)) {
-		char *node_name = ctx->etcd->node_name;
-
-		if (!node_name)
-			node_name = "localhost";
-		sprintf(key, "%s/ports/%s:%s",
-			ctx->etcd->prefix, node_name, p + 6);
 	} else if (type == TYPE_SUBSYS_NS &&
 		   !strcmp(name, "device_path") &&
 		   ctx->etcd->node_name) {
 		char *tmp = strdup(value);
+
+		t = "attr";
 		/*
 		 * Prefix the device path with the node name to
 		 * indicate on which node the namespace resides.
 		 */
-		sprintf(value, "%s:%s\n", ctx->etcd->node_name, tmp);
+		sprintf(value, "%s:%s", ctx->etcd->node_name, tmp);
 		free(tmp);
 	} else {
-		sprintf(key, "%s/%s", ctx->etcd->prefix, p);
+		t = "attr";
+		ret = read_attr(pathname, value, sizeof(value));
+	}
+	key = path_to_key(ctx, pathname);
+	if (!key) {
+		free(pathname);
+		return -ENOMEM;
 	}
 	if (inotify_debug)
 		printf("%s: %s %s key %s value '%s'\n", __func__,
@@ -370,8 +388,9 @@ static int update_value(struct watcher_ctx *ctx,
 				create ? "create" : "update", ret);
 	} else {
 		fprintf(stderr, "%s: %s %s value error %d\n",
-			__func__, t, p, ret);
+			__func__, t, key, ret);
 	}
+	free(key);
 	free(pathname);
 	return ret;
 }
@@ -431,7 +450,7 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 	} else {
 		if (new_type == TYPE_UNKNOWN || type == TYPE_ROOT) {
 			if (inotify_debug) {
-				p = dirname + strlen(ctx->pathname) + 1;
+				p = dirname + strlen(ctx->configfs) + 1;
 				printf("skip inotify type %s (%d) flags %d on %s/%s\n",
 				       type_name, new_type, flags, p, filename);
 			}
@@ -594,7 +613,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 		char subdir[FILENAME_MAX + 1];
 		char *key, *p;
 
-		p = watcher->dirname + strlen(watcher->ctx->pathname) + 1;
+		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
 		if (inotify_debug) {
 			if (ev->mask & IN_ISDIR)
@@ -660,7 +679,7 @@ int start_inotify(struct watcher_ctx *ctx)
 		return -errno;
 	}
 
-	ret = mark_inotify(ctx, ctx->pathname, NULL, TYPE_ROOT, true);
+	ret = mark_inotify(ctx, ctx->configfs, NULL, TYPE_ROOT, true);
 	if (ret < 0) {
 		close(ctx->inotify_fd);
 		ctx->inotify_fd = -1;
