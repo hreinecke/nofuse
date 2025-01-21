@@ -45,6 +45,8 @@ extern bool fuse_debug;
 extern struct linked_list device_linked_list;
 extern struct linked_list port_linked_list;
 
+#define NVMET_CONFIGFS "/sys/kernel/config/nvmet"
+
 #define NVME_NR_AEN_COMMANDS	4
 #define NVMF_AQ_DEPTH		32
 #define NVMF_SQ_DEPTH		128

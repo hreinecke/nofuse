@@ -4,7 +4,7 @@ DAEMON_OBJS := daemon.o
 OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o \
 	base64.o tls.o
 
-ETCD_OBJS := etcd_backend.o
+ETCD_OBJS := etcd_backend.o etcd_watcher.o
 CURL_OBJS := etcd_client_curl.o etcd_curl.o
 SOCKET_OBJS := etcd_client_socket.o etcd_socket.o http_parser.o
 
@@ -27,7 +27,7 @@ portd: portd.o $(SOCKET_OBJS) $(OBJS)
 nvmetd: nvmetd.o inotify.o $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-watcher: watcher.o $(SOCKET_OBJS) http_parser.o base64.o
+watcher: watcher.o etcd_watcher.o $(SOCKET_OBJS) http_parser.o base64.o
 	$(CC) $(CFLAGS) -o $@ $^ $(ETCD_LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c

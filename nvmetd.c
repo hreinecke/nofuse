@@ -61,15 +61,6 @@ static void *signal_handler(void *arg)
 	return NULL;
 }
 
-static void update_nvmetd(void *arg, struct etcd_kv *kv)
-{
-	struct etcd_ctx *ctx = arg;
-
-	printf("%s: %s key %s value %s\n", __func__,
-	       kv->deleted ? "delete" : "add",
-	       kv->key, kv->value);
-}
-
 static void delete_conn(void *arg)
 {
 	struct etcd_conn_ctx *conn = arg;
@@ -94,7 +85,7 @@ static void *etcd_watcher(void *arg)
 	pthread_cleanup_push(delete_conn, conn);
 
 	ev.ev_revision = start_revision;
-	ev.watch_cb = update_nvmetd;
+	ev.watch_cb = etcd_watch_cb;
 	ev.watch_arg = ctx;
 
 	ret = etcd_kv_watch(conn, "nofuse/", &ev, 0);

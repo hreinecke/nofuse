@@ -143,6 +143,8 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 int etcd_kv_watch_continue(struct etcd_conn_ctx *ctx,
 			   struct etcd_kv_event *ev);
 
+void etcd_watch_cb(void *arg, struct etcd_kv *kv);
+
 int etcd_lease_grant(struct etcd_ctx *ctx);
 int etcd_lease_keepalive(struct etcd_ctx *ctx);
 int etcd_lease_revoke(struct etcd_ctx *ctx);
