@@ -97,10 +97,10 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 				       __func__, errno, parent);
 				return;
 			}
-			ret = stat(parent, &st);
+			ret = stat(path, &st);
 			if (ret < 0) {
-				printf("%s: error %d accessing new parent %s\n",
-				       __func__, errno, parent);
+				printf("%s: error %d accessing new path %s\n",
+				       __func__, errno, path);
 				return;
 			}
 		}
@@ -117,6 +117,11 @@ static void update_nvmetd(void *arg, struct etcd_kv *kv)
 	}
 	if (!kv->value) {
 		printf("%s: no value\n", __func__);
+		return;
+	}
+	if ((st.st_mode & S_IFMT) != S_IFREG) {
+		printf("%s: not a regular file\n",
+		       __func__);
 		return;
 	}
 	fd = open(path, O_RDONLY);
