@@ -16,7 +16,7 @@ DAEMON_OBJS += fuse_etcd.o
 LIBS += $(ETCD_LIBS)
 OBJS += $(ETCD_OBJS)
 
-all: nofuse portd nvmetd xdp_drop_port.o base64_test watcher_test
+all: nofuse portd nvmetd xdp_drop_port.o base64_test watcher
 
 nofuse: $(DAEMON_OBJS) $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
@@ -27,7 +27,7 @@ portd: portd.o $(SOCKET_OBJS) $(OBJS)
 nvmetd: nvmetd.o inotify.o $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-watcher_test: watcher_test.o $(SOCKET_OBJS) http_parser.o base64.o
+watcher: watcher.o $(SOCKET_OBJS) http_parser.o base64.o
 	$(CC) $(CFLAGS) -o $@ $^ $(ETCD_LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c
