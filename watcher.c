@@ -191,6 +191,13 @@ int main(int argc, char **argv)
 		goto out_delete;
 	}
 
+	ret = unshare(CLONE_NEWNS);
+	if (ret < 0) {
+		fprintf(stderr, "unshare error %d\n", errno);
+		ret = -errno;
+		goto out_revoke;
+	}
+
 	walk_nvmet(ctx, "/sys/kernel/config/nvmet", "hosts");
 	walk_nvmet(ctx, "/sys/kernel/config/nvmet", "ports");
 	walk_nvmet(ctx, "/sys/kernel/config/nvmet", "subsystems");
@@ -206,7 +213,7 @@ int main(int argc, char **argv)
 		if (ret < 0 && ret != -EAGAIN)
 			break;
 	}
-
+out_revoke:
 	etcd_lease_revoke(ctx);
 out_delete:
 	etcd_conn_delete(conn);
