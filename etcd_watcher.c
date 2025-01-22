@@ -36,7 +36,7 @@ static char *key_to_attr(struct etcd_ctx *ctx, char *key)
 			       __func__, attr);
 			return NULL;
 		}
-		ret = asprintf(&path, "%s/%s",
+		ret = asprintf(&path, "%s/ports/%s",
 			       NVMET_CONFIGFS, p + 1);
 	} else
 		ret = asprintf(&path, "%s/%s",
