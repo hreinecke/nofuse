@@ -1155,9 +1155,10 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
 	const char *p, *root, *attr;
-	char *pathbuf;
+	char *pathbuf, value[1024];
 	int ret = -ENOENT;
 
+	memset(value, 0, 1024);
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
@@ -1171,11 +1172,12 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	p = strtok(NULL, "/");
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn")) {
-			ret = etcd_get_discovery_nqn(ctx, buf);
+			ret = etcd_get_discovery_nqn(ctx, value);
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
-			sprintf(buf, "%ctcp,%ccmd,%cep,%cport,%cfuse,%cetcd,%chttp",
+			sprintf(value,
+				"%ctcp,%ccmd,%cep,%cport,%cfuse,%cetcd,%chttp",
 				tcp_debug ? '+' : '-',
 				cmd_debug ? '+' : '-',
 				ep_debug ? '+' : '-',
@@ -1212,13 +1214,13 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 			fuse_info("%s: port %s ana_grp %lu", __func__,
 			       port, ana_grpid);
-			ret = etcd_get_ana_group(ctx, port, ana_grpid, buf);
+			ret = etcd_get_ana_group(ctx, port, ana_grpid, value);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
 			}
 		} else {
-			ret = etcd_get_port_attr(ctx, port, attr, buf);
+			ret = etcd_get_port_attr(ctx, port, attr, value);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1237,20 +1239,20 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		fuse_info("%s: subsys %s attr %s p %s", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
-			ret = etcd_get_subsys_attr(ctx, subsysnqn, attr, buf);
+			ret = etcd_get_subsys_attr(ctx, subsysnqn, attr, value);
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
 			}
 			if (!strcmp(attr, "attr_type")) {
-				if (!strcmp(buf, "1")) {
-					strcpy(buf, "ref");
-				} else if (!strcmp(buf, "2")) {
-					strcpy(buf, "nvm");
-				} else if (!strcmp(buf, "3")) {
-					strcpy(buf, "cur");
+				if (!strcmp(value, "1")) {
+					strcpy(value, "ref");
+				} else if (!strcmp(value, "2")) {
+					strcpy(value, "nvm");
+				} else if (!strcmp(value, "3")) {
+					strcpy(value, "cur");
 				} else {
-					strcpy(buf, "<unknown>");
+					strcpy(value, "<unknown>");
 				}
 			}
 		} else if (strcmp(attr, "namespaces")) {
@@ -1271,10 +1273,10 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 					ret = -ENOENT;
 					goto out_free;
 				}
-				sprintf(buf, "%d", anagrp);
+				sprintf(value, "%d", anagrp);
 			} else {
 				ret = etcd_get_namespace_attr(ctx, subsysnqn,
-							      nsid, attr, buf);
+							      nsid, attr, value);
 				if (ret < 0) {
 					ret = -ENOENT;
 					goto out_free;
@@ -1282,9 +1284,15 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 		}
 	}
-	if (strlen(buf))
-		strcat(buf, "\n");
-	ret = strlen(buf);
+	if (strlen(value))
+		strcat(value, "\n");
+	if (offset > 1024)
+		return -EFAULT;
+	if (size > strlen(value))
+		ret = strlen(value);
+	else
+		ret = size;
+	memcpy(buf, value + offset, ret);
 out_free:
 	free(pathbuf);
 	if (ret < 0)
