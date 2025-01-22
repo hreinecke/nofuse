@@ -265,8 +265,12 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 			struct etcd_kv *kv = &ev.kvs[i];
 
 			if (!strcmp(kv->key, key)) {
-				if (value)
-					strcpy(value, kv->value);
+				if (value) {
+					if (kv->value)
+						strcpy(value, kv->value);
+					else
+						*value = '\0';
+				}
 				ret = 0;
 				break;
 			}
