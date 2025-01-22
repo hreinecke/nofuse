@@ -32,106 +32,13 @@
 
 LINKED_LIST(dir_watcher_list);
 
-#define NUM_WATCHER_TYPES 25
-
-enum watcher_type {
-	TYPE_UNKNOWN,
-	TYPE_ROOT,
-	TYPE_HOST_DIR,		/* hosts */
-	TYPE_HOST,		/* hosts/<host> */
-	TYPE_HOST_ATTR,		/* hosts/<host>/<attr> */
-	TYPE_PORT_DIR,		/* ports */
-	TYPE_PORT,		/* ports/<port> */
-	TYPE_PORT_ATTR,		/* ports/<port>/<attr> */
-	TYPE_PORT_ANA_DIR,	/* ports/<port>/ana_groups */
-	TYPE_PORT_ANA,		/* ports/<port>/ana_groups/<anagrp> */
-	TYPE_PORT_ANA_ATTR,	/* ports/<port>/ana_groups/<anagrp>/<attr> */
-	TYPE_PORT_REF_DIR,	/* ports/<port>/referrals */
-	TYPE_PORT_REF,		/* ports/<port>/referrals/<traddr> */
-	TYPE_PORT_SUBSYS_DIR,	/* ports/<port>/subsystems */
-	TYPE_PORT_SUBSYS,	/* ports/<port>/subsystems/<subsys> */
-	TYPE_SUBSYS_DIR,	/* subsystems */
-	TYPE_SUBSYS,		/* subsystems/<subsys> */
-	TYPE_SUBSYS_ATTR,	/* subsystems/<subsys>/<attr> */
-	TYPE_SUBSYS_HOST_DIR,	/* subsystems/<subsys>/allowed_hosts */
-	TYPE_SUBSYS_HOST,	/* subsystems/<subsys>/allowed_hosts/<host> */
-	TYPE_SUBSYS_PT_DIR,	/* subsystems/<subsys>/passthru */
-	TYPE_SUBSYS_PT_ATTR,	/* subsystems/<subsys>/passthru/<attr> */
-	TYPE_SUBSYS_NS_DIR,	/* subsystems/<subsys>/namespaces */
-	TYPE_SUBSYS_NS,		/* subsystems/<subsys>/namespaces/<nsid> */
-	TYPE_SUBSYS_NS_ATTR	/* subsystems/<subsys>/namespaces/<nsid>/<attr> */
-};
-
-struct watcher_flags_t {
-	enum watcher_type type;
-	const char *name;
-	int flags;
-};
-
-struct watcher_flags_t watcher_flags[NUM_WATCHER_TYPES] = {
-	{ .type = TYPE_UNKNOWN, .name = "unknown", .flags = 0 },
-	{ .type = TYPE_ROOT, .name = "root", .flags = 0 },
-	{ .type = TYPE_HOST_DIR, .name = "host_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_HOST, .name = "host", .flags = IN_MODIFY },
-	{ .type = TYPE_HOST_ATTR, .name = "host_attr", .flags = 0 },
-	{ .type = TYPE_PORT_DIR, .name = "port_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_PORT, .name = "port", .flags = IN_MODIFY },
-	{ .type = TYPE_PORT_ATTR, .name = "port_attr", .flags = 0 },
-	{ .type = TYPE_PORT_ANA_DIR, .name = "port_ana_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_PORT_ANA, .name = "port_ana", .flags = IN_MODIFY },
-	{ .type = TYPE_PORT_ANA_ATTR, .name = "port_ana_attr", .flags = 0 },
-	{ .type = TYPE_PORT_SUBSYS_DIR, .name = "port_subsys_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_PORT_SUBSYS, .name = "port_subsys",
-	  .flags = IN_DELETE_SELF },
-	{ .type = TYPE_PORT_REF_DIR, .name = "port_ref",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_PORT_REF, .name = "referrals",
-	  .flags = IN_MODIFY },
-	{ .type = TYPE_SUBSYS_DIR, .name = "subsys_dir",
-	  .flags = IN_CREATE | IN_DELETE},
-	{ .type = TYPE_SUBSYS, .name = "subsys", .flags = IN_MODIFY },
-	{ .type = TYPE_SUBSYS_ATTR, .name = "subsys_attr", .flags = 0 },
-	{ .type = TYPE_SUBSYS_HOST_DIR, .name = "subsys_host_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_SUBSYS_HOST, .name = "subsys_host",
-	  .flags = IN_DELETE_SELF },
-	{ .type = TYPE_SUBSYS_PT_DIR, .name = "passthru_dir",
-	  .flags = IN_CREATE | IN_DELETE },
-	{ .type = TYPE_SUBSYS_PT_ATTR, .name = "passthru_attr", .flags = 0 },
-	{ .type = TYPE_SUBSYS_NS_DIR, .name = "subsys_ns_dir",
-	  .flags = IN_CREATE },
-	{ .type = TYPE_SUBSYS_NS, .name = "subsys_ns",
-	  .flags = IN_MODIFY | IN_DELETE_SELF },
-	{ .type = TYPE_SUBSYS_NS_ATTR, .name = "subsys_attr", .flags = 0 },
-};
-
 struct dir_watcher {
 	struct watcher_ctx *ctx;
 	struct linked_list entry;
-	enum watcher_type type;
-	const char *type_name;
 	int flags;
 	int wd;
 	char dirname[FILENAME_MAX];
 };
-
-static int get_flags(enum watcher_type type, const char **name)
-{
-	int i, flags = 0;
-
-	for (i = 0; i < NUM_WATCHER_TYPES; i++) {
-		if (watcher_flags[i].type == type) {
-			flags = watcher_flags[i].flags;
-			*name = watcher_flags[i].name;
-			break;
-		}
-	}
-	return flags;
-}
 
 static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 {
@@ -140,8 +47,6 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 
 	INIT_LINKED_LIST(&watcher->entry);
 	list_for_each_entry(tmp, &dir_watcher_list, entry) {
-		if (tmp->type != watcher->type)
-			continue;
 		if (strcmp(tmp->dirname, watcher->dirname))
 			continue;
 		return tmp;
@@ -156,9 +61,8 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 	}
 	if (inotify_debug) {
 		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
-		printf("add inotify watch %d type %s (%d) flags %d to %s\n",
-		       watcher->wd, watcher->type_name, watcher->type,
-		       watcher->flags, p);
+		printf("add inotify watch %d flags %d to %s\n",
+		       watcher->wd, watcher->flags, p);
 	}
 	list_add(&watcher->entry, &dir_watcher_list);
 	return 0;
@@ -175,9 +79,8 @@ static int remove_watch(struct dir_watcher *watcher)
 			watcher->dirname);
 	if (inotify_debug) {
 		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
-		printf("remove inotify watch %d type %s (%d) from '%s'\n",
-		       watcher->wd, watcher->type_name,
-		       watcher->type, p);
+		printf("remove inotify watch %d from '%s'\n",
+		       watcher->wd, p);
 	}
 	list_del_init(&watcher->entry);
 	return ret;
@@ -185,8 +88,7 @@ static int remove_watch(struct dir_watcher *watcher)
 
 static struct dir_watcher *
 allocate_watch(struct watcher_ctx *ctx, const char *dirname,
-	       const char *filename, enum watcher_type type,
-	       const char *type_name, int flags)
+	       const char *filename, unsigned int flags)
 {
 	struct dir_watcher *watcher, *tmp;
 
@@ -199,8 +101,6 @@ allocate_watch(struct watcher_ctx *ctx, const char *dirname,
 	strcpy(watcher->dirname, dirname);
 	strcat(watcher->dirname, "/");
 	strcat(watcher->dirname, filename);
-	watcher->type = type;
-	watcher->type_name = type_name;
 	watcher->ctx = ctx;
 	watcher->flags = flags;
 	tmp = add_watch(watcher);
@@ -211,87 +111,6 @@ allocate_watch(struct watcher_ctx *ctx, const char *dirname,
 		watcher = NULL;
 	}
 	return watcher;
-}
-
-enum watcher_type next_type(enum watcher_type type, const char *file)
-{
-	enum watcher_type next_type = TYPE_UNKNOWN;
-
-	if (!file)
-		return next_type;
-
-	switch (type) {
-	case TYPE_ROOT:
-		if (!strcmp(file, "hosts")) {
-			next_type = TYPE_HOST_DIR;
-		} else if (!strcmp(file, "ports")) {
-			next_type = TYPE_PORT_DIR;
-		} else {
-			next_type = TYPE_SUBSYS_DIR;
-		}
-		break;
-	case TYPE_HOST_DIR:
-		next_type = TYPE_HOST;
-		break;
-	case TYPE_HOST:
-		next_type = TYPE_HOST_ATTR;
-		break;
-	case TYPE_PORT_DIR:
-		next_type = TYPE_PORT;
-		break;
-	case TYPE_PORT:
-		if (!strcmp(file, "subsystems")) {
-			next_type = TYPE_PORT_SUBSYS_DIR;
-		} else if (!strcmp(file, "ana_groups")) {
-			next_type = TYPE_PORT_ANA_DIR;
-		} else if (!strcmp(file, "referrals")) {
-			next_type = TYPE_PORT_REF_DIR;
-		} else {
-			next_type = TYPE_PORT_ATTR;
-		}
-		break;
-	case TYPE_PORT_SUBSYS_DIR:
-		next_type = TYPE_PORT_SUBSYS;
-		break;
-	case TYPE_PORT_ANA_DIR:
-		next_type = TYPE_PORT_ANA;
-		break;
-	case TYPE_PORT_ANA:
-		next_type = TYPE_PORT_ANA_ATTR;
-		break;
-	case TYPE_PORT_REF_DIR:
-		next_type = TYPE_PORT_REF;
-		break;
-	case TYPE_SUBSYS_DIR:
-		next_type = TYPE_SUBSYS;
-		break;
-	case TYPE_SUBSYS:
-		if (!strcmp(file, "allowed_hosts")) {
-			next_type = TYPE_SUBSYS_HOST_DIR;
-		} else if (!strcmp(file, "namespaces")) {
-			next_type = TYPE_SUBSYS_NS_DIR;
-		} else if (!strcmp(file, "passthru")) {
-			next_type = TYPE_SUBSYS_PT_DIR;
-		} else {
-			next_type = TYPE_SUBSYS_ATTR;
-		}
-		break;
-	case TYPE_SUBSYS_HOST_DIR:
-		next_type = TYPE_SUBSYS_HOST;
-		break;
-	case TYPE_SUBSYS_PT_DIR:
-		next_type = TYPE_SUBSYS_PT_ATTR;
-		break;
-	case TYPE_SUBSYS_NS_DIR:
-		next_type = TYPE_SUBSYS_NS;
-		break;
-	case TYPE_SUBSYS_NS:
-		next_type = TYPE_SUBSYS_NS_ATTR;
-		break;
-	default:
-		break;
-	}
-	return next_type;
 }
 
 static int read_attr(char *attr_path, char *value, size_t value_len)
@@ -421,75 +240,46 @@ out_free:
 	return ret;
 }
 
-static enum watcher_type
-mark_file(struct watcher_ctx *ctx, const char *dirname,
-	  const char *filename, enum watcher_type type,
-	  bool isdir)
+static int mark_file(struct watcher_ctx *ctx, const char *dirname,
+		     const char *filename, unsigned int type)
 {
-	enum watcher_type new_type;
 	struct dir_watcher *wd;
-	const char *type_name;
 	int flags = 0;
 
-	new_type = next_type(type, filename);
-	if (new_type == TYPE_UNKNOWN) {
-		fprintf(stderr, "%s/%s: unknown next type for %d\n",
+	switch (type) {
+	case DT_DIR:
+		flags = IN_CREATE | IN_DELETE;
+		break;
+	case DT_LNK:
+		flags = IN_DELETE_SELF;
+		break;
+	case DT_REG:
+		flags = 0;
+		break;
+	default:
+		fprintf(stderr, "%s/%s: unknown type %d\n",
 			dirname, filename, type);
-		return new_type;
+		return -EINVAL;
 	}
-	flags = get_flags(new_type, &type_name);
-	if (flags > 0) {
-		wd = allocate_watch(ctx, dirname, filename,
-				    new_type, type_name, flags);
-		if (!wd) {
-			fprintf(stderr, "%s/%s: failed to allocate watcher\n",
-				dirname, filename);
-			return TYPE_UNKNOWN;
-		}
-		/* Insert 'addr_node' attribute */
-		if (new_type == TYPE_PORT && ctx->etcd->node_name) {
-			int ret;
-			char *key;
-
-			ret = asprintf(&key, "%s/ports/%s:%s/addr_node",
-				       ctx->etcd->prefix,
-				       ctx->etcd->node_name, filename);
-			if (ret > 0) {
-				if (inotify_debug)
-					printf("%s: add key %s value '%s'\n",
-					       __func__, key, ctx->etcd->node_name);
-				etcd_kv_new(ctx->etcd, key,
-					    ctx->etcd->node_name);
-				free(key);
-			}
-			ret = asprintf(&key, "%s/ports/%s:%s/addr_origin",
-				       ctx->etcd->prefix,
-				       ctx->etcd->node_name, filename);
-			if (ret > 0) {
-				if (inotify_debug)
-					printf("%s: add key %s value '%s'\n",
-					       __func__, key, ctx->etcd->node_name);
-				etcd_kv_new(ctx->etcd, key, "nvmet");
-				free(key);
-			}
-		}
-	} else {
-		update_value(ctx, dirname, filename);
+	wd = allocate_watch(ctx, dirname, filename, flags);
+	if (!wd) {
+		fprintf(stderr, "%s/%s: failed to allocate watcher\n",
+			dirname, filename);
+		return -EINVAL;
 	}
-	return new_type;
+	return update_value(ctx, dirname, filename);
 }
 
 int mark_inotify(struct watcher_ctx *ctx, const char *dir,
-		 const char *file, enum watcher_type type)
+		 const char *file)
 {
 	char dirname[PATH_MAX + 1];
-	enum watcher_type new_type;
 	DIR *sd;
 	struct dirent *se;
 
 	if (inotify_debug)
-		printf("%s: dir %s type %d file %s\n",
-		       __func__, dir, type, file);
+		printf("%s: dir %s file %s\n",
+		       __func__, dir, file);
 
 	strcpy(dirname, dir);
 	if (file) {
@@ -509,13 +299,10 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		if (inotify_debug)
 			printf("%s: checking %s %s\n",
 			       __func__, dirname, se->d_name);
-		new_type = mark_file(ctx, dirname, se->d_name, type,
-				     se->d_type == DT_DIR);
-		if (new_type == TYPE_UNKNOWN)
-			continue;
+		if (mark_file(ctx, dirname, se->d_name, se->d_type) < 0)
+			break;
 		if (se->d_type == DT_DIR) {
-			mark_inotify(ctx, dirname, se->d_name,
-				     new_type);
+			mark_inotify(ctx, dirname, se->d_name);
 		}
 	}
 	closedir(sd);
@@ -607,8 +394,6 @@ int process_inotify_event(char *iev_buf, int iev_len)
 		return ev_len;
 	}
 	if (ev->mask & IN_CREATE) {
-		enum watcher_type new_type;
-
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
 		if (inotify_debug) {
 			if (ev->mask & IN_ISDIR)
@@ -616,16 +401,14 @@ int process_inotify_event(char *iev_buf, int iev_len)
 			else
 				printf("link %s\n", subdir);
 		}
-		new_type = mark_file(watcher->ctx, watcher->dirname,
-				     ev->name, watcher->type,
-				     (ev->mask & IN_ISDIR));
-		if (new_type != TYPE_UNKNOWN && (ev->mask & IN_ISDIR))
+		ret = mark_file(watcher->ctx, watcher->dirname, ev->name,
+				(ev->mask & IN_ISDIR) ? DT_DIR : DT_LNK);
+		if (ev->mask & IN_ISDIR)
 			mark_inotify(watcher->ctx, watcher->dirname,
-				     ev->name, new_type);
+				     ev->name);
 	} else if (ev->mask & IN_DELETE_SELF) {
 		if (inotify_debug)
-			printf("rmdir %s type %d\n",
-			       watcher->dirname, watcher->type);
+			printf("unlink %s\n", watcher->dirname);
 		unmark_inotify(watcher->ctx, watcher, watcher->dirname);
 	} else if (ev->mask & IN_DELETE) {
 		char subdir[FILENAME_MAX + 1];
@@ -666,7 +449,7 @@ int start_inotify(struct watcher_ctx *ctx)
 		return -errno;
 	}
 
-	ret = mark_inotify(ctx, ctx->configfs, NULL, TYPE_ROOT);
+	ret = mark_inotify(ctx, ctx->configfs, NULL);
 	if (ret < 0) {
 		close(ctx->inotify_fd);
 		ctx->inotify_fd = -1;
