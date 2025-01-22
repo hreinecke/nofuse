@@ -244,7 +244,7 @@ static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 		     const char *filename, unsigned int type)
 {
 	struct dir_watcher *wd;
-	int flags = 0;
+	int flags = 0, ret = 0;
 
 	switch (type) {
 	case DT_DIR:
@@ -261,36 +261,45 @@ static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 			dirname, filename, type);
 		return -EINVAL;
 	}
-	wd = allocate_watch(ctx, dirname, filename, flags);
-	if (!wd) {
-		fprintf(stderr, "%s/%s: failed to allocate watcher\n",
-			dirname, filename);
-		return -EINVAL;
+	if (flags) {
+		wd = allocate_watch(ctx, dirname, filename, flags);
+		if (!wd) {
+			fprintf(stderr, "%s/%s: failed to allocate watcher\n",
+				dirname, filename);
+			return -EINVAL;
+		}
 	}
-	return update_value(ctx, dirname, filename);
+	if (type == DT_LNK || type == DT_REG)
+		ret = update_value(ctx, dirname, filename);
+	return ret;
 }
 
 int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		 const char *file)
 {
-	char dirname[PATH_MAX + 1];
+	char *dirname;
 	DIR *sd;
 	struct dirent *se;
+	int ret;
 
 	if (inotify_debug)
 		printf("%s: dir %s file %s\n",
 		       __func__, dir, file);
 
-	strcpy(dirname, dir);
 	if (file) {
-		strcat(dirname, "/");
-		strcat(dirname, file);
+		ret = asprintf(&dirname, "%s/%s", dir, file);
+		if (ret < 0)
+			return -ENOMEM;
+	} else {
+		dirname = (char *)dir;
 	}
-
+	ret = 0;
 	sd = opendir(dirname);
 	if (!sd) {
 		fprintf(stderr, "Cannot open %s\n", dirname);
-		return -1;
+		if (dirname != dir)
+			free(dirname);
+		return -errno;
 	}
 	while ((se = readdir(sd))) {
 		if (!strcmp(se->d_name, ".") ||
@@ -299,14 +308,21 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		if (inotify_debug)
 			printf("%s: checking %s %s\n",
 			       __func__, dirname, se->d_name);
-		if (mark_file(ctx, dirname, se->d_name, se->d_type) < 0)
+
+		ret = mark_file(ctx, dirname, se->d_name, se->d_type);
+		if (ret < 0)
 			break;
+
 		if (se->d_type == DT_DIR) {
-			mark_inotify(ctx, dirname, se->d_name);
+			ret = mark_inotify(ctx, dirname, se->d_name);
+			if (ret < 0)
+				break;
 		}
 	}
 	closedir(sd);
-	return 0;
+	if (dirname != dir)
+		free(dirname);
+	return ret;
 }
 
 static void unmark_inotify(struct watcher_ctx *ctx, struct dir_watcher *self,
