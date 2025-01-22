@@ -25,7 +25,7 @@ static char *key_to_attr(struct etcd_ctx *ctx, char *key)
 
 		if (!node_name)
 			node_name = "localhost";
-		if (strncmp(p, ctx->node_name, strlen(ctx->node_name))) {
+		if (strncmp(p, node_name, strlen(node_name))) {
 			printf("%s: ignoring foreign port %s\n",
 			       __func__, attr);
 			return NULL;
