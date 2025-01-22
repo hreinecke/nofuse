@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -129,8 +130,13 @@ static int read_attr(char *attr_path, char *value, size_t value_len)
 		memset(value, 0, value_len);
 	else {
 		p = &value[len - 1];
-		if (*p == '\n')
+		while (isspace(*p)) {
 			*p = '\0';
+			p--;
+			len--;
+			if (p == value)
+				break;
+		}
 		if (!strcmp(value, "(null)")) {
 			memset(value, 0, value_len);
 			len = 0;
