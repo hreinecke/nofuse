@@ -55,14 +55,14 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 					watcher->dirname, watcher->flags);
 	if (watcher->wd < 0) {
 		fprintf(stderr,
-			"failed to add inotify watch to '%s', error %d\n",
-			watcher->dirname, errno);
+			"%s: failed to add inotify watch to '%s', error %d\n",
+			__func__, watcher->dirname, errno);
 		return watcher;
 	}
 	if (inotify_debug) {
 		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
-		printf("add inotify watch %d flags %d to %s\n",
-		       watcher->wd, watcher->flags, p);
+		printf("%s: add inotify watch %d flags %d to %s\n",
+		       __func__, watcher->wd, watcher->flags, p);
 	}
 	list_add(&watcher->entry, &dir_watcher_list);
 	return 0;
@@ -131,6 +131,10 @@ static int read_attr(char *attr_path, char *value, size_t value_len)
 		p = &value[len - 1];
 		if (*p == '\n')
 			*p = '\0';
+		if (!strcmp(value, "(null)")) {
+			memset(value, 0, value_len);
+			len = 0;
+		}
 	}
 	close(fd);
 	return len;
@@ -174,7 +178,14 @@ static int update_value(struct watcher_ctx *ctx,
 	if (ret < 0) {
 		fprintf(stderr, "%s: attr %s error %d\n",
 			__func__, pathname, errno);
+		free(pathname);
 		return -errno;
+	}
+	if (!(st.st_mode & (S_IRUSR | S_IRGRP | S_IROTH))) {
+		printf("%s: skip attr %s, not readable\n",
+		       __func__, pathname);
+		free(pathname);
+		return 0;
 	}
 	if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		t = "link";
@@ -182,7 +193,7 @@ static int update_value(struct watcher_ctx *ctx,
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
 		t = "attr";
 		ret = read_attr(pathname, value, sizeof(value));
-		if (!strcmp(name, "device_path")) {
+		if (ret > 0 && strlen(value) && !strcmp(name, "device_path")) {
 			char *node_name = ctx->etcd->node_name;
 			char *tmp = strdup(value);
 
@@ -199,6 +210,7 @@ static int update_value(struct watcher_ctx *ctx,
 	} else {
 		fprintf(stderr, "%s: attr %s invalid type\n",
 			__func__, pathname);
+		free(pathname);
 		return -EISDIR;
 	}
 	key = path_to_key(ctx, pathname);
@@ -223,12 +235,20 @@ static int update_value(struct watcher_ctx *ctx,
 				__func__, t, key, ret);
 			goto out_free;
 		}
+		if (inotify_debug)
+			printf("%s: upload %s key %s value '%s'\n", __func__,
+			       t, key, value);
+
 		ret = etcd_kv_new(ctx->etcd, key, value);
 		if (ret < 0) {
 			fprintf(stderr, "%s: %s key %s create error %d\n",
 				__func__, t, key, ret);
 		}
 	} else if (strcmp(old, value)) {
+		if (inotify_debug)
+			printf("%s: update %s key %s value '%s'\n", __func__,
+			       t, key, value);
+
 		ret = etcd_kv_update(ctx->etcd, key, value);
 		if (ret < 0)
 			fprintf(stderr, "%s: %s key %s update error %d\n",
@@ -308,6 +328,9 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		if (inotify_debug)
 			printf("%s: checking %s %s\n",
 			       __func__, dirname, se->d_name);
+
+		if (!strcmp(se->d_name, "passthru"))
+			continue;
 
 		ret = mark_file(ctx, dirname, se->d_name, se->d_type);
 		if (ret < 0)
