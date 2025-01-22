@@ -341,9 +341,9 @@ static char *path_to_key(struct watcher_ctx *ctx, const char *path)
 }
 
 static int update_value(struct watcher_ctx *ctx,
-			const char *dirname, const char *name,
-			enum watcher_type type)
+			const char *dirname, const char *name)
 {
+	struct stat st;
 	char *pathname, value[1024], old[1024], *t, *key;
 	int ret;
 
@@ -351,24 +351,36 @@ static int update_value(struct watcher_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
 	if (ret < 0)
 		return ret;
-	if (type == TYPE_SUBSYS_HOST || type == TYPE_PORT_SUBSYS) {
+	ret = stat(pathname, &st);
+	if (ret < 0) {
+		fprintf(stderr, "%s: attr %s error %d\n",
+			__func__, pathname, errno);
+		return -errno;
+	}
+	if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		t = "link";
 		ret = readlink(pathname, value, sizeof(value));
-	} else if (type == TYPE_SUBSYS_NS &&
-		   !strcmp(name, "device_path") &&
-		   ctx->etcd->node_name) {
-		char *tmp = strdup(value);
-
-		t = "attr";
-		/*
-		 * Prefix the device path with the node name to
-		 * indicate on which node the namespace resides.
-		 */
-		sprintf(value, "%s:%s", ctx->etcd->node_name, tmp);
-		free(tmp);
-	} else {
+	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
 		t = "attr";
 		ret = read_attr(pathname, value, sizeof(value));
+		if (!strcmp(name, "device_path")) {
+			char *node_name = ctx->etcd->node_name;
+			char *tmp = strdup(value);
+
+			if (!node_name)
+				node_name = "localhost";
+
+			/*
+			 * Prefix the device path with the node name to
+			 * indicate on which node the namespace resides.
+			 */
+			sprintf(value, "%s:%s", ctx->etcd->node_name, tmp);
+			free(tmp);
+		}
+	} else {
+		fprintf(stderr, "%s: attr %s invalid type\n",
+			__func__, pathname);
+		return -EISDIR;
 	}
 	key = path_to_key(ctx, pathname);
 	if (!key) {
@@ -416,7 +428,7 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 {
 	enum watcher_type new_type;
 	struct dir_watcher *wd;
-	const char *type_name, *p;
+	const char *type_name;
 	int flags = 0;
 
 	new_type = next_type(type, filename);
@@ -462,15 +474,7 @@ mark_file(struct watcher_ctx *ctx, const char *dirname,
 			}
 		}
 	} else {
-		if (new_type == TYPE_UNKNOWN || type == TYPE_ROOT) {
-			if (inotify_debug) {
-				p = dirname + strlen(ctx->configfs) + 1;
-				printf("skip inotify type %s (%d) flags %d on %s/%s\n",
-				       type_name, new_type, flags, p, filename);
-			}
-		} else {
-			update_value(ctx, dirname, filename, new_type);
-		}
+		update_value(ctx, dirname, filename);
 	}
 	return new_type;
 }
@@ -645,13 +649,9 @@ int process_inotify_event(char *iev_buf, int iev_len)
 				__func__, key, ret);
 		free(key);
 	} else if (ev->mask & IN_MODIFY) {
-		enum watcher_type new_type;
-
 		if (inotify_debug)
 			printf("write %s %s\n", watcher->dirname, ev->name);
-		new_type = next_type(watcher->type, ev->name);
-		update_value(watcher->ctx, watcher->dirname, ev->name,
-			     new_type);
+		update_value(watcher->ctx, watcher->dirname, ev->name);
 	}
 	return ev_len;
 }
