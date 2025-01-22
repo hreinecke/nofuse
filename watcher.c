@@ -76,7 +76,7 @@ static int update_value(struct etcd_ctx *ctx,
 			const char *dirname, const char *name,
 			int type)
 {
-	char *pathname, value[PATH_MAX + 1], *t, *key;
+	char *pathname, value[1024], old[1024], *t, *key;
 	int ret;
 
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
@@ -110,14 +110,23 @@ static int update_value(struct etcd_ctx *ctx,
 	}
 	printf("%s: upload %s key %s value '%s'\n", __func__,
 	       t, key, value);
-	if (ret > 0) {
+	ret = etcd_kv_get(ctx, key, old);
+	if (ret < 0) {
+		if (ret != -ENOENT) {
+			printf("%s: failed to fetch key %s\n",
+			       __func__, key);
+			return ret;
+		}
 		ret = etcd_kv_new(ctx, key, value);
 		if (ret < 0)
 			fprintf(stderr, "%s: %s key %s upload error %d\n",
 				__func__, t, key, ret);
-	} else {
-		fprintf(stderr, "%s: %s %s value error %d\n",
-			__func__, t, key, ret);
+	} else if (strcmp(value, old)) {
+		ret = etcd_kv_update(ctx, key, value);
+		if (ret < 0) {
+			fprintf(stderr, "%s: %s key %s update error %d\n",
+				__func__, t, key, ret);
+		}
 	}
 	free(key);
 	return ret;
@@ -190,14 +199,14 @@ int main(int argc, char **argv)
 		fprintf(stderr, "failed to get etcd lease\n");
 		goto out_delete;
 	}
-
+#if 0
 	ret = unshare(CLONE_NEWNS);
 	if (ret < 0) {
 		fprintf(stderr, "unshare error %d\n", errno);
 		ret = -errno;
 		goto out_revoke;
 	}
-
+#endif
 	walk_nvmet(ctx, "/sys/kernel/config/nvmet", "hosts");
 	walk_nvmet(ctx, "/sys/kernel/config/nvmet", "ports");
 	walk_nvmet(ctx, "/sys/kernel/config/nvmet", "subsystems");
@@ -213,7 +222,9 @@ int main(int argc, char **argv)
 		if (ret < 0 && ret != -EAGAIN)
 			break;
 	}
+#if 0
 out_revoke:
+#endif
 	etcd_lease_revoke(ctx);
 out_delete:
 	etcd_conn_delete(conn);
