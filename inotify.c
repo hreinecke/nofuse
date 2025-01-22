@@ -173,7 +173,7 @@ static int update_value(struct watcher_ctx *ctx,
 			const char *dirname, const char *name)
 {
 	struct stat st;
-	char *pathname, value[1024], old[1024], *t, *key;
+	char *pathname, value[1024], old[1024], *key;
 	int ret;
 
 	memset(value, 0, sizeof(value));
@@ -194,10 +194,8 @@ static int update_value(struct watcher_ctx *ctx,
 		return 0;
 	}
 	if ((st.st_mode & S_IFMT) == S_IFLNK) {
-		t = "link";
 		ret = readlink(pathname, value, sizeof(value));
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
-		t = "attr";
 		ret = read_attr(pathname, value, sizeof(value));
 		if (ret > 0 && strlen(value) && !strcmp(name, "device_path")) {
 			char *node_name = ctx->etcd->node_name;
@@ -225,40 +223,37 @@ static int update_value(struct watcher_ctx *ctx,
 		return -ENOMEM;
 	}
 	if (ret < 0) {
-		fprintf(stderr, "%s: %s %s value error %d\n",
-			__func__, t, key, ret);
+		fprintf(stderr, "%s: %s value error %d\n",
+			__func__, key, ret);
 		goto out_free;
 	}
-	if (inotify_debug)
-		printf("%s: %s key %s value '%s'\n", __func__,
-		       t, key, value);
 
 	memset(old, 0, sizeof(old));
 	ret = etcd_kv_get(ctx->etcd, key, old);
 	if (ret < 0) {
 		if (ret != -ENOENT) {
-			fprintf(stderr, "%s: %s key %s create error %d\n",
-				__func__, t, key, ret);
+			fprintf(stderr, "%s: key %s create error %d\n",
+				__func__, key, ret);
 			goto out_free;
 		}
 		if (inotify_debug)
-			printf("%s: upload %s key %s value '%s'\n", __func__,
-			       t, key, value);
+			printf("%s: upload key %s value '%s'\n", __func__,
+			       key, value);
 
 		ret = etcd_kv_new(ctx->etcd, key, value);
 		if (ret < 0) {
-			fprintf(stderr, "%s: %s key %s create error %d\n",
-				__func__, t, key, ret);
+			fprintf(stderr, "%s: key %s create error %d\n",
+				__func__, key, ret);
 		}
 	} else if (strcmp(old, value)) {
 		if (inotify_debug)
-			printf("%s: update %s key %s value '%s'\n", __func__,
-			       t, key, value);
+			printf("%s: update key %s value '%s'\n", __func__,
+			       key, value);
 
 		ret = etcd_kv_update(ctx->etcd, key, value);
 		if (ret < 0)
-			fprintf(stderr, "%s: %s key %s update error %d\n",
-				__func__, t, key, ret);
+			fprintf(stderr, "%s: key %s update error %d\n",
+				__func__, key, ret);
 	}
 out_free:
 	free(key);
@@ -308,10 +303,6 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 	struct dirent *se;
 	int ret;
 
-	if (inotify_debug)
-		printf("%s: dir %s file %s\n",
-		       __func__, dir, file);
-
 	if (file) {
 		ret = asprintf(&dirname, "%s/%s", dir, file);
 		if (ret < 0)
@@ -331,10 +322,20 @@ int mark_inotify(struct watcher_ctx *ctx, const char *dir,
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
-		if (inotify_debug)
-			printf("%s: checking %s %s\n",
-			       __func__, dirname, se->d_name);
+		if (inotify_debug) {
+			char *type_name;
 
+			if (se->d_type == DT_DIR)
+				type_name = "dir";
+			else if (se->d_type == DT_LNK)
+				type_name = "link";
+			else if (se->d_type == DT_REG)
+				type_name = "file";
+			else
+				type_name = "unknown";
+			printf("%s: checking %s %s %s\n",
+			       __func__, type_name, dirname, se->d_name);
+		}
 		if (!strcmp(se->d_name, "passthru"))
 			continue;
 
