@@ -117,6 +117,7 @@ void usage(void) {
 	printf("\t[-p|--port] <portnum>\tetcd client port\n");
 	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-s|--ssl]\tUse SSL connections\n");
+	printf("\t[-w|--watcher]\tEnable watcher\n");
 	printf("\t[-v|--verbose]\tVerbose output\n");
 	printf("\t[-h|--help]\tThis help text\n");
 }
@@ -129,14 +130,14 @@ int main(int argc, char **argv)
 		{"ssl", no_argument, 0, 's'},
 		{"key_prefix", required_argument, 0, 'k'},
 		{"verbose", no_argument, 0, 'v'},
-		{"--no-watcher", no_argument, 0, 'w'},
+		{"watcher", no_argument, 0, 'w'},
 		{"help", no_argument, 0, '?'},
 	};
 	pthread_t inotify_thr;
 	pthread_t watcher_thr;
 	pthread_t signal_thr;
 	sigset_t oldmask;
-	bool disable_watcher = false;
+	bool enable_watcher = false;
 	struct watcher_ctx *ctx;
 	int ret = 0, getopt_ind;
 	char c;
@@ -186,7 +187,7 @@ int main(int argc, char **argv)
 			inotify_debug = true;
 			break;
 		case 'w':
-			disable_watcher = true;
+			enable_watcher = true;
 			break;
 		case '?':
 			usage();
@@ -226,7 +227,7 @@ int main(int argc, char **argv)
 		goto out_cancel_signal;
 	}
 
-	if (!disable_watcher) {
+	if (enable_watcher) {
 		ret = pthread_create(&watcher_thr, NULL,
 				     etcd_watcher, ctx->etcd);
 		if (ret) {
@@ -242,7 +243,7 @@ int main(int argc, char **argv)
 		pthread_cond_wait(&wait, &lock);
 	pthread_mutex_unlock(&lock);
 
-	if (!disable_watcher) {
+	if (enable_watcher) {
 		printf("cancelling watcher\n");
 		pthread_cancel(watcher_thr);
 		printf("waiting for watcher to terminate\n");
