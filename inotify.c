@@ -212,10 +212,10 @@ static int update_value(struct watcher_ctx *ctx,
 			free(tmp);
 		}
 	} else {
-		fprintf(stderr, "%s: attr %s invalid type\n",
+		fprintf(stderr, "%s: skip unhandled attr %s\n",
 			__func__, pathname);
 		free(pathname);
-		return -EISDIR;
+		return 0;
 	}
 	key = path_to_key(ctx, pathname);
 	if (!key) {
@@ -290,8 +290,7 @@ static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 			return -EINVAL;
 		}
 	}
-	if (type == DT_LNK || type == DT_REG)
-		ret = update_value(ctx, dirname, filename);
+	ret = update_value(ctx, dirname, filename);
 	return ret;
 }
 
