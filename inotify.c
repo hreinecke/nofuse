@@ -269,7 +269,7 @@ static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 
 	switch (type) {
 	case DT_DIR:
-		flags = IN_CREATE | IN_DELETE;
+		flags = IN_CREATE | IN_DELETE | IN_MODIFY;
 		break;
 	case DT_LNK:
 		flags = IN_DELETE_SELF;
