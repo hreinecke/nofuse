@@ -180,7 +180,7 @@ static int update_value(struct watcher_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
 	if (ret < 0)
 		return ret;
-	ret = stat(pathname, &st);
+	ret = lstat(pathname, &st);
 	if (ret < 0) {
 		fprintf(stderr, "%s: attr %s error %d\n",
 			__func__, pathname, errno);
