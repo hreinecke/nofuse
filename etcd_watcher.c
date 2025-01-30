@@ -97,13 +97,25 @@ out:
 	return ret;
 }
 
-int delete_parent(char *path)
+int delete_value(char *path, unsigned int mode)
 {
 	char *parent, *ptr;
 	struct stat st;
+	size_t offset;
 	int ret;
 
-	/* Trying to create parent */
+	/* Symlinks can be removed directly. */
+	if (mode == S_IFLNK) {
+		ret = unlink(path);
+		if (ret < 0) {
+			printf("%s: unlink %s error %d\n",
+			       __func__, path, errno);
+			ret = -errno;
+		}
+		return ret;
+	}
+
+	/* For other attributes the parent needs to be deleted */
 	parent = strdup(path);
 	ptr = strrchr(parent, '/');
 	if (!ptr) {
@@ -117,26 +129,27 @@ int delete_parent(char *path)
 	if (ret < 0) {
 		/* already deleted ... */
 		if (errno == ENOENT) {
-			free(parent);
-			return 0;
+			ret = 0;
+			goto out;
 		}
 		printf("%s: error %d accessing %s\n",
 		       __func__, errno, parent);
 		ret = -errno;
-	} else {
-		size_t offset = strlen(parent) - 12;
-		if (!strcmp(parent + offset, "ana_groups/1")) {
-			printf("%s: skip ana group 1\n", __func__);
-			ret = 0;
-		} else {
-			ret = rmdir(parent);
-			if (ret < 0) {
-				printf("%s: error %d deleting parent %s\n",
-				       __func__, errno, parent);
-				ret = -errno;
-			}
-		}
+		goto out;
 	}
+	offset = strlen(parent) - 12;
+	if (!strcmp(parent + offset, "ana_groups/1")) {
+		printf("%s: skip ana group 1\n", __func__);
+		ret = 0;
+		goto out;
+	}
+	ret = rmdir(parent);
+	if (ret < 0) {
+		printf("%s: error %d deleting parent %s\n",
+		       __func__, errno, parent);
+		ret = -errno;
+	}
+out:
 	free(parent);
 	return ret;
 }
@@ -188,7 +201,7 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 	if (!path) {
 		return;
 	}
-	ret = stat(path, &st);
+	ret = lstat(path, &st);
 	if (ret < 0) {
 		if (errno != ENOENT) {
 			printf("%s: error %d accessing %s\n",
@@ -206,7 +219,7 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		if (ret < 0)
 			goto out_free;
 		/* retry, should succeed now */
-		ret = stat(path, &st);
+		ret = lstat(path, &st);
 		if (ret < 0) {
 			printf("%s: error %d accessing %s\n",
 			       __func__, errno, path);
@@ -214,16 +227,13 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		}
 	}
 	if (kv->deleted) {
-		printf("%s: delete parent %s\n",
-		       __func__, path);
-		ret = delete_parent(path);
-	} else if (!kv->value) {
-		printf("%s: no value\n", __func__);
+		ret = delete_value(path, (st.st_mode & S_IFMT));
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
 		ret = update_value(path, kv->value);
 	} else if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		printf("%s: update link to %s\n",
 		       __func__, kv->value);
+		ret = symlink(kv->value, path);
 	} else {
 		printf("%s: unhandled attribute type for %s\n",
 		       __func__, path);
