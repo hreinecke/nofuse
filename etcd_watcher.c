@@ -48,13 +48,13 @@ static char *key_to_attr(struct etcd_ctx *ctx, char *key)
 	return path;
 }
 
-static int create_parent(char *path)
+static int create_value(char *path, char *value)
 {
 	char *parent, *ptr;
 	struct stat st;
 	int ret;
 
-	/* Trying to create parent */
+	/* Trying to create path */
 	parent = strdup(path);
 	ptr = strrchr(parent, '/');
 	if (!ptr) {
@@ -65,32 +65,30 @@ static int create_parent(char *path)
 	}
 	*ptr = '\0';
 	ret = stat(parent, &st);
-	if (ret < 0) {
-		if (errno != ENOENT) {
-			printf("%s: error %d accessing parent %s\n",
-			       __func__, errno, parent);
-			ret = -errno;
-			goto out;
-		}
-		printf("%s: create parent %s\n", __func__, parent);
-		ret = mkdir(parent, 0755);
+	if (!ret) {
+		/* Parent is present, need to create a symlink */
+		printf("%s: symlink %s to %s\n",
+		       __func__, path, value);
+		ret = symlink(value, path);
 		if (ret < 0) {
-			printf("%s: error %d creating parent %s\n",
-			       __func__, errno, parent);
-			ret = -errno;
-			goto out;
-		}
-		ret = stat(path, &st);
-		if (ret < 0) {
-			printf("%s: error %d accessing new path %s\n",
+			printf("%s: error %d creating %s\n",
 			       __func__, errno, path);
 			ret = -errno;
-			goto out;
 		}
-	} else if ((st.st_mode & S_IFMT) != S_IFDIR) {
-		printf("%s: parent %s is not a directory\n",
-		       __func__, parent);
-		ret = -ENOTDIR;
+		goto out;
+	}
+	if (errno != ENOENT) {
+		printf("%s: error %d accessing parent %s\n",
+		       __func__, errno, parent);
+		ret = -errno;
+		goto out;
+	}
+	printf("%s: create parent %s\n", __func__, parent);
+	ret = mkdir(parent, 0755);
+	if (ret < 0) {
+		printf("%s: error %d creating parent %s\n",
+		       __func__, errno, parent);
+		ret = -errno;
 	}
 out:
 	free(parent);
@@ -212,10 +210,7 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 			/* KV deleted and path not present, all done */
 			goto out_free;
 
-		printf("%s: create parent %s\n",
-		       __func__, path);
-		/* Trying to create parent */
-		ret = create_parent(path);
+		ret = create_value(path, kv->value);
 		if (ret < 0)
 			goto out_free;
 		/* retry, should succeed now */
