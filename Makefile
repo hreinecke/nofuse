@@ -48,6 +48,9 @@ etcd_client_curl.o: etcd_client.c
 etcd_client_socket.o: etcd_client.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+etcd_curl.o: etcd_curl.c
+	$(CC) $(CFLAGS) -D_USE_CURL -c -o $@ $<
+
 firmware.h: gen_firmware_rev.sh
 	bash ./$< $@
 
