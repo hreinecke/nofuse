@@ -17,51 +17,7 @@
 
 #include "etcd_client.h"
 
-int etcd_conn_continue(struct etcd_conn_ctx *conn)
-{
-	struct etcd_ctx *ctx = conn->ctx;
-	CURL *curl_ctx = conn->priv;
-	int ret = 0, running = 0;
-
-	curl_multi_add_handle(ctx->curlm_ctx, curl_ctx);
-
-	do {
-		CURLMcode merr;
-		int numfds = 0;
-
-		/* wait for activity, timeout or "nothing" */
-		merr = curl_multi_poll(ctx->curlm_ctx,
-				       NULL, 0, 1000,
-				       &numfds);
-		if (merr) {
-			fprintf(stderr,
-				"curl_multi_poll() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		} else if (!numfds) {
-			fprintf(stderr,
-				"curl_multi_poll(), %d transfers pending\n",
-				running);
-			ret = -EAGAIN;
-			break;
-		}
-
-		pthread_mutex_lock(&ctx->conn_mutex);
-		merr = curl_multi_perform(ctx->curlm_ctx, &running);
-		pthread_mutex_unlock(&ctx->conn_mutex);
-		if (merr) {
-			fprintf(stderr, "curl_multi_perform() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		}
-	} while (running);
-
-	curl_multi_remove_handle(ctx->curlm_ctx, curl_ctx);
-	return ret;
-}
-
+#ifdef _USE_CURL_MULTI
 static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
 {
 	struct etcd_ctx *ctx = conn->ctx;
@@ -106,6 +62,27 @@ static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
 	curl_multi_remove_handle(ctx->curlm_ctx, curl_ctx);
 	return ret;
 }
+#else
+static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
+{
+	CURL *curl_ctx = conn->priv;
+	CURLcode err;
+	int ret = 0;
+
+
+	err = curl_easy_perform(curl_ctx);
+	if (err != CURLE_OK) {
+		fprintf(stderr,
+			"curl_perform() failed, %s\n",
+			curl_easy_strerror(err));
+		if (err == CURLE_OPERATION_TIMEDOUT)
+			ret = -ETIME;
+		else
+			ret = -EIO;
+	}
+	return ret;
+}
+#endif
 
 static size_t
 etcd_parse_response(char *ptr, size_t size, size_t nmemb, void *arg)
@@ -146,7 +123,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		.parse_arg = parse_arg,
 	};
 
-	ret = asprintf(&url, "%s://%s:%u/%s\n",
+	ret = asprintf(&url, "%s://%s:%u%s",
 		       conn->ctx->proto, conn->ctx->host,
 		       conn->ctx->port, uri);
 	if (ret < 0)
@@ -260,6 +237,12 @@ out_err_opt:
 		opt, err, curl_easy_strerror(err));
 	curl_easy_cleanup(curl_ctx);
 	return -EINVAL;
+}
+
+int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
+		   etcd_parse_cb parse_cb, void *parse_arg)
+{
+	return 0;
 }
 
 void etcd_conn_exit(struct etcd_conn_ctx *conn)
