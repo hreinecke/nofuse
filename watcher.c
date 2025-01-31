@@ -24,6 +24,10 @@
 
 bool etcd_debug = true;
 bool http_debug = false;
+bool cmd_debug = false;
+bool tcp_debug = false;
+bool ep_debug = false;
+bool port_debug = false;
 int stopped = 0;
 
 int main(int argc, char **argv)

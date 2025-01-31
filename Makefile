@@ -27,8 +27,8 @@ portd: portd.o $(SOCKET_OBJS) $(OBJS)
 nvmetd: nvmetd.o inotify.o $(SOCKET_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
-watcher: watcher.o etcd_watcher.o $(SOCKET_OBJS) http_parser.o base64.o
-	$(CC) $(CFLAGS) -o $@ $^ $(ETCD_LIBS)
+watcher: watcher.o etcd_watcher.o $(SOCKET_OBJS) $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
