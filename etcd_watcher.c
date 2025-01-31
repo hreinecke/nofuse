@@ -197,6 +197,8 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 
 	path = key_to_attr(ctx, kv->key);
 	if (!path) {
+		printf("%s: invalid path for key %s\n",
+		       __func__, kv->key);
 		return;
 	}
 	ret = lstat(path, &st);
@@ -224,7 +226,8 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 	if (kv->deleted) {
 		ret = delete_value(path, (st.st_mode & S_IFMT));
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
-		ret = update_value(path, kv->value);
+		if (kv->value)
+			ret = update_value(path, kv->value);
 	} else if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		printf("%s: update link to %s\n",
 		       __func__, kv->value);
