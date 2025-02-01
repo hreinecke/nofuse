@@ -12,12 +12,6 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <limits.h>
-#include <netdb.h>
-#include <errno.h>
-
-#include <json-c/json.h>
-#include "http_parser.h"
-#include "base64.h"
 
 #include "common.h"
 #include "etcd_client.h"
