@@ -66,15 +66,10 @@ static int create_value(char *path, char *value)
 	*ptr = '\0';
 	ret = stat(parent, &st);
 	if (!ret) {
-		/* Parent is present, need to create a symlink */
-		printf("%s: symlink %s to %s\n",
-		       __func__, path, value);
-		ret = symlink(value, path);
-		if (ret < 0) {
-			printf("%s: error %d creating %s\n",
-			       __func__, errno, path);
-			ret = -errno;
-		}
+		/* Parent is present, error */
+		printf("%s: parent %s existing\n",
+		       __func__, parent);
+		ret = -EEXIST;
 		goto out;
 	}
 	if (errno != ENOENT) {
