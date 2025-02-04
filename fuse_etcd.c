@@ -664,7 +664,7 @@ static int subsys_mkdir(char *s)
 	if (ns == eptr)
 		return -EINVAL;
 
-	return add_namespace(ctx, subsysnqn, nsid);
+	return etcd_add_namespace(ctx, subsysnqn, nsid);
 }
 
 static int host_mkdir(char *s)
@@ -778,7 +778,7 @@ static int subsys_rmdir(char *s)
 	nsid = strtoul(ns, &eptr, 10);
 	if (ns == eptr)
 		return -EINVAL;
-	return del_namespace(ctx, subsysnqn, nsid);
+	return etcd_del_namespace(ctx, subsysnqn, nsid);
 }
 
 static int host_rmdir(char *s)
@@ -1333,25 +1333,6 @@ static int write_namespace(const char *subsysnqn, const char *p,
 		if (new_ana_grp != ana_grp)
 			return -EINVAL;
 
-		ret = len;
-	} else if (!strcmp(attr, "enable")) {
-		int enable;
-		char *eptr = NULL;
-
-		enable = strtoul(buf, &eptr, 10);
-		if (buf == eptr)
-			return -EINVAL;
-
-		fuse_info("%s: enable %d", __func__, enable);
-		if (enable == 1) {
-			ret = enable_namespace(ctx, subsysnqn, nsid);
-		} else if (enable == 0) {
-			ret = disable_namespace(ctx, subsysnqn, nsid);
-		} else {
-			ret = -EINVAL;
-		}
-		if (ret < 0)
-			return ret;
 		ret = len;
 	} else {
 		fuse_info("%s: attr %s", __func__, attr);
