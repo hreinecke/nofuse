@@ -22,7 +22,6 @@
 
 #include <json-c/json.h>
 #include "http_parser.h"
-#include "base64.h"
 
 #include "etcd_client.h"
 

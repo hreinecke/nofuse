@@ -13,8 +13,6 @@
 #include <pthread.h>
 #include <json-c/json.h>
 
-#include "base64.h"
-
 #include "etcd_client.h"
 
 #ifdef _USE_CURL_MULTI
