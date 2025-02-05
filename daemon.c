@@ -88,14 +88,6 @@ static int init_discovery(struct nofuse_context *ctx)
 	return ret;
 }
 
-static int init_subsys(struct nofuse_context *ctx)
-{
-	if (etcd_test_subsys(ctx->etcd, ctx->subsysnqn) == 0)
-		etcd_add_subsys_port(ctx->etcd, ctx->subsysnqn, "1");
-
-	return 0;
-}
-
 static void *keepalive_loop(void *arg)
 {
 	struct nofuse_context *ctx = arg;
@@ -139,42 +131,6 @@ static void show_help(void)
 	printf("  --ttl=<ttl> - Time-to-live for etcd key-value pairs");
 }
 
-static int init_args(struct fuse_args *args, struct nofuse_context *ctx)
-{
-#if 0
-	const char *traddr = "127.0.0.1";
-	int ret;
-#endif
-
-	if (ctx->help) {
-		show_help();
-		return 1;
-	}
-
-	init_discovery(ctx);
-#if 0
-	if (!ctx->traddr)
-		ctx->traddr = strdup(traddr);
-
-	ret = etcd_add_port(ctx->etcd, NULL, "1", ctx->traddr, "8009");
-	if (ret < 0) {
-		fprintf(stderr, "failed to add port for %s\n",
-			ctx->traddr);
-		return 1;
-	}
-	ret = etcd_add_ana_group(ctx->etcd, "1", 1, NVME_ANA_OPTIMIZED);
-	if (ret < 0) {
-		fprintf(stderr, "failed to add ana group to port\n");
-		etcd_del_port(ctx->etcd, "1");
-		return 1;
-	}
-#endif
-	if (init_subsys(ctx))
-		return 1;
-
-	return 0;
-}
-
 int main(int argc, char *argv[])
 {
 	int ret = 1;
@@ -214,9 +170,13 @@ int main(int argc, char *argv[])
 	if (ret)
 		return 1;
 
-	ret = init_args(&args, ctx);
-	if (ret)
-		goto out_close;
+	if (ctx->help) {
+		ret = -EINVAL;
+		show_help();
+		goto out_revoke;
+	}
+
+	init_discovery(ctx);
 
 	stopped = 0;
 
@@ -234,7 +194,7 @@ out_stop:
 	pthread_cancel(keepalive_thr);
 	pthread_join(keepalive_thr, NULL);
 
-out_close:
+out_revoke:
 	etcd_lease_revoke(ctx->etcd);
 	etcd_exit(ctx->etcd);
 
