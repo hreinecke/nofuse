@@ -76,32 +76,26 @@ static void *etcd_watcher(void *arg)
 	int64_t start_revision = 0;
 	int ret;
 
-	memset(&ev, 0, sizeof(ev));
-
 	conn = etcd_conn_create(ctx);
 	if (!conn)
 		goto out;
 
 	pthread_cleanup_push(delete_conn, conn);
 
+	memset(&ev, 0, sizeof(ev));
 	ev.ev_revision = start_revision;
 	ev.watch_cb = etcd_watch_cb;
 	ev.watch_arg = ctx;
 
-	ret = etcd_kv_watch(conn, "nofuse/", &ev, 0);
-	if (ret < 0) {
+	ret = etcd_kv_watch(conn, "nofuse/", &ev, pthread_self());
+	while (!ret || ret == -ETIME) {
+		if (stopped)
+			break;
+		ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
+	}
+	if (ret && ret != -ETIME)
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
-		pthread_kill(main_thr, SIGTERM);
-		goto out_cleanup_pop;
-	}
-	while (!stopped) {
-		ret = etcd_kv_watch_continue(conn, &ev);
-		if (ret < 0 && ret != -EAGAIN)
-			break;
-	}
-
-out_cleanup_pop:
 	pthread_cleanup_pop(1);
 
 out:
