@@ -66,6 +66,21 @@ static int create_value(char *path, char *value)
 	*ptr = '\0';
 	ret = stat(parent, &st);
 	if (!ret) {
+		/* Parent is present */
+		ptr = strrchr(parent, '/');
+		if (!strcmp(ptr, "/subsystems") ||
+		    !strcmp(ptr, "/allowed_hosts")) {
+			/* Need to create a symlink */
+			printf("%s: symlink %s to %s\n",
+			       __func__, path, value);
+			ret = symlink(value, path);
+			if (ret < 0) {
+				printf("%s: error %d creating %s\n",
+				       __func__, errno, path);
+				ret = -errno;
+			}
+			goto out;
+		}
 		/* Parent is present, error */
 		printf("%s: parent %s existing\n",
 		       __func__, parent);
@@ -230,9 +245,8 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		if (kv->value)
 			ret = update_value(path, kv->value);
 	} else if ((st.st_mode & S_IFMT) == S_IFLNK) {
-		printf("%s: update link to %s\n",
-		       __func__, kv->value);
-		ret = symlink(kv->value, path);
+		/* All done in create_value() */
+		ret = 0;
 	} else {
 		printf("%s: unhandled attribute type for %s\n",
 		       __func__, path);
