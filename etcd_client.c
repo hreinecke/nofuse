@@ -942,9 +942,6 @@ struct etcd_ctx *etcd_init(const char *prefix)
 
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
-#ifdef _USE_CURL
-	ctx->curlm_ctx = curl_multi_init();
-#endif
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
 		etcd_exit(ctx);
@@ -960,10 +957,6 @@ void etcd_exit(struct etcd_ctx *ctx)
 		return;
 	if (ctx->node_name)
 		free(ctx->node_name);
-#ifdef _USE_CURL
-	if (ctx->curlm_ctx)
-		curl_multi_cleanup(ctx->curlm_ctx);
-#endif
 	free(ctx->prefix);
 	free(ctx->host);
 	free(ctx->proto);

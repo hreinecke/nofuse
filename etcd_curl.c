@@ -15,52 +15,6 @@
 
 #include "etcd_client.h"
 
-#ifdef _USE_CURL_MULTI
-static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
-{
-	struct etcd_ctx *ctx = conn->ctx;
-	CURL *curl_ctx = conn->priv;
-	int ret = 0, running;
-
-	curl_multi_add_handle(ctx->curlm_ctx, curl_ctx);
-
-	do {
-		CURLMcode merr;
-
-		pthread_mutex_lock(&ctx->conn_mutex);
-		merr = curl_multi_perform(ctx->curlm_ctx, &running);
-		pthread_mutex_unlock(&ctx->conn_mutex);
-		if (merr) {
-			fprintf(stderr, "curl_multi_perform() failed, %s\n",
-				curl_multi_strerror(merr));
-			ret = -EIO;
-			break;
-		}
-
-		if (running) {
-			int numfds = 0;
-
-			/* wait for activity, timeout or "nothing" */
-			merr = curl_multi_poll(ctx->curlm_ctx,
-					       NULL, 0, 1000,
-					       &numfds);
-			if (merr) {
-				fprintf(stderr,
-					"curl_multi_poll() failed, %s\n",
-					curl_multi_strerror(merr));
-				ret = -EIO;
-				break;
-			} else if (!numfds) {
-				fprintf(stderr,
-					"curl_multi_poll(), %d transfers pending\n", running);
-			}
-		}
-	} while (running);
-
-	curl_multi_remove_handle(ctx->curlm_ctx, curl_ctx);
-	return ret;
-}
-#else
 static int etcd_kv_transfer(CURL *curl_ctx)
 {
 	CURLcode err;
@@ -79,7 +33,6 @@ static int etcd_kv_transfer(CURL *curl_ctx)
 	}
 	return ret;
 }
-#endif
 
 static size_t
 etcd_parse_response(char *ptr, size_t size, size_t nmemb, void *arg)

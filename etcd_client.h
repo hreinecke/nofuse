@@ -35,9 +35,6 @@ struct etcd_ctx {
 	bool tls;
 	int64_t lease;
 	int ttl;
-#ifdef _USE_CURL
-	CURLM *curlm_ctx;
-#endif
 	pthread_mutex_t conn_mutex;
 	struct etcd_conn_ctx *conn;
 };
