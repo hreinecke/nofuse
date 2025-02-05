@@ -896,7 +896,7 @@ static struct key_value_template ns_template[NUM_NS_ATTRS] = {
 	{ .key = "device_uuid", .value = "" },
 	{ .key = "device_path", .value = "" },
 	{ .key = "device_node", .value = "" },
-	{ .key = "ana_group_id", .value = "1" },
+	{ .key = "ana_grpid", .value = "1" },
 	{ .key = "enable", .value = "0" },
 };
 
@@ -1087,7 +1087,7 @@ int etcd_set_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 	char *key, *value;
 	int ret;
 
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/ana_group_id",
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/ana_grpid",
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
@@ -1111,7 +1111,7 @@ int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 	int ret, i;
 	char *key;
 
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/ana_group_id",
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/ana_grpid",
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
@@ -1123,7 +1123,7 @@ int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 	for (i = 0; i < ret; i++) {
 		struct etcd_kv *kv = &kvs[i];
 
-		if (!strcmp(kv->key, "ana_group_id")) {
+		if (!strcmp(kv->key, "ana_grpid")) {
 			unsigned long val;
 			char *eptr = NULL;
 
