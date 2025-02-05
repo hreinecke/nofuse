@@ -1123,11 +1123,6 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			ret = -ENOENT;
 			goto out_free;
 		}
-		if (!strcmp(attr, "ana_grpid")) {
-			ret = etcd_get_namespace_anagrp(ctx, subsysnqn,
-							nsid, NULL);
-			goto out_free;
-		}
 		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
 					      attr, NULL);
 		if (ret < 0)
@@ -1252,7 +1247,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				} else if (!strcmp(value, "3")) {
 					strcpy(value, "cur");
 				} else {
-					strcpy(value, "<unknown>");
+					strcpy(value, "nvm");
 				}
 			}
 		} else if (strcmp(attr, "namespaces")) {
@@ -1264,23 +1259,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				ret = -ENOENT;
 				goto out_free;
 			}
-			if (!strcmp(attr, "ana_grpid")) {
-				int anagrp;
-
-				ret = etcd_get_namespace_anagrp(ctx, subsysnqn,
-								nsid, &anagrp);
-				if (ret < 0) {
-					ret = -ENOENT;
-					goto out_free;
-				}
-				sprintf(value, "%d", anagrp);
-			} else {
-				ret = etcd_get_namespace_attr(ctx, subsysnqn,
-							      nsid, attr, value);
-				if (ret < 0) {
-					ret = -ENOENT;
-					goto out_free;
-				}
+			ret = etcd_get_namespace_attr(ctx, subsysnqn,
+						      nsid, attr, value);
+			if (ret < 0) {
+				ret = -ENOENT;
+				goto out_free;
 			}
 		}
 	}
@@ -1315,35 +1298,13 @@ static int write_namespace(const char *subsysnqn, const char *p,
 	fuse_info("%s: subsys %s nsid %u attr %s value %s", __func__,
 		  subsysnqn, nsid, attr, buf);
 
-	if (!strcmp(attr, "ana_grpid")) {
-		int ana_grp, new_ana_grp;
-		char *eptr;
+	fuse_info("%s: attr %s", __func__, attr);
+	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
+				      attr, buf);
+	if (ret < 0)
+		return ret;
 
-		ana_grp = strtoul(buf, &eptr, 10);
-		if (buf == eptr)
-			return -EINVAL;
-
-		ret = etcd_set_namespace_anagrp(ctx, subsysnqn, nsid, ana_grp);
-		if (ret < 0)
-			return ret;
-		ret = etcd_get_namespace_anagrp(ctx, subsysnqn, nsid,
-						    &new_ana_grp);
-		if (ret < 0)
-			return ret;
-		if (new_ana_grp != ana_grp)
-			return -EINVAL;
-
-		ret = len;
-	} else {
-		fuse_info("%s: attr %s", __func__, attr);
-		ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
-					      attr, buf);
-		if (ret < 0)
-			return ret;
-
-		ret = len;
-	}
-	return ret;
+	return len;
 }
 
 static int nofuse_write(const char *path, const char *buf, size_t len,
