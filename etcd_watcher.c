@@ -77,7 +77,7 @@ static int create_value(char *path, char *value)
 			if (ret < 0) {
 				printf("%s: error %d creating %s\n",
 				       __func__, errno, path);
-				ret = -errno;
+				ret = -ENOLINK;
 			}
 			goto out;
 		}
@@ -90,7 +90,7 @@ static int create_value(char *path, char *value)
 	if (errno != ENOENT) {
 		printf("%s: error %d accessing parent %s\n",
 		       __func__, errno, parent);
-		ret = -errno;
+		ret = -EPERM;
 		goto out;
 	}
 	printf("%s: create parent %s\n", __func__, parent);
@@ -98,7 +98,7 @@ static int create_value(char *path, char *value)
 	if (ret < 0) {
 		printf("%s: error %d creating parent %s\n",
 		       __func__, errno, parent);
-		ret = -errno;
+		ret = -EPERM;
 	}
 out:
 	free(parent);
@@ -229,8 +229,16 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 			goto out_free;
 
 		ret = create_value(path, kv->value);
-		if (ret < 0)
+		if (ret < 0) {
+			/*
+			 * If the symlink could not be created
+			 * -ENOLINK is returned, and we should
+			 * delete the KV key to indicate the error.
+			 */
+			if (ret == -ENOLINK)
+				etcd_kv_delete(ctx, kv->key);
 			goto out_free;
+		}
 		/* retry, should succeed now */
 		ret = lstat(path, &st);
 		if (ret < 0) {
