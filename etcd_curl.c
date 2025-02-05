@@ -61,9 +61,8 @@ static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
 	return ret;
 }
 #else
-static int etcd_kv_transfer(struct etcd_conn_ctx *conn)
+static int etcd_kv_transfer(CURL *curl_ctx)
 {
-	CURL *curl_ctx = conn->priv;
 	CURLcode err;
 	int ret = 0;
 
@@ -112,45 +111,44 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 etcd_parse_cb parse_cb, void *parse_arg)
 {
 	char *url;
-	CURL *curl_ctx = conn->priv;
+	CURL *curl_ctx = curl_easy_duphandle(conn->priv);
 	CURLcode err;
 	const char *post_data;
 	int ret;
 	struct etcd_parse_data parse_data = {
 		.parse_cb = parse_cb,
 		.parse_arg = parse_arg,
+		.tokener = json_tokener_new_ex(10),
 	};
 
 	ret = asprintf(&url, "%s://%s:%u%s",
 		       conn->ctx->proto, conn->ctx->host,
 		       conn->ctx->port, uri);
-	if (ret < 0)
-		return -ENOMEM;
+	if (ret < 0) {
+		ret = -ENOMEM;
+		goto out_cleanup;
+	}
 
-	parse_data.tokener = json_tokener_new_ex(10);
-
+	ret = -EINVAL;
 	err = curl_easy_setopt(curl_ctx, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt url failed, %s\n",
 			curl_easy_strerror(err));
-		free(url);
-		return -EINVAL;
+		goto out_free;
 	}
 	err = curl_easy_setopt(curl_ctx, CURLOPT_WRITEFUNCTION,
 			       etcd_parse_response);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s\n",
 			curl_easy_strerror(err));
-		free(url);
-		return -EINVAL;
+		goto out_free;
 	}
 	err = curl_easy_setopt(curl_ctx, CURLOPT_WRITEDATA,
 			       &parse_data);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writedata failed, %s\n",
 			curl_easy_strerror(err));
-		free(url);
-		return -EINVAL;
+		goto out_free;
 	}
 
 	if (post_obj) {
@@ -165,8 +163,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfields failed, %s\n",
 				curl_easy_strerror(err));
-			free(url);
-			return -EINVAL;
+			goto out_free;
 		}
 
 		err = curl_easy_setopt(curl_ctx, CURLOPT_POSTFIELDSIZE,
@@ -174,14 +171,17 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		if (err != CURLE_OK) {
 			fprintf(stderr, "curl setop postfieldsize failed, %s\n",
 				curl_easy_strerror(err));
-			free(url);
-			return -EINVAL;
+			goto out_free;
 		}
 	}
 
-	ret = etcd_kv_transfer(conn);
-	json_tokener_free(parse_data.tokener);
+	ret = etcd_kv_transfer(curl_ctx);
+
+out_free:
 	free(url);
+out_cleanup:
+	json_tokener_free(parse_data.tokener);
+	curl_easy_cleanup(curl_ctx);
 	return ret;
 }
 
@@ -214,10 +214,9 @@ int etcd_conn_init(struct etcd_conn_ctx *conn)
 		opt = CURLOPT_TIMEOUT;
 		err = curl_easy_setopt(curl_ctx, opt,
 				       conn->ctx->ttl);
+		if (err != CURLE_OK)
+			goto out_err_opt;
 	}
-	if (err != CURLE_OK)
-		goto out_err_opt;
-
 	headers = curl_slist_append(headers, "Expect:");
 	headers = curl_slist_append(headers, "Content-Type: application/json");
 	curl_easy_setopt(curl_ctx, CURLOPT_HTTPHEADER, headers);
