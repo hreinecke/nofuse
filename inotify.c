@@ -218,8 +218,9 @@ static int update_value(struct watcher_ctx *ctx,
 			free(tmp);
 		}
 	} else {
-		fprintf(stderr, "%s: skip unhandled attr %s\n",
-			__func__, pathname);
+		if ((st.st_mode & S_IFMT) != S_IFDIR)
+			fprintf(stderr, "%s: skip unhandled attr %s mode %x\n",
+				__func__, pathname, (st.st_mode & S_IFMT));
 		free(pathname);
 		return 0;
 	}
