@@ -74,7 +74,7 @@ static void *etcd_watcher(void *arg)
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	int64_t start_revision = 0;
-	int ret;
+	int ret = 0;
 
 	conn = etcd_conn_create(ctx);
 	if (!conn)
@@ -87,11 +87,10 @@ static void *etcd_watcher(void *arg)
 	ev.watch_cb = etcd_watch_cb;
 	ev.watch_arg = ctx;
 
-	ret = etcd_kv_watch(conn, "nofuse/", &ev, pthread_self());
-	while (!ret || ret == -ETIME) {
-		if (stopped)
-			break;
+	while (!stopped) {
 		ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
+		if (ret && ret != -ETIME)
+			break;
 	}
 	if (ret && ret != -ETIME)
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",

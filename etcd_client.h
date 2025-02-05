@@ -80,8 +80,6 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 int etcd_conn_init(struct etcd_conn_ctx *conn);
 void etcd_conn_exit(struct etcd_conn_ctx *conn);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
-int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
-		   etcd_parse_cb parse_cb, void *parse_arg);
 void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
 
@@ -137,8 +135,6 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 
 int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id);
-int etcd_kv_watch_continue(struct etcd_conn_ctx *ctx,
-			   struct etcd_kv_event *ev);
 
 void etcd_watch_cb(void *arg, struct etcd_kv *kv);
 

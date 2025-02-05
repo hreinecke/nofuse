@@ -281,9 +281,17 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg)
 {
+	struct etcd_parse_data *parse_data;
+	http_parser_settings settings;
+	http_parser *http = conn->priv;
 	char *hdr, *post;
 	size_t postlen;
 	int ret = 0;
+
+	if (!http || !http->data) {
+		printf("%s: connection not initialized\n", __func__);
+		return -EINVAL;
+	}
 
 	post = strdup(json_object_to_json_string_ext(post_obj,
 						     JSON_C_TO_STRING_PLAIN));
@@ -305,23 +313,6 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
 	if (ret < 0)
 		return -errno;
 
-	return etcd_conn_recv(conn, uri,
-			      parse_cb, parse_arg);
-}
-
-int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
-		   etcd_parse_cb parse_cb, void *parse_arg)
-
-{
-	struct etcd_parse_data *parse_data;
-	http_parser_settings settings;
-	http_parser *http = conn->priv;
-	int ret;
-
-	if (!http || !http->data) {
-		printf("%s: connection not initialized\n", __func__);
-		return -EINVAL;
-	}
 	parse_data = http->data;
 	parse_data->parse_cb = parse_cb;
 	parse_data->parse_arg = parse_arg;

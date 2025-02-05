@@ -547,13 +547,6 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	return ret < 0 ? ret : 0;
 }
 
-int etcd_kv_watch_continue(struct etcd_conn_ctx *conn,
-			   struct etcd_kv_event *ev)
-{
-	return etcd_conn_recv(conn, "/v3/watch",
-			      parse_watch_response, ev);
-}
-
 static void
 etcd_parse_lease_response(struct json_object *etcd_resp, void *arg)
 {

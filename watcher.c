@@ -78,11 +78,10 @@ static void *etcd_watcher(void *arg)
 	ev.watch_cb = etcd_watch_cb;
 	ev.watch_arg = conn->ctx;
 
-	ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
-	while (!ret || ret == -ETIME) {
-		if (stopped)
-			break;
+	while (!stopped) {
 		ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
+		if (ret && ret != -ETIME)
+			break;
 	}
 	if (ret && ret != -ETIME)
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",

@@ -156,35 +156,48 @@ static void update_port(void *arg, struct etcd_kv *kv)
 	free(key);
 }
 
-static void *etcd_watcher(void *arg)
+static void delete_conn(void *arg)
 {
 	struct etcd_conn_ctx *conn = arg;
+
+	etcd_conn_delete(conn);
+}
+
+static void *etcd_watcher(void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
-	char *prefix;
 	int64_t start_revision = 0;
+	char *prefix;
 	int ret;
 
-	memset(&ev, 0, sizeof(ev));
-
-	ret = asprintf(&prefix, "%s/ports", conn->ctx->prefix);
+	ret = asprintf(&prefix, "%s/ports", ctx->prefix);
 	if (ret < 0)
 		return NULL;
 
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		goto out;
+
+	pthread_cleanup_push(delete_conn, conn);
+
+	memset(&ev, 0, sizeof(ev));
 	ev.ev_revision = start_revision;
 	ev.watch_cb = update_port;
-	ev.watch_arg = conn->ctx;
-	ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
-	if (ret) {
+	ev.watch_arg = ctx;
+
+	while (!stopped) {
+		ret = etcd_kv_watch(conn, prefix, &ev, pthread_self());
+		if (ret && ret != -ETIME)
+			break;
+	}
+	if (ret && ret != -ETIME)
 		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
 				__func__, ret);
-	} else {
-		while (!stopped) {
-			ret = etcd_kv_watch_continue(conn, &ev);
-			if (ret < 0 && ret != -EAGAIN)
-				break;
-		}
-	}
+	pthread_cleanup_pop(1);
 
+out:
 	free(prefix);
 	pthread_exit(NULL);
 	return NULL;

@@ -189,12 +189,6 @@ out_err_opt:
 	return -EINVAL;
 }
 
-int etcd_conn_recv(struct etcd_conn_ctx *conn, char *uri,
-		   etcd_parse_cb parse_cb, void *parse_arg)
-{
-	return 0;
-}
-
 void etcd_conn_exit(struct etcd_conn_ctx *conn)
 {
 	if (conn->priv) {
