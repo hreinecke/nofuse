@@ -187,7 +187,7 @@ int etcd_add_host(struct etcd_ctx *ctx, const char *nqn)
 			       ctx->prefix, nqn, kv->key);
 		if (ret < 0)
 			return ret;
-		ret = etcd_kv_new(ctx, key, (char *)kv->value);
+		ret = etcd_kv_store(ctx, key, (char *)kv->value);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -313,7 +313,7 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
 			if (origin)
 				value = origin;
 		}
-		ret = etcd_kv_new(ctx, key, value);
+		ret = etcd_kv_store(ctx, key, value);
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -487,7 +487,7 @@ int etcd_add_ana_group(struct etcd_ctx *ctx, const char *port,
 	default:
 		return -EINVAL;
 	}
-	ret = etcd_kv_new(ctx, key, value);
+	ret = etcd_kv_store(ctx, key, value);
 	free(key);
 	return ret;
 }
@@ -742,7 +742,7 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_new(ctx, key, value);
+	ret = etcd_kv_store(ctx, key, value);
 	free(value);
 	free(key);
 	if (ret < 0)
@@ -847,7 +847,7 @@ int etcd_add_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_new(ctx, key, value);
+	ret = etcd_kv_store(ctx, key, value);
 	free(value);
 	free(key);
 	if (ret < 0)
@@ -1001,7 +1001,7 @@ int etcd_add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 		else
 			value = kv->value;
 		if (value)
-			ret = etcd_kv_new(ctx, key, value);
+			ret = etcd_kv_store(ctx, key, value);
 		free(key);
 	}
 	return ret;

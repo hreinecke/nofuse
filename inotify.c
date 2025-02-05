@@ -247,7 +247,7 @@ static int update_value(struct watcher_ctx *ctx,
 			printf("%s: upload key %s value '%s'\n", __func__,
 			       key, value);
 
-		ret = etcd_kv_new(ctx->etcd, key, value);
+		ret = etcd_kv_store(ctx->etcd, key, value);
 		if (ret < 0) {
 			fprintf(stderr, "%s: key %s create error %d\n",
 				__func__, key, ret);
