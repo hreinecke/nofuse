@@ -196,6 +196,12 @@ static int update_value(struct watcher_ctx *ctx,
 	if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		ret = readlink(pathname, value, sizeof(value));
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
+		if (!strcmp(name, "addr_origin")) {
+			printf("%s: skip attr %s, internal only\n",
+			       __func__, pathname);
+			free(pathname);
+			return 0;
+		}
 		ret = read_attr(pathname, value, sizeof(value));
 		if (ret > 0 && strlen(value) && !strcmp(name, "device_path")) {
 			char *node_name = ctx->etcd->node_name;

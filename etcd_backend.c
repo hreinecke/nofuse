@@ -253,7 +253,7 @@ int etcd_del_host(struct etcd_ctx *ctx, const char *nqn)
 	return ret;
 }
 
-#define NUM_PORT_ATTRS 8
+#define NUM_PORT_ATTRS 7
 static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trtype", .value = "tcp" },
 	{ .key = "addr_adrfam", .value = "ipv4" },
@@ -261,8 +261,7 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trsvcid", .value = "" },
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
-	{ .key = "addr_node", .value = "" },
-	{ .key = "addr_origin", .value = "nofuse" },
+	{ .key = "addr_origin", .value = "" },
 };
 
 int etcd_fill_port_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
@@ -553,7 +552,7 @@ static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_model", .value = "nofuse" },
 	{ .key = "attr_serial", .value = "nofuse" },
 	{ .key = "attr_version", .value = "2.0" },
-	{ .key = "attr_type", .value = "3" },
+	{ .key = "attr_type", .value = "nvm" },
 	{ .key = "attr_qid_max", .value = "" },
 	{ .key = "attr_pi_enable", .value = "0" },
 };
@@ -579,7 +578,7 @@ int etcd_fill_subsys(struct etcd_ctx *ctx, const char *subsys,
 	return 0;
 }
 
-int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
+int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, const char *type)
 {
 	int ret, i;
 
@@ -593,10 +592,7 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type)
 			return ret;
 
 		if (!strcmp(kvt->key, "attr_type")) {
-			char type_str[3];
-
-			sprintf(type_str, "%d", type);
-			ret = etcd_kv_store(ctx, key, type_str);
+			ret = etcd_kv_store(ctx, key, type);
 		} else if (!strcmp(kvt->key, "attr_firmware")) {
 			ret = etcd_kv_store(ctx, key, firmware_rev);
 		} else {

@@ -46,7 +46,7 @@ int etcd_del_ana_group(struct etcd_ctx *ctx, const char *port, int ana_grpid);
 
 int etcd_fill_subsys(struct etcd_ctx *ctx, const char *nqn,
 		     void *buf, fuse_fill_dir_t filler);
-int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, int type);
+int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, const char *type);
 int etcd_test_subsys(struct etcd_ctx *ctx, const char *nqn);
 int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *nqn,
 			 const char *attr, const char *value);

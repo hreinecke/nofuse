@@ -188,7 +188,8 @@ static int port_getattr(char *port, struct stat *stbuf)
 		return 0;
 	}
 
-	if (strncmp(attr, "addr_", 5))
+	if (strncmp(attr, "addr_", 5) &&
+	    strncmp(attr, "param_", 6))
 		return -ENOENT;
 
 	ret = etcd_get_port_attr(ctx, port, attr, NULL);
@@ -636,16 +637,15 @@ static int subsys_mkdir(char *s)
 		return -ENOENT;
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
-		char nqn[MAX_NQN_SIZE];
-		int type = NVME_NQN_NVM, ret;
+		char nqn[MAX_NQN_SIZE], *type = "nvm";
+		int ret;
 
 		ret = etcd_get_discovery_nqn(ctx, nqn);
 		if (!ret && !strcmp(nqn, subsysnqn))
-			type = NVME_NQN_CUR;
+			type = "cur";
 
-		printf("creating %s subsys %s\n",
-		       type == NVME_NQN_NVM ? "nvm" : "cur",
-		       subsysnqn);
+		fuse_info("%s: creating %s subsys %s\n",
+			  __func__, type, subsysnqn);
 		return etcd_add_subsys(ctx, subsysnqn, type);
 	}
 

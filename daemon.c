@@ -83,8 +83,7 @@ static int init_discovery(struct nofuse_context *ctx)
 	if (etcd_test_subsys(ctx->etcd, ctx->subsysnqn) < 0) {
 		printf("adding discovery subsystem %s\n",
 		       ctx->subsysnqn);
-		ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn,
-				      NVME_NQN_CUR);
+		ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn, "cur");
 	}
 	return ret;
 }
