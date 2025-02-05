@@ -169,9 +169,15 @@ static int update_value(char *path, char *value)
 		if (ret < 0) {
 			printf("%s: failed to update %s, error %d\n",
 			       __func__, path, errno);
+			/* reset to original value */
+			if (write(fd, buf, strlen(buf)) < 0) {
+				printf("%s: failed to reset %s, error %d\n",
+				       __func__, path, errno);
+			}
 			ret = -errno;
 		}
 	}
+
 	close(fd);
 	return ret;
 }
