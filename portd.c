@@ -57,15 +57,7 @@ static int parse_port_key(char *key, unsigned int *portid,
 	char *p, *s, *port, *eptr = NULL;
 	unsigned long id;
 
-	/* prefix */
-	p = strtok_r(key, "/", &s);
-	if (!p)
-		return -EINVAL;
-	/* 'ports' */
-	p = strtok_r(NULL, "/", &s);
-	if (!p)
-		return -EINVAL;
-	port = strtok_r(NULL, "/", &s);
+	port = strtok_r(key, "/", &s);
 	if (!port)
 		return -EINVAL;
 	id = strtoul(port, &eptr, 10);
@@ -120,7 +112,7 @@ static void update_port(void *arg, struct etcd_kv *kv)
 	int ret;
 
 	key = strdup(kv->key);
-	ret = parse_port_key(key, &portid, &attr,
+	ret = parse_port_key(key + strlen(ctx->prefix), &portid, &attr,
 			     &subsys, &ana_grpid);
 	if (ret < 0) {
 		free(key);
@@ -231,8 +223,7 @@ int main(int argc, char **argv)
 	char c;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
-	struct etcd_conn_ctx *conn;
-	char *prefix;
+	char *prefix = NULL;
 	int ret = 0, i;
 
 	sigemptyset(&mask);
@@ -256,8 +247,7 @@ int main(int argc, char **argv)
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'e':
-			free(ctx->prefix);
-			ctx->prefix = strdup(optarg);
+			prefix = strdup(optarg);
 			break;
 		case 'h':
 			free(ctx->host);
@@ -281,8 +271,13 @@ int main(int argc, char **argv)
 		}
 	}
 
-	asprintf(&prefix, "%s/ports", ctx->prefix);
-	printf("Using key %s\n", prefix);
+	if (!prefix) {
+		prefix = ctx->prefix;
+	} else {
+		free(ctx->prefix);
+	}
+	asprintf(&ctx->prefix, "%s/ports/%s", prefix, ctx->node_name);
+	printf("Using key %s\n", ctx->prefix);
 
 	ret = etcd_kv_range(ctx, prefix, &kvs);
 	if (ret < 0) {
@@ -294,16 +289,12 @@ int main(int argc, char **argv)
 	}
 	etcd_kv_free(kvs, ret);
 
-	conn = etcd_conn_create(ctx);
-	if (!conn)
-		goto out_cleanup;
-
-	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, conn);
+	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_conn;
+		goto out_cleanup;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -317,8 +308,6 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
-out_conn:
-	etcd_conn_delete(conn);
 out_cleanup:
 	cleanup_ports();
 out_free:
