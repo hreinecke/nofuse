@@ -149,14 +149,6 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 	return 0;
 }
 
-#define NUM_HOST_ATTRS 4
-static struct key_value_template host_template[NUM_HOST_ATTRS] = {
-	{ .key = "dhchap_key", .value = "" },
-	{ .key = "dhchap_hash", .value = "sha(256)" },
-	{ .key = "dhchap_dhgroup", .value = "" },
-	{ .key = "dhchap_ctrl_key", .value = "" },
-};
-
 int etcd_fill_host_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
 {
 	return etcd_fill_root(ctx, "hosts", buf, filler);
@@ -165,15 +157,39 @@ int etcd_fill_host_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
 int etcd_fill_host(struct etcd_ctx *ctx, const char *nqn,
 		   void *buf, fuse_fill_dir_t filler)
 {
-	int i;
+	struct etcd_kv *kvs;
+	int i, ret;
+	char *key;
 
-	for (i = 0; i < NUM_HOST_ATTRS; i++) {
-		struct key_value_template *kv = &host_template[i];
+	ret = asprintf(&key, "%s/hosts/%s",
+		       ctx->prefix, nqn);
+	if (ret < 0)
+		return ret;
 
-		filler(buf, kv->key, NULL, 0, FUSE_FILL_DIR_PLUS);
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+
+	for (i = 0; i < ret; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char *p;
+
+		p = strrchr(kv->key, '/');
+		if (p)
+			filler(buf, p + 1, NULL, 0, FUSE_FILL_DIR_PLUS);
 	}
+	etcd_kv_free(kvs, ret);
 	return 0;
 }
+
+#define NUM_HOST_ATTRS 4
+static struct key_value_template host_template[NUM_HOST_ATTRS] = {
+	{ .key = "dhchap_key", .value = "" },
+	{ .key = "dhchap_hash", .value = "sha(256)" },
+	{ .key = "dhchap_dhgroup", .value = "" },
+	{ .key = "dhchap_ctrl_key", .value = "" },
+};
 
 int etcd_add_host(struct etcd_ctx *ctx, const char *nqn)
 {
