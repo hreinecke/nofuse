@@ -120,12 +120,12 @@ static void update_port(void *arg, struct etcd_kv *kv)
 	}
 
 	if (attr) {
-		/* Only react on trsvcid */
-		if (strcmp(attr, "addr_trsvcid")) {
+		/* 'addr_origin' triggers port creation */
+		if (strcmp(attr, "addr_origin")) {
 			free(key);
 			return;
 		}
-		if (strcmp(kv->value, "8009")) {
+		if (strcmp(kv->value, "nofuse")) {
 			printf("%s: ignore nvmet port %d\n",
 			       __func__, portid);
 			free(key);
