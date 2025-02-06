@@ -120,13 +120,24 @@ static void update_port(void *arg, struct etcd_kv *kv)
 	}
 
 	if (attr) {
+		/* Only react on trsvcid */
+		if (strcmp(attr, "addr_trsvcid")) {
+			free(key);
+			return;
+		}
+		if (strcmp(kv->value, "8009")) {
+			printf("%s: ignore nvmet port %d\n",
+			       __func__, portid);
+			free(key);
+			return;
+		}
 		printf("%s: op %s port %d attr %s\n", __func__,
 		       kv->deleted ? "delete" : "add",
 		       portid, attr);
-		if (!kv->deleted)
-			find_and_add_port(ctx, portid);
-		else if (!strcmp(attr, "addr_traddr"))
+		if (kv->deleted)
 			find_and_del_port(portid);
+		else
+			find_and_add_port(ctx, portid);
 	} else if (subsys) {
 		struct nofuse_port *port;
 
