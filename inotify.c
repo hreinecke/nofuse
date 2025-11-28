@@ -115,128 +115,6 @@ allocate_watch(struct watcher_ctx *ctx, const char *dirname,
 	return watcher;
 }
 
-static char *path_to_key(struct watcher_ctx *ctx, const char *path)
-{
-	const char *attr = path + strlen(ctx->etcd->configfs) + 1;
-	char *key;
-	int ret;
-
-	if (!strncmp(attr, "ports/", 6)) {
-		char *node_name = ctx->etcd->node_name;
-		const char *suffix = attr + 6;
-
-		if (!node_name)
-			node_name = "localhost";
-		ret = asprintf(&key, "%s/ports/%s:%s",
-			       ctx->etcd->prefix, node_name, suffix);
-	} else {
-		ret = asprintf(&key, "%s/%s",
-			       ctx->etcd->prefix, attr);
-	}
-	if (ret < 0)
-		return NULL;
-	return key;
-}
-
-static int update_value(struct watcher_ctx *ctx,
-			const char *dirname, const char *name)
-{
-	struct stat st;
-	char *pathname, value[1024], old[1024], *key;
-	int ret;
-
-	memset(value, 0, sizeof(value));
-	ret = asprintf(&pathname, "%s/%s", dirname, name);
-	if (ret < 0)
-		return ret;
-	ret = lstat(pathname, &st);
-	if (ret < 0) {
-		fprintf(stderr, "%s: attr %s error %d\n",
-			__func__, pathname, errno);
-		free(pathname);
-		return -errno;
-	}
-	if (!(st.st_mode & (S_IRUSR | S_IRGRP | S_IROTH))) {
-		printf("%s: skip attr %s, not readable\n",
-		       __func__, pathname);
-		free(pathname);
-		return 0;
-	}
-	if ((st.st_mode & S_IFMT) == S_IFLNK) {
-		ret = readlink(pathname, value, sizeof(value));
-	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
-		if (!strcmp(name, "addr_origin")) {
-			printf("%s: skip attr %s, internal only\n",
-			       __func__, pathname);
-			free(pathname);
-			return 0;
-		}
-		ret = read_attr(pathname, value, sizeof(value));
-		if (ret > 0 && strlen(value) && !strcmp(name, "device_path")) {
-			char *node_name = ctx->etcd->node_name;
-			char *tmp = strdup(value);
-
-			if (!node_name)
-				node_name = "localhost";
-
-			/*
-			 * Prefix the device path with the node name to
-			 * indicate on which node the namespace resides.
-			 */
-			sprintf(value, "%s:%s", ctx->etcd->node_name, tmp);
-			free(tmp);
-		}
-	} else {
-		if ((st.st_mode & S_IFMT) != S_IFDIR)
-			fprintf(stderr, "%s: skip unhandled attr %s mode %x\n",
-				__func__, pathname, (st.st_mode & S_IFMT));
-		free(pathname);
-		return 0;
-	}
-	key = path_to_key(ctx, pathname);
-	if (!key) {
-		free(pathname);
-		return -ENOMEM;
-	}
-	if (ret < 0) {
-		fprintf(stderr, "%s: %s value error %d\n",
-			__func__, key, ret);
-		goto out_free;
-	}
-
-	memset(old, 0, sizeof(old));
-	ret = etcd_kv_get(ctx->etcd, key, old);
-	if (ret < 0) {
-		if (ret != -ENOENT) {
-			fprintf(stderr, "%s: key %s create error %d\n",
-				__func__, key, ret);
-			goto out_free;
-		}
-		if (inotify_debug)
-			printf("%s: upload key %s value '%s'\n", __func__,
-			       key, value);
-
-		ret = etcd_kv_store(ctx->etcd, key, value);
-		if (ret < 0) {
-			fprintf(stderr, "%s: key %s create error %d\n",
-				__func__, key, ret);
-		}
-	} else if (strcmp(old, value)) {
-		if (inotify_debug)
-			printf("%s: update key %s value '%s'\n", __func__,
-			       key, value);
-
-		ret = etcd_kv_update(ctx->etcd, key, value);
-		if (ret < 0)
-			fprintf(stderr, "%s: key %s update error %d\n",
-				__func__, key, ret);
-	}
-out_free:
-	free(key);
-	free(pathname);
-	return ret;
-}
-
 static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 		     const char *filename, unsigned int type)
 {
@@ -266,7 +144,7 @@ static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 			return -EINVAL;
 		}
 	}
-	ret = update_value(ctx, dirname, filename);
+	ret = update_value(ctx->etcd, dirname, filename);
 	return ret;
 }
 
@@ -443,7 +321,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 				printf("unlink %s\n", subdir);
 		}
 		unmark_inotify(watcher->ctx, NULL, subdir);
-		key = path_to_key(watcher->ctx, subdir);
+		key = path_to_key(watcher->ctx->etcd, subdir);
 		if (inotify_debug)
 			printf("%s: delete key %s\n",
 			       __func__, key);
@@ -455,7 +333,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 	} else if (ev->mask & IN_MODIFY) {
 		if (inotify_debug)
 			printf("write %s %s\n", watcher->dirname, ev->name);
-		update_value(watcher->ctx, watcher->dirname, ev->name);
+		update_value(watcher->ctx->etcd, watcher->dirname, ev->name);
 	}
 	return ev_len;
 }

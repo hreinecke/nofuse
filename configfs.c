@@ -58,7 +58,7 @@ int read_attr(char *attr_path, char *value, size_t value_len)
 	return len;
 }
 
-static char *path_to_key(struct etcd_ctx *ctx, const char *path)
+char *path_to_key(struct etcd_ctx *ctx, const char *path)
 {
 	const char *attr = path + strlen(ctx->configfs) + 1;
 	char *key;
@@ -81,8 +81,8 @@ static char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	return key;
 }
 
-static int update_value(struct etcd_ctx *ctx,
-			const char *dirname, const char *name)
+int update_value(struct etcd_ctx *ctx,
+		 const char *dirname, const char *name)
 {
 	struct stat st;
 	char *pathname, value[1024], old[1024], *key;
