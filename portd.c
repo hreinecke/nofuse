@@ -210,10 +210,8 @@ void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
 	printf("Arguments are:\n");
-	printf("\t[-h|--host] <host-or-ip>\tHost to connect to\n");
-	printf("\t[-p|--port] <portnum>\tetcd client port\n");
-	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix\n");
-	printf("\t[-s|--ssl]\tUse SSL connections\n");
+	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
+	printf("\t[-t|--ttl] <ttl>\tetcd TTL value\n");
 	printf("\t[-v|--verbose]\tVerbose output\n");
 	printf("\t[-h|--help]\tThis help text\n");
 }
@@ -221,10 +219,8 @@ void usage(void) {
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
-		{"port", required_argument, 0, 'p'},
-		{"host", required_argument, 0, 'h'},
-		{"ssl", no_argument, 0, 's'},
-		{"key_prefix", required_argument, 0, 'k'},
+		{"prefix", required_argument, 0, 'p'},
+		{"ttl", required_argument, 0, 't'},
 		{"verbose", no_argument, 0, 'v'},
 		{"help", no_argument, 0, '?'},
 	};
@@ -232,10 +228,35 @@ int main(int argc, char **argv)
 	struct etcd_kv *kvs;
 	sigset_t oldmask;
 	char c;
+	unsigned long ttl = 0;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
-	char *prefix = NULL;
+	char *prefix = NULL, *eptr;
 	int ret = 0, i;
+
+	while ((c = getopt_long(argc, argv, "p:t:v?",
+				getopt_arg, &getopt_ind)) != -1) {
+		switch (c) {
+		case 'p':
+			prefix = optarg;
+			break;
+		case 't':
+			ttl = strtoul(optarg, &eptr, 10);
+			if (eptr == optarg || ttl == ULONG_MAX) {
+				fprintf(stderr, "Invalid TTL '%s'\n", optarg);
+				exit(1);
+			}
+			break;
+		case 'v':
+			etcd_debug = true;
+			port_debug = true;
+			ep_debug = true;
+			break;
+		case '?':
+			usage();
+			return 0;
+		}
+	}
 
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
@@ -248,38 +269,10 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ctx = etcd_init(NULL, 0);
+	ctx = etcd_init(prefix, NULL, ttl);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_restore_sig;
-	}
-
-	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
-				getopt_arg, &getopt_ind)) != -1) {
-		switch (c) {
-		case 'e':
-			prefix = strdup(optarg);
-			break;
-		case 'h':
-			free(ctx->host);
-			ctx->host = strdup(optarg);
-			break;
-		case 'p':
-			ctx->port = atoi(optarg);
-			break;
-		case 's':
-			ctx->proto = strdup("https");
-			break;
-		case 'v':
-			etcd_debug = true;
-			port_debug = true;
-			ep_debug = true;
-			break;
-		case '?':
-			usage();
-			sigprocmask(SIG_SETMASK, &oldmask, NULL);
-			return 0;
-		}
 	}
 
 	if (!prefix) {

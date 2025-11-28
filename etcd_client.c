@@ -912,7 +912,8 @@ int etcd_member_id(struct etcd_ctx *ctx)
 	return ret;
 }
 
-struct etcd_ctx *etcd_init(const char *prefix, unsigned int ttl)
+struct etcd_ctx *etcd_init(const char *prefix, const char *mnt,
+			   unsigned int ttl)
 {
 	struct etcd_ctx *ctx;
 	int ret;
@@ -926,11 +927,12 @@ struct etcd_ctx *etcd_init(const char *prefix, unsigned int ttl)
 	ctx->host = strdup(default_etcd_host);
 	ctx->proto = strdup(default_etcd_proto);
 	ctx->port = default_etcd_port;
-	if (prefix)
-		ctx->prefix = strdup(prefix);
-	else
-		ctx->prefix = strdup(default_etcd_prefix);
-	ctx->configfs = strdup(NVMET_CONFIGFS);
+	if (!prefix)
+		prefix = default_etcd_prefix;
+	ctx->prefix = strdup(prefix);
+	if (!mnt)
+		mnt = NVMET_CONFIGFS;
+	ctx->configfs = strdup(mnt);
 	ctx->lease = 0;
 	ctx->ttl = ttl > 0 ? ttl : default_etcd_ttl;
 	pthread_mutex_init(&ctx->conn_mutex, NULL);

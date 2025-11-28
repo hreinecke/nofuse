@@ -1,7 +1,7 @@
 /*
  * xdp_drop_port.c
  *
- * Drop packets for port '4420' on localhost.
+ * Drop packets in port range '4420 - 4440' on localhost.
  *
  * Load with:
  * ip link set dev lo xdpgeneric obj xdp_drop_port.o sec xdp_drop
@@ -48,11 +48,11 @@ int xdp_drop_port(struct xdp_md *ctx)
 
     /* Filter out SQE PDUs */
     t_dest = bpf_ntohs(t->dest);
-    if (t_dest == 4420)
+    if (t_dest >= 4420 && t_dest < 4440)
 	    return XDP_DROP;
     /* Filter out CQE PDUs */
     t_source = bpf_ntohs(t->source);
-    if (t_source == 4420)
+    if (t_source >= 4420 && t_dest < 4440)
 	    return XDP_DROP;
 
     return XDP_PASS;

@@ -154,16 +154,11 @@ int main(int argc, char *argv[])
 		etcd_debug = true;
 	}
 
-	ctx->etcd = etcd_init(ctx->prefix);
+	ctx->etcd = etcd_init(ctx->prefix, NULL, ctx->ttl);
 	if (!ctx->etcd) {
 		fprintf(stderr, "cannot connect to etcd\n");
 		free(ctx);
 		return 1;
-	}
-	if (ctx->ttl) {
-		if (ctx->ttl < 2)
-			ctx->ttl = 2;
-		ctx->etcd->ttl = ctx->ttl;
 	}
 
 	ret = etcd_lease_grant(ctx->etcd);

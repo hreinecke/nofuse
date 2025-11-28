@@ -106,10 +106,7 @@ void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
 	printf("Arguments are:\n");
-	printf("\t[-h|--host] <host-or-ip>\tHost to connect to\n");
-	printf("\t[-p|--port] <portnum>\tetcd client port\n");
-	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix\n");
-	printf("\t[-s|--ssl]\tUse SSL connections\n");
+	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-w|--watcher]\tEnable watcher\n");
 	printf("\t[-v|--verbose]\tVerbose output\n");
 	printf("\t[-h|--help]\tThis help text\n");
@@ -118,10 +115,7 @@ void usage(void) {
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
-		{"port", required_argument, 0, 'p'},
-		{"host", required_argument, 0, 'h'},
-		{"ssl", no_argument, 0, 's'},
-		{"key_prefix", required_argument, 0, 'k'},
+		{"prefix", required_argument, 0, 'p'},
 		{"verbose", no_argument, 0, 'v'},
 		{"watcher", no_argument, 0, 'w'},
 		{"help", no_argument, 0, '?'},
@@ -133,43 +127,13 @@ int main(int argc, char **argv)
 	bool enable_watcher = false;
 	struct watcher_ctx *ctx;
 	int ret = 0, getopt_ind;
-	char c;
+	char c, *prefix = NULL;
 
-	main_thr = pthread_self();
-
-	ctx = malloc(sizeof(*ctx));
-	if (!ctx)
-		exit(1);
-
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->etcd = etcd_init(NULL, 0);
-	if (!ctx->etcd) {
-		ret = ENOMEM;
-		fprintf(stderr, "cannot allocate context\n");
-		goto out_close;
-	}
-	ctx->path_fd = open(ctx->etcd->configfs, O_DIRECTORY | O_RDONLY);
-	if (ctx->path_fd < 0) {
-		fprintf(stderr, "cannot open path '%s', error %d\n",
-			ctx->etcd->configfs, errno);
-		ret = errno;
-		goto out_free;
-	}
-	ctx->etcd->ttl = 10;
-	while ((c = getopt_long(argc, argv, "ae:p:h:sv?w",
+	while ((c = getopt_long(argc, argv, "p:h:vw?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
-		case 'e':
-			ctx->etcd->prefix = strdup(optarg);
-			break;
-		case 'h':
-			ctx->etcd->host = optarg;
-			break;
 		case 'p':
-			ctx->etcd->port = atoi(optarg);
-			break;
-		case 's':
-			ctx->etcd->proto = "https";
+			prefix = optarg;
 			break;
 		case 'v':
 			etcd_debug = true;
@@ -185,6 +149,27 @@ int main(int argc, char **argv)
 			sigprocmask(SIG_SETMASK, &oldmask, NULL);
 			return 0;
 		}
+	}
+
+	main_thr = pthread_self();
+
+	ctx = malloc(sizeof(*ctx));
+	if (!ctx)
+		exit(1);
+
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->etcd = etcd_init(prefix, NULL, 0);
+	if (!ctx->etcd) {
+		ret = ENOMEM;
+		fprintf(stderr, "cannot allocate context\n");
+		goto out_close;
+	}
+	ctx->path_fd = open(ctx->etcd->configfs, O_DIRECTORY | O_RDONLY);
+	if (ctx->path_fd < 0) {
+		fprintf(stderr, "cannot open path '%s', error %d\n",
+			ctx->etcd->configfs, errno);
+		ret = errno;
+		goto out_free;
 	}
 
 	sigemptyset(&mask);

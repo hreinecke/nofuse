@@ -16,9 +16,8 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <dirent.h>
-#include <sys/select.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/mount.h>
 #include <limits.h>
 
 #include "common.h"
@@ -101,9 +100,11 @@ static void *etcd_watcher(void *arg)
 
 void usage(void) {
 	printf("etcd_watcher - watch etcd kv entries\n");
-	printf("usage: etcd_wather <args>\n");
+	printf("usage: etcd_watcher <args>\n");
 	printf("Arguments are:\n");
+	printf("\t[-m|--mount] <dir>\tinternal configfs mount point\n");
 	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
+	printf("\t[-t|--ttl] <ttl>\tetcd TTL value\n");
 	printf("\t[-v|--verbose]\tVerbose output\n");
 	printf("\t[-h|--help]\tThis help text\n");
 }
@@ -111,21 +112,27 @@ void usage(void) {
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
+		{"mount", required_argument, 0, 'm'},
 		{"prefix", required_argument, 0, 'p'},
+		{"ttl", required_argument, 0, 't'},
 		{"verbose", no_argument, 0, 'v'},
 		{"help", no_argument, 0, '?'},
 	};
 	static pthread_t watcher_thr, signal_thr;
+	struct stat st;
 	sigset_t oldmask;
-	char c, *prefix = NULL, *eptr;
+	char c, *prefix = NULL, *eptr, *mnt = NULL;
 	unsigned int ttl = 0;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
 	int ret = 0;
 
-	while ((c = getopt_long(argc, argv, "p:t:v?",
+	while ((c = getopt_long(argc, argv, "m:p:t:v?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
+		case 'm':
+			mnt = optarg;
+			break;
 		case 'p':
 			prefix = optarg;
 			break;
@@ -147,17 +154,27 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (mnt) {
+		if (stat(mnt, &st) < 0) {
+			fprintf(stderr, "Failed to access '%s', error %d\n",
+				mnt, errno);
+			exit(1);
+		}
+		if (!S_ISDIR(st.st_mode)) {
+			fprintf(stderr, "Mountpoint '%s' is not a directory\n",
+				mnt);
+			exit(1);
+		}
+		if (mount(NVMET_CONFIGFS, mnt, "configfs", MS_BIND, NULL) < 0) {
+			fprintf(stderr, "Cannot bind mount to '%s'\n",
+				mnt);
+			exit(1);
+		}
+	}
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGINT);
 	sigaddset(&mask, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &mask, &oldmask);
-
-	ret = unshare(CLONE_NEWNS);
-	if (ret < 0) {
-		fprintf(stderr, "failed to create namespace\n");
-		ret = -errno;
-		goto out_restore_sig;
-	}
 
 	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
 	if (ret) {
@@ -166,12 +183,11 @@ int main(int argc, char **argv)
 		goto out_restore_sig;
 	}
 
-	ctx = etcd_init(prefix, ttl);
+	ctx = etcd_init(prefix, mnt, ttl);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
-
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;
@@ -199,6 +215,12 @@ out_cancel_sig:
 	pthread_join(signal_thr, NULL);
 out_restore_sig:
 	sigprocmask(SIG_SETMASK, &oldmask, NULL);
+
+	if (mnt && umount(mnt) < 0) {
+		fprintf(stderr, "Failed to umount '%s', error %d\n",
+			mnt, errno);
+		ret = -errno;
+	}
 
 	return ret < 0 ? 1 : 0;
 }
