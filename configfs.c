@@ -83,10 +83,15 @@ int update_value(struct etcd_ctx *ctx,
 		return ret;
 	if (!strcmp(name, "addr_origin")) {
 		/* Synthetic attribute, not present in configfs */
-		if (ctx->node_name)
-			strcpy(value, ctx->node_name);
-		else
-			strcpy(value, "localhost");
+		char *port = strrchr(dirname, '/');
+		if (!port) {
+			free(pathname);
+			return -EINVAL;
+		}
+		port++;
+		sprintf(value, "%s:%s",
+			ctx->node_name ? ctx->node_name : "localhost",
+			port);
 		ret = 0;
 		goto store_key;
 	}
@@ -207,7 +212,6 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			break;
 
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			/* Add 'addr_origin' attribute for ports */
 			ret = update_value(ctx, dirname, "addr_origin");
 			if (ret < 0)
 				break;
