@@ -61,62 +61,69 @@ static int discd_get_port_attrs(struct etcd_ctx *ctx, char *port,
 {
 	DIR *sd;
 	struct dirent *se;
-	char *path, value[1024];
-	int ret, dfd, num = 0;
+	char *dirname, *path, value[1024];
+	int ret, num = 0;
 
-	ret = asprintf(&path, "%s/ports/%s", ctx->configfs, port);
+	ret = asprintf(&dirname, "%s/ports/%s", ctx->configfs, port);
 	if (ret < 0)
 		return -ENOMEM;
-	sd = opendir(path);
+	sd = opendir(dirname);
 	if (!sd) {
-		fprintf(stderr, "Cannot open '%s'\n", path);
-		free(path);
+		fprintf(stderr, "Cannot open '%s'\n", dirname);
+		free(dirname);
 		return -errno;
 	}
 	*trtype = NULL;
 	*traddr = NULL;
 	*trsvcid = NULL;
-	dfd = dirfd(sd);
+
 	while ((se = readdir(sd))) {
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
+		ret = asprintf(&path, "%s/%s", dirname, se->d_name);
+		if (ret < 0)
+			continue;
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = read_attr(dfd, se->d_name, value, 1024);
+			ret = read_attr(path, value, 1024);
 			if (ret < 0) {
 				fprintf(stderr,
-					"Failed to read '%s/%s', error %d\n",
-					path, se->d_name, errno);
+					"Failed to read '%s', error %d\n",
+					path, errno);
+				free(path);
 				continue;
 			}
 			*trtype = strdup(value);
 			num++;
 		}
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = read_attr(dfd, se->d_name, value, 1024);
+			ret = read_attr(path, value, 1024);
 			if (ret < 0) {
 				fprintf(stderr,
-					"Failed to read '%s/%s', error %d\n",
-					path, se->d_name, errno);
+					"Failed to read '%s', error %d\n",
+					path, errno);
+				free(path);
 				continue;
 			}
 			*traddr = strdup(value);
 			num++;
 		}
 		if (!strcmp(se->d_name, "addr_trsvcid")) {
-			ret = read_attr(dfd, se->d_name, value, 1024);
+			ret = read_attr(path, value, 1024);
 			if (ret < 0) {
 				fprintf(stderr,
-					"Failed to read '%s/%s', error %d\n",
-					path, se->d_name, errno);
+					"Failed to read '%s', error %d\n",
+					path, errno);
+				free(path);
 				continue;
 			}
 			*trsvcid = strdup(value);
 			num++;
 		}
+		free(path);
 	}
 	closedir(sd);
-	free(path);
+	free(dirname);
 	if (ret < 0 || num != 3) {
 		if (*trtype) {
 			free(*trtype);

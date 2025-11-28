@@ -25,6 +25,7 @@
 
 #include "common.h"
 #include "utils.h"
+#include "configfs.h"
 #include "etcd_client.h"
 #include "etcd_backend.h"
 #include "nvmetd.h"
@@ -112,38 +113,6 @@ allocate_watch(struct watcher_ctx *ctx, const char *dirname,
 		watcher = NULL;
 	}
 	return watcher;
-}
-
-static int read_attr(char *attr_path, char *value, size_t value_len)
-{
-	int fd, len;
-	char *p;
-
-	fd = open(attr_path, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open '%s', error %d\n",
-			attr_path, errno);
-		return -1;
-	}
-	len = read(fd, value, value_len);
-	if (len < 0)
-		memset(value, 0, value_len);
-	else {
-		p = &value[len - 1];
-		while (isspace(*p)) {
-			*p = '\0';
-			p--;
-			len--;
-			if (p == value)
-				break;
-		}
-		if (!strcmp(value, "(null)")) {
-			memset(value, 0, value_len);
-			len = 0;
-		}
-	}
-	close(fd);
-	return len;
 }
 
 static char *path_to_key(struct watcher_ctx *ctx, const char *path)
