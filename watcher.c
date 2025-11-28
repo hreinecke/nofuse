@@ -110,16 +110,24 @@ int main(int argc, char **argv)
 	};
 	static pthread_t watcher_thr, signal_thr;
 	sigset_t oldmask;
-	char c, *prefix = NULL;
+	char c, *prefix = NULL, *eptr;
+	unsigned int ttl = 0;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
 	int ret = 0;
 
-	while ((c = getopt_long(argc, argv, "p:v?",
+	while ((c = getopt_long(argc, argv, "p:t:v?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'p':
 			prefix = optarg;
+			break;
+		case 't':
+			ttl = strtoul(optarg, &eptr, 10);
+			if (eptr == optarg || ttl == ULONG_MAX) {
+				fprintf(stderr, "Invalid TTL '%s'\n", optarg);
+				exit(1);
+			}
 			break;
 		case 'v':
 			etcd_debug = true;
@@ -151,7 +159,7 @@ int main(int argc, char **argv)
 		goto out_restore_sig;
 	}
 
-	ctx = etcd_init(prefix, 0);
+	ctx = etcd_init(prefix, ttl);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
