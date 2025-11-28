@@ -35,6 +35,7 @@ bool http_debug;
 bool tcp_debug;
 bool cmd_debug;
 bool inotify_debug;
+bool configfs_debug;
 
 static pthread_t main_thr;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;

@@ -19,6 +19,7 @@
 
 #include "common.h"
 #include "etcd_client.h"
+#include "configfs.h"
 
 bool ep_debug;
 bool cmd_debug;
@@ -26,6 +27,7 @@ bool port_debug;
 bool tcp_debug;
 bool etcd_debug;
 bool http_debug;
+bool configfs_debug;
 
 int stopped = 0;
 sigset_t mask;
@@ -54,38 +56,6 @@ static void *signal_handler(void *arg)
 	return NULL;
 }
 
-static int discd_read_attr(int dfd, char *attr, char *value, size_t value_len)
-{
-	int fd, len;
-	char *p;
-
-	fd = openat(dfd, attr, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open '%s', error %d\n",
-			attr, errno);
-		return -1;
-	}
-	len = read(fd, value, value_len);
-	if (len < 0)
-		memset(value, 0, value_len);
-	else {
-		p = &value[len - 1];
-		while (isspace(*p)) {
-			*p = '\0';
-			p--;
-			len--;
-			if (p == value)
-				break;
-		}
-		if (!strcmp(value, "(null)")) {
-			memset(value, 0, value_len);
-			len = 0;
-		}
-	}
-	close(fd);
-	return len;
-}
-
 static int discd_get_port_attrs(struct etcd_ctx *ctx, char *port,
 				char **trtype, char **traddr, char **trsvcid)
 {
@@ -112,7 +82,7 @@ static int discd_get_port_attrs(struct etcd_ctx *ctx, char *port,
 		    !strcmp(se->d_name, ".."))
 			continue;
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = discd_read_attr(dfd, se->d_name, value, 1024);
+			ret = read_attr(dfd, se->d_name, value, 1024);
 			if (ret < 0) {
 				fprintf(stderr,
 					"Failed to read '%s/%s', error %d\n",
@@ -123,7 +93,7 @@ static int discd_get_port_attrs(struct etcd_ctx *ctx, char *port,
 			num++;
 		}
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = discd_read_attr(dfd, se->d_name, value, 1024);
+			ret = read_attr(dfd, se->d_name, value, 1024);
 			if (ret < 0) {
 				fprintf(stderr,
 					"Failed to read '%s/%s', error %d\n",
@@ -134,7 +104,7 @@ static int discd_get_port_attrs(struct etcd_ctx *ctx, char *port,
 			num++;
 		}
 		if (!strcmp(se->d_name, "addr_trsvcid")) {
-			ret = discd_read_attr(dfd, se->d_name, value, 1024);
+			ret = read_attr(dfd, se->d_name, value, 1024);
 			if (ret < 0) {
 				fprintf(stderr,
 					"Failed to read '%s/%s', error %d\n",
@@ -486,6 +456,7 @@ int main(int argc, char **argv)
 			etcd_debug = true;
 			port_debug = true;
 			ep_debug = true;
+			configfs_debug = true;
 			break;
 		case '?':
 			usage();

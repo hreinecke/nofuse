@@ -29,6 +29,7 @@ bool cmd_debug = false;
 bool tcp_debug = false;
 bool ep_debug = false;
 bool port_debug = false;
+bool configfs_debug = false;
 
 int stopped = 0;
 sigset_t mask;

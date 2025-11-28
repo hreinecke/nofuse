@@ -34,6 +34,7 @@ bool cmd_debug;
 bool ep_debug;
 bool port_debug;
 bool http_debug;
+bool configfs_debug;
 
 struct nofuse_context {
 	struct etcd_ctx *etcd;

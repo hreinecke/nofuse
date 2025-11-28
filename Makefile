@@ -3,7 +3,7 @@ CFLAGS = -Wall -g -I/usr/include/fuse3
 DAEMON_OBJS := daemon.o
 NVME_OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o tls.o
 
-ETCD_OBJS := etcd_backend.o etcd_watcher.o
+ETCD_OBJS := etcd_backend.o etcd_watcher.o configfs.o
 CURL_OBJS := etcd_client_curl.o etcd_curl.o base64.o
 SOCKET_OBJS := etcd_client_socket.o etcd_socket.o base64.o http_parser.o
 

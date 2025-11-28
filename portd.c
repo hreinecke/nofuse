@@ -23,6 +23,7 @@ bool port_debug;
 bool tcp_debug;
 bool etcd_debug;
 bool http_debug;
+bool configfs_debug;
 
 int stopped = 0;
 sigset_t mask;
