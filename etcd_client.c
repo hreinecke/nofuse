@@ -15,6 +15,7 @@
 
 #include "base64.h"
 
+#include "common.h"
 #include "etcd_client.h"
 
 static char *default_etcd_prefix = "nofuse";
@@ -929,6 +930,7 @@ struct etcd_ctx *etcd_init(const char *prefix)
 		ctx->prefix = strdup(prefix);
 	else
 		ctx->prefix = strdup(default_etcd_prefix);
+	ctx->configfs = strdup(NVMET_CONFIGFS);
 	ctx->lease = 0;
 	ctx->ttl = default_etcd_ttl;
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
@@ -950,6 +952,7 @@ void etcd_exit(struct etcd_ctx *ctx)
 		return;
 	if (ctx->node_name)
 		free(ctx->node_name);
+	free(ctx->configfs);
 	free(ctx->prefix);
 	free(ctx->host);
 	free(ctx->proto);

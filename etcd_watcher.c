@@ -37,10 +37,10 @@ static char *key_to_attr(struct etcd_ctx *ctx, char *key)
 			return NULL;
 		}
 		ret = asprintf(&path, "%s/ports/%s",
-			       NVMET_CONFIGFS, p + 1);
+			       ctx->configfs, p + 1);
 	} else
 		ret = asprintf(&path, "%s/%s",
-			       NVMET_CONFIGFS, attr);
+			       ctx->configfs, attr);
 	if (ret < 0) {
 		printf("%s: out of memory\n", __func__);
 		return NULL;

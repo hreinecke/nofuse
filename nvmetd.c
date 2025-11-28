@@ -142,26 +142,24 @@ int main(int argc, char **argv)
 		exit(1);
 
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->configfs = strdup("/sys/kernel/config/nvmet");
-	ctx->path_fd = open(ctx->configfs, O_DIRECTORY | O_RDONLY);
-	if (ctx->path_fd < 0) {
-		fprintf(stderr, "cannot open path '%s', error %d\n",
-			ctx->configfs, errno);
-		ret = errno;
-		goto out_free;
-	}
 	ctx->etcd = etcd_init(NULL);
 	if (!ctx->etcd) {
 		ret = ENOMEM;
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_close;
 	}
+	ctx->path_fd = open(ctx->etcd->configfs, O_DIRECTORY | O_RDONLY);
+	if (ctx->path_fd < 0) {
+		fprintf(stderr, "cannot open path '%s', error %d\n",
+			ctx->etcd->configfs, errno);
+		ret = errno;
+		goto out_free;
+	}
 	ctx->etcd->ttl = 10;
 	while ((c = getopt_long(argc, argv, "ae:p:h:sv?w",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'e':
-			free(ctx->etcd->prefix);
 			ctx->etcd->prefix = strdup(optarg);
 			break;
 		case 'h':
@@ -264,7 +262,6 @@ out_restore:
 out_close:
 	close(ctx->path_fd);
 out_free:
-	free(ctx->configfs);
 	free(ctx);
 
 	return ret ? 1 : 0;

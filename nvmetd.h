@@ -5,7 +5,6 @@ extern bool inotify_debug;
 
 struct watcher_ctx {
 	struct etcd_ctx *etcd;
-	char *configfs;
 	int path_fd;
 	int inotify_fd;
 };

@@ -61,7 +61,7 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 		return watcher;
 	}
 	if (inotify_debug) {
-		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
+		p = watcher->dirname + strlen(watcher->ctx->etcd->configfs) + 1;
 		printf("%s: add inotify watch %d flags %d to %s\n",
 		       __func__, watcher->wd, watcher->flags, p);
 	}
@@ -79,7 +79,7 @@ static int remove_watch(struct dir_watcher *watcher)
 		fprintf(stderr, "Failed to remove inotify watch on '%s'\n",
 			watcher->dirname);
 	if (inotify_debug) {
-		p = watcher->dirname + strlen(watcher->ctx->configfs) + 1;
+		p = watcher->dirname + strlen(watcher->ctx->etcd->configfs) + 1;
 		printf("remove inotify watch %d from '%s'\n",
 		       watcher->wd, p);
 	}
@@ -148,7 +148,7 @@ static int read_attr(char *attr_path, char *value, size_t value_len)
 
 static char *path_to_key(struct watcher_ctx *ctx, const char *path)
 {
-	const char *attr = path + strlen(ctx->configfs) + 1;
+	const char *attr = path + strlen(ctx->etcd->configfs) + 1;
 	char *key;
 	int ret;
 
@@ -501,7 +501,7 @@ int start_inotify(struct watcher_ctx *ctx)
 		return -errno;
 	}
 
-	ret = mark_inotify(ctx, ctx->configfs, NULL);
+	ret = mark_inotify(ctx, ctx->etcd->configfs, NULL);
 	if (ret < 0) {
 		close(ctx->inotify_fd);
 		ctx->inotify_fd = -1;

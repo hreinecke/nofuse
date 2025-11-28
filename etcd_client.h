@@ -26,6 +26,7 @@ struct etcd_parse_data {
 };
 
 struct etcd_ctx {
+	char *configfs;
 	char *prefix;
 	char *proto;
 	char *host;
