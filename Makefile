@@ -24,15 +24,22 @@ PORTD_OBJS += $(NVME_OBJS)
 PORTD_LIBS := $(ETCD_LIBS)
 PORTD_LIBS += $(NVME_LIBS)
 
+DISCD_OBJS := discd.o
+DISCD_OBJS += $(ETCD_OBJS)
+DISCD_LIBS += $(ETCD_LIBS)
+
 OBJS := $(ETCD_OBJS)
 
-all: nofuse portd nvmetd xdp_drop_port.o base64_test watcher
+all: nofuse portd discd nvmetd xdp_drop_port.o watcher
 
 nofuse: $(DAEMON_OBJS) $(CURL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lfuse3 $(CURL_LIBS) $(DAEMON_LIBS)
 
 portd: $(PORTD_OBJS) $(CURL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(PORTD_LIBS) $(CURL_LIBS)
+
+discd: $(DISCD_OBJS) $(CURL_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(DISCD_LIBS) $(CURL_LIBS)
 
 nvmetd: nvmetd.o inotify.o $(CURL_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
@@ -42,9 +49,6 @@ watcher: watcher.o etcd_watcher.o $(CURL_OBJS) $(OBJS)
 
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
-
-base64_test: base64_test.o base64.o
-	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c common.h utils.h ops.h firmware.h
 	$(CC) $(CFLAGS) -c -o $@ $<
