@@ -1,3 +1,11 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * etcd_watcher.c
+ * Watch etcd keys and push updates into nvmet configfs
+ *
+ * Copyright (c) 2025 Hannes Reinecke <hare@suse.de>
+ *
+ */
 
 #define _GNU_SOURCE
 
