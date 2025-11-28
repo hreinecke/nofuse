@@ -201,16 +201,9 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
 	struct stat st;
-	char *path, *p;
+	char *path;
 	int ret;
 
-	p = strrchr(kv->key, '/');
-	if (p && strcmp(p, "/addr_origin")) {
-		/* Synthetic attribute, ignore */
-		printf("%s: ignore key %s\n",
-		       __func__, kv->key);
-		return;
-	}
 	if (kv->deleted)
 		printf("%s: delete key %s\n",
 		       __func__, kv->key);

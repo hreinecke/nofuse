@@ -1409,6 +1409,15 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			}
 			ret = len;
 		} else {
+			/*
+			 * These are internal values and should not be
+			 * changed during configuration
+			 */
+			if (!strcmp(attr, "addr_origin") ||
+			    !strcmp(attr, "addr_node")) {
+				ret = -EPERM;
+				goto out_free;
+			}
 			ret = etcd_set_port_attr(ctx, port, attr, value);
 			if (ret < 0) {
 				ret = -EINVAL;
