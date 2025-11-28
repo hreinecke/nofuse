@@ -64,7 +64,48 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
+	if (!strncmp(attr, "ports/", 6)) {
+		struct port_map_entry *p;
+		const char *suffix = attr + 6;
+		char *eptr;
+		unsigned long port, c_port = ULONG_MAX, port_max = 0;
+
+		port = strtoul(suffix, &eptr, 10);
+		if (port == ULONG_MAX || suffix == eptr) {
+			fprintf(stderr, "Cannot parse port path '%s'\n",
+				path);
+			return NULL;
+		}
+		if (*eptr != '/') {
+			fprintf(stderr, "Cannot parse port path '%s'\n",
+				path);
+			return NULL;
+		}
+		suffix = eptr + 1;
+		list_for_each_entry(p, &ctx->port_map_list, list) {
+			if (strcmp(p->node_id, ctx->node_id))
+				continue;
+			if (p->node_port == port) {
+				c_port = p->cluster_port;
+			}
+			if (p->cluster_port > port_max)
+				port_max = p->cluster_port;
+		}
+		if (c_port == ULONG_MAX) {
+			port_max++;
+			p = malloc(sizeof(*p));
+			memset(p, 0, sizeof(*p));
+			p->node_id = strdup(ctx->node_id);
+			p->node_port = port;
+			p->cluster_port = ++port_max;
+			list_add(&p->list, &ctx->port_map_list);
+			c_port = p->cluster_port;
+		}
+		ret = asprintf(&key, "%s/ports/%ld/%s",
+			       ctx->prefix, c_port, suffix);
+	} else {
+		ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
+	}
 	if (ret < 0)
 		return NULL;
 	return key;
