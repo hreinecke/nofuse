@@ -110,34 +110,16 @@ int main(int argc, char **argv)
 	};
 	static pthread_t watcher_thr, signal_thr;
 	sigset_t oldmask;
-	char c;
+	char c, *prefix = NULL;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
 	int ret = 0;
-
-	sigemptyset(&mask);
-	sigaddset(&mask, SIGINT);
-	sigaddset(&mask, SIGTERM);
-	pthread_sigmask(SIG_BLOCK, &mask, &oldmask);
-
-	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
-	if (ret) {
-		fprintf(stderr, "cannot start signal handler\n");
-		exit(1);
-	}
-
-	ctx = etcd_init(NULL);
-	if (!ctx) {
-		fprintf(stderr, "cannot allocate context\n");
-		goto out_restore_sig;
-	}
 
 	while ((c = getopt_long(argc, argv, "p:v?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'p':
-			free(ctx->prefix);
-			ctx->prefix = strdup(optarg);
+			prefix = optarg;
 			break;
 		case 'v':
 			etcd_debug = true;
@@ -146,10 +128,33 @@ int main(int argc, char **argv)
 			break;
 		case '?':
 			usage();
-			sigprocmask(SIG_SETMASK, &oldmask, NULL);
-			ret = -EINVAL;
-			goto out_cleanup;
+			return 0;
 		}
+	}
+
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGINT);
+	sigaddset(&mask, SIGTERM);
+	pthread_sigmask(SIG_BLOCK, &mask, &oldmask);
+
+	ret = unshare(CLONE_NEWNS);
+	if (ret < 0) {
+		fprintf(stderr, "failed to create namespace\n");
+		ret = -errno;
+		goto out_restore_sig;
+	}
+
+	ret = pthread_create(&signal_thr, NULL, signal_handler, 0);
+	if (ret) {
+		fprintf(stderr, "cannot start signal handler\n");
+		ret = -ENOMEM;
+		goto out_restore_sig;
+	}
+
+	ctx = etcd_init(prefix);
+	if (!ctx) {
+		fprintf(stderr, "cannot allocate context\n");
+		goto out_cancel_sig;
 	}
 
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
@@ -174,10 +179,10 @@ int main(int argc, char **argv)
 out_cleanup:
 	etcd_exit(ctx);
 
-out_restore_sig:
+out_cancel_sig:
 	pthread_cancel(signal_thr);
 	pthread_join(signal_thr, NULL);
-
+out_restore_sig:
 	sigprocmask(SIG_SETMASK, &oldmask, NULL);
 
 	return ret < 0 ? 1 : 0;
