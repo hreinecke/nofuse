@@ -1418,6 +1418,15 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				ret = -EPERM;
 				goto out_free;
 			}
+			/*
+			 * trsvcid 8009 is used internally, do
+			 * not allow to create it.
+			 */
+			if (!strcmp(attr, "addr_trsvcid") &&
+			    !strcmp(value, "8009")) {
+				ret = -EINVAL;
+				goto out_free;
+			}
 			ret = etcd_set_port_attr(ctx, port, attr, value);
 			if (ret < 0) {
 				ret = -EINVAL;
