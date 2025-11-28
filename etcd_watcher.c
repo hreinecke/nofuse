@@ -227,7 +227,11 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		if (kv->deleted)
 			/* KV deleted and path not present, all done */
 			goto out_free;
-
+		if (strcmp(kv->key, "discovery_nqn")) {
+			printf("%s: skip discovery NQN updates\n",
+			       __func__);
+			goto out_free;
+		}
 		ret = create_value(path, kv->value);
 		if (ret < 0) {
 			/*
