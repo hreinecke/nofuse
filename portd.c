@@ -212,6 +212,7 @@ void usage(void) {
 	printf("Arguments are:\n");
 	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-t|--ttl] <ttl>\tetcd TTL value\n");
+	printf("\t[-u|--url] <url>\tetcd URL\n");
 	printf("\t[-v|--verbose]\tVerbose output\n");
 	printf("\t[-h|--help]\tThis help text\n");
 }
@@ -221,6 +222,7 @@ int main(int argc, char **argv)
 	struct option getopt_arg[] = {
 		{"prefix", required_argument, 0, 'p'},
 		{"ttl", required_argument, 0, 't'},
+		{"url", required_argument, 0, 'u'},
 		{"verbose", no_argument, 0, 'v'},
 		{"help", no_argument, 0, '?'},
 	};
@@ -231,10 +233,10 @@ int main(int argc, char **argv)
 	unsigned long ttl = 0;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
-	char *prefix = NULL, *eptr;
+	char *prefix = NULL, *eptr, *url = NULL;
 	int ret = 0, i;
 
-	while ((c = getopt_long(argc, argv, "p:t:v?",
+	while ((c = getopt_long(argc, argv, "p:t:u:v?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'p':
@@ -246,6 +248,9 @@ int main(int argc, char **argv)
 				fprintf(stderr, "Invalid TTL '%s'\n", optarg);
 				exit(1);
 			}
+			break;
+		case 'u':
+			url = optarg;
 			break;
 		case 'v':
 			etcd_debug = true;
@@ -269,7 +274,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ctx = etcd_init(prefix, NULL, ttl);
+	ctx = etcd_init(url, prefix, NULL, ttl);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_restore_sig;

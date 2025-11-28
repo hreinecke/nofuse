@@ -41,6 +41,7 @@ struct nofuse_context {
 	const char *traddr;
 	const char *dbname;
 	const char *prefix;
+	const char *url;
 	int debug;
 	int help;
 	int ttl;
@@ -117,6 +118,7 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--traddr=%s", traddr),
 	OPTION("--prefix=%s", prefix),
 	OPTION("--ttl=%d", ttl),
+	OPTION("--url=%s", url),
 	FUSE_OPT_END,
 };
 
@@ -129,6 +131,7 @@ static void show_help(void)
 	printf("  --subsysnqn=<NQN> - Discovery subsystem NQN to use");
 	printf("  --prefix=<prefix> - etcd key-value prefix");
 	printf("  --ttl=<ttl> - Time-to-live for etcd key-value pairs");
+	printf("  --url=<url> - etcd daemon URL");
 }
 
 int main(int argc, char *argv[])
@@ -154,7 +157,7 @@ int main(int argc, char *argv[])
 		etcd_debug = true;
 	}
 
-	ctx->etcd = etcd_init(ctx->prefix, NULL, ctx->ttl);
+	ctx->etcd = etcd_init(ctx->url, ctx->prefix, NULL, ctx->ttl);
 	if (!ctx->etcd) {
 		fprintf(stderr, "cannot connect to etcd\n");
 		free(ctx);

@@ -912,10 +912,11 @@ int etcd_member_id(struct etcd_ctx *ctx)
 	return ret;
 }
 
-struct etcd_ctx *etcd_init(const char *prefix, const char *mnt,
-			   unsigned int ttl)
+struct etcd_ctx *etcd_init(const char *url, const char *prefix,
+			   const char *mnt, unsigned int ttl)
 {
 	struct etcd_ctx *ctx;
+	unsigned long port = default_etcd_port;
 	int ret;
 
 	ctx = malloc(sizeof(struct etcd_ctx));
@@ -924,9 +925,42 @@ struct etcd_ctx *etcd_init(const char *prefix, const char *mnt,
 		return NULL;
 	}
 	memset(ctx, 0, sizeof(struct etcd_ctx));
-	ctx->host = strdup(default_etcd_host);
-	ctx->proto = strdup(default_etcd_proto);
-	ctx->port = default_etcd_port;
+	if (url) {
+		char *u, *p, *eptr;
+		char *proto = default_etcd_proto, *host = default_etcd_host;
+
+		u = strdup(url);
+		if (!strncmp(u, "http://", 7)) {
+			u[4] = '\0';
+			proto = u;
+			host = u + 8;
+		} else if (!strncmp(u, "https://", 8)) {
+			u[5] = '\0';
+			proto = u;
+			host = u + 9;
+		} else {
+			host = u;
+		}
+		p = strchr(host, ':');
+		if (p) {
+			*p++ = '\0';
+			port = strtoul(p, &eptr, 10);
+			if (p == eptr || port == ULONG_MAX) {
+				fprintf(stderr, "Invalid URL '%s'\n", url);
+				free(u);
+				errno = EINVAL;
+				return NULL;
+			}
+		}
+		ctx->host = strdup(host);
+		ctx->proto = strdup(proto);
+		ctx->port = port;
+		free(u);
+	} else {
+		ctx->host = strdup(default_etcd_host);
+		ctx->proto = strdup(default_etcd_proto);
+		ctx->port = default_etcd_port;
+	}
 	if (!prefix)
 		prefix = default_etcd_prefix;
 	ctx->prefix = strdup(prefix);
