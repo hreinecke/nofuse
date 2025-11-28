@@ -22,6 +22,7 @@
 
 #include "common.h"
 #include "etcd_client.h"
+#include "configfs.h"
 
 bool etcd_debug = true;
 bool http_debug = false;
@@ -194,12 +195,17 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
+	ret = upload_configfs(ctx, ctx->configfs, NULL);
+	if (ret < 0) {
+		fprintf(stderr, "failed to upload configfs\n");
+		goto out_cleanup;
+	}
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_cleanup;
+		goto out_clear_keys;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -213,6 +219,7 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
+out_clear_keys:
 out_cleanup:
 	etcd_exit(ctx);
 

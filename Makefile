@@ -44,7 +44,7 @@ discd: $(DISCD_OBJS) $(CURL_OBJS)
 nvmetd: nvmetd.o inotify.o $(CURL_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
 
-watcher: watcher.o etcd_watcher.o $(CURL_OBJS) $(OBJS)
+watcher: watcher.o etcd_watcher.o configfs.o $(CURL_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c

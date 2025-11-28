@@ -64,18 +64,7 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	char *key;
 	int ret;
 
-	if (!strncmp(attr, "ports/", 6)) {
-		char *node_name = ctx->node_name;
-		const char *suffix = attr + 6;
-
-		if (!node_name)
-			node_name = "localhost";
-		ret = asprintf(&key, "%s/ports/%s:%s",
-			       ctx->prefix, node_name, suffix);
-	} else {
-		ret = asprintf(&key, "%s/%s",
-			       ctx->prefix, attr);
-	}
+	ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
 	if (ret < 0)
 		return NULL;
 	return key;
@@ -92,6 +81,15 @@ int update_value(struct etcd_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
 	if (ret < 0)
 		return ret;
+	if (!strcmp(name, "addr_origin")) {
+		/* Synthetic attribute, not present in configfs */
+		if (ctx->node_name)
+			strcpy(value, ctx->node_name);
+		else
+			strcpy(value, "localhost");
+		ret = 0;
+		goto store_key;
+	}
 	ret = lstat(pathname, &st);
 	if (ret < 0) {
 		fprintf(stderr, "%s: attr %s error %d\n",
@@ -108,27 +106,7 @@ int update_value(struct etcd_ctx *ctx,
 	if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		ret = readlink(pathname, value, sizeof(value));
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
-		if (!strcmp(name, "addr_origin")) {
-			printf("%s: skip attr %s, internal only\n",
-			       __func__, pathname);
-			free(pathname);
-			return 0;
-		}
 		ret = read_attr(pathname, value, sizeof(value));
-		if (ret > 0 && strlen(value) && !strcmp(name, "device_path")) {
-			char *node_name = ctx->node_name;
-			char *tmp = strdup(value);
-
-			if (!node_name)
-				node_name = "localhost";
-
-			/*
-			 * Prefix the device path with the node name to
-			 * indicate on which node the namespace resides.
-			 */
-			sprintf(value, "%s:%s", ctx->node_name, tmp);
-			free(tmp);
-		}
 	} else {
 		if ((st.st_mode & S_IFMT) != S_IFDIR)
 			fprintf(stderr, "%s: skip unhandled attr %s mode %x\n",
@@ -136,6 +114,7 @@ int update_value(struct etcd_ctx *ctx,
 		free(pathname);
 		return 0;
 	}
+store_key:
 	key = path_to_key(ctx, pathname);
 	if (!key) {
 		free(pathname);
@@ -193,14 +172,13 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		if (ret < 0)
 			return -ENOMEM;
 	} else {
-		dirname = (char *)dir;
+		dirname = strdup(dir);
 	}
 	ret = 0;
 	sd = opendir(dirname);
 	if (!sd) {
 		fprintf(stderr, "Cannot open %s\n", dirname);
-		if (dirname != dir)
-			free(dirname);
+		free(dirname);
 		return -errno;
 	}
 	while ((se = readdir(sd))) {
@@ -228,6 +206,12 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		if (ret < 0)
 			break;
 
+		if (!strcmp(se->d_name, "addr_trtype")) {
+			/* Add 'addr_origin' attribute for ports */
+			ret = update_value(ctx, dirname, "addr_origin");
+			if (ret < 0)
+				break;
+		}
 		if (se->d_type == DT_DIR) {
 			ret = upload_configfs(ctx, dirname, se->d_name);
 			if (ret < 0)
@@ -235,8 +219,7 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		}
 	}
 	closedir(sd);
-	if (dirname != dir)
-		free(dirname);
+	free(dirname);
 	return ret;
 }
 
