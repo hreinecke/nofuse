@@ -151,7 +151,7 @@ int main(int argc, char **argv)
 		goto out_restore_sig;
 	}
 
-	ctx = etcd_init(prefix);
+	ctx = etcd_init(prefix, 0);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;

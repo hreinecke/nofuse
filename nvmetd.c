@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 		exit(1);
 
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->etcd = etcd_init(NULL);
+	ctx->etcd = etcd_init(NULL, 0);
 	if (!ctx->etcd) {
 		ret = ENOMEM;
 		fprintf(stderr, "cannot allocate context\n");

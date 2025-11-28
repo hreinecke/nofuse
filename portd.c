@@ -248,7 +248,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ctx = etcd_init(NULL);
+	ctx = etcd_init(NULL, 0);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_restore_sig;
