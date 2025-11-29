@@ -66,43 +66,29 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 
 	if (!strncmp(attr, "ports/", 6)) {
 		struct port_map_entry *p;
-		const char *suffix = attr + 6;
+		const char *portid = attr + 6, *suffix;
 		char *eptr;
-		unsigned long port, c_port = ULONG_MAX, port_max = 0;
+		int port = -1;
 
-		port = strtoul(suffix, &eptr, 10);
-		if (port == ULONG_MAX || suffix == eptr) {
+		suffix = strchr(portid, '/');
+		if (!suffix) {
 			fprintf(stderr, "Cannot parse port path '%s'\n",
 				path);
 			return NULL;
 		}
-		if (*eptr != '/') {
-			fprintf(stderr, "Cannot parse port path '%s'\n",
-				path);
+		suffix++;
+		ret = etcd_find_port_id(ctx, portid, &port);
+		if (ret < 0) {
+			fprintf(stderr, "Cannot find mapped port id\n");
 			return NULL;
 		}
-		suffix = eptr + 1;
-		list_for_each_entry(p, &ctx->port_map_list, list) {
-			if (strcmp(p->node_id, ctx->node_id))
-				continue;
-			if (p->node_port == port) {
-				c_port = p->cluster_port;
-			}
-			if (p->cluster_port > port_max)
-				port_max = p->cluster_port;
+		/* Mapped port id not found, use the next available */
+		if (port == -1) {
+			port = ret + 1;
+			printf("Map port id '%s' for '%s'\n", portid, port);
 		}
-		if (c_port == ULONG_MAX) {
-			port_max++;
-			p = malloc(sizeof(*p));
-			memset(p, 0, sizeof(*p));
-			p->node_id = strdup(ctx->node_id);
-			p->node_port = port;
-			p->cluster_port = ++port_max;
-			list_add(&p->list, &ctx->port_map_list);
-			c_port = p->cluster_port;
-		}
-		ret = asprintf(&key, "%s/ports/%ld/%s",
-			       ctx->prefix, c_port, suffix);
+		ret = asprintf(&key, "%s/ports/%d/%s",
+			       ctx->prefix, port, suffix);
 	} else {
 		ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
 	}

@@ -351,6 +351,49 @@ int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 	return ret;
 }
 
+int etcd_find_port_id(struct etcd_ctx *ctx, const char *portid,
+		      int *mapped_portid)
+{
+	struct etcd_kv *kvs;
+	char *key, *value;
+	int ret, i;
+	unsigned int num, max = 0, found = -1;
+
+	ret = asprintf(&key, "%s/ports", ctx->prefix);
+	if (ret < 0)
+		return ret;
+
+	ret = asprintf(&value, "%s:%s",
+		       ctx->node_name ? ctx->node_name : "localhost",
+		       portid);
+
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0)
+		return ret;
+	for (i = 0; i < ret; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char *p, *eptr;
+
+		p = strrchr(kv->key, '/');
+		if (!p)
+			continue;
+		if (strcmp(p, "/addr_origin"))
+			continue;
+
+		p = kv->key + strlen(key) + 1;
+		num = strtoul(p, &eptr, 10);
+		if (num == ULONG_MAX || p == eptr)
+			continue;
+		if (num > max)
+			num = max;
+		if (!strcmp(kv->value, value))
+			found = num;
+	}
+	etcd_kv_free(kvs, ret);
+	*mapped_portid = found;
+	return max;
+}
+
 int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, const char *value)
 {
