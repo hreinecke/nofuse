@@ -45,7 +45,6 @@ struct etcd_ctx {
 	int ttl;
 	pthread_mutex_t conn_mutex;
 	struct etcd_conn_ctx *conn;
-	struct linked_list port_map_list;
 };
 
 struct etcd_conn_ctx {
@@ -78,13 +77,6 @@ struct etcd_kv_event {
 	int num_prev_kvs;
 	void (*watch_cb)(void *arg, struct etcd_kv *kv);
 	void *watch_arg;
-};
-
-struct port_map_entry {
-	struct linked_list list;
-	char *node_id;
-	int node_port;
-	int cluster_port;
 };
 
 extern bool etcd_debug;

@@ -970,7 +970,6 @@ struct etcd_ctx *etcd_init(const char *url, const char *prefix,
 	ctx->lease = 0;
 	ctx->ttl = ttl > 0 ? ttl : default_etcd_ttl;
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
-	INIT_LINKED_LIST(&ctx->port_map_list);
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
 	ret = etcd_member_id(ctx);
@@ -984,17 +983,10 @@ struct etcd_ctx *etcd_init(const char *url, const char *prefix,
 
 void etcd_exit(struct etcd_ctx *ctx)
 {
-	struct port_map_entry *p, *t;
-
 	if (!ctx)
 		return;
 	if (ctx->node_name)
 		free(ctx->node_name);
-	list_for_each_entry_safe(p, t, &ctx->port_map_list, list) {
-		list_del_init(&p->list);
-		free(p->node_id);
-		free(p);
-	}
 	free(ctx->configfs);
 	free(ctx->prefix);
 	free(ctx->host);
