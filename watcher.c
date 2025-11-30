@@ -195,9 +195,19 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
-	ret = upload_configfs(ctx, ctx->configfs, NULL);
+	ret = upload_configfs(ctx, ctx->configfs, "ports");
 	if (ret < 0) {
-		fprintf(stderr, "failed to upload configfs\n");
+		fprintf(stderr, "failed to upload port configuration\n");
+		goto out_cleanup;
+	}
+	ret = upload_configfs(ctx, ctx->configfs, "hosts");
+	if (ret < 0) {
+		fprintf(stderr, "failed to upload hosts configuration\n");
+		goto out_cleanup;
+	}
+	ret = upload_configfs(ctx, ctx->configfs, "subsystems");
+	if (ret < 0) {
+		fprintf(stderr, "failed to upload subsystem configuration\n");
 		goto out_cleanup;
 	}
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);

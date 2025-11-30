@@ -14,6 +14,12 @@
 #include <curl/easy.h>
 #endif
 
+#define PORT_NODE_SHIFT 8
+#define PORT_ID_MASK 0xff
+
+#define PORTID_TO_NODE(p) ((p) >> PORT_NODE_SHIFT)
+#define PORTID_TO_ID(p) ((p) & PORT_NODE_MASK)
+
 typedef void (*etcd_parse_cb)(struct json_object *obj, void *arg);
 
 struct etcd_parse_data {
@@ -32,6 +38,7 @@ struct etcd_ctx {
 	char *host;
 	char *node_name;
 	char *node_id;
+	unsigned int node_prefix;
 	int port;
 	bool tls;
 	int64_t lease;

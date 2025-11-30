@@ -64,34 +64,7 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	char *key;
 	int ret;
 
-	if (!strncmp(attr, "ports/", 6)) {
-		struct port_map_entry *p;
-		const char *portid = attr + 6, *suffix;
-		char *eptr;
-		int port = -1;
-
-		suffix = strchr(portid, '/');
-		if (!suffix) {
-			fprintf(stderr, "Cannot parse port path '%s'\n",
-				path);
-			return NULL;
-		}
-		suffix++;
-		ret = etcd_find_port_id(ctx, portid, &port);
-		if (ret < 0) {
-			fprintf(stderr, "Cannot find mapped port id\n");
-			return NULL;
-		}
-		/* Mapped port id not found, use the next available */
-		if (port == -1) {
-			port = ret + 1;
-			printf("Map port id '%s' for '%s'\n", portid, port);
-		}
-		ret = asprintf(&key, "%s/ports/%d/%s",
-			       ctx->prefix, port, suffix);
-	} else {
-		ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
-	}
+	ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
 	if (ret < 0)
 		return NULL;
 	return key;
@@ -110,15 +83,8 @@ int update_value(struct etcd_ctx *ctx,
 		return ret;
 	if (!strcmp(name, "addr_origin")) {
 		/* Synthetic attribute, not present in configfs */
-		char *port = strrchr(dirname, '/');
-		if (!port) {
-			free(pathname);
-			return -EINVAL;
-		}
-		port++;
-		sprintf(value, "%s:%s",
-			ctx->node_name ? ctx->node_name : "localhost",
-			port);
+		sprintf(value, "%s",
+			ctx->node_name ? ctx->node_name : "localhost");
 		ret = 0;
 		goto store_key;
 	}
@@ -198,14 +164,14 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 	DIR *sd;
 	struct dirent *se;
 	int ret;
+	bool upload_ports = false;
 
-	if (file) {
-		ret = asprintf(&dirname, "%s/%s", dir, file);
-		if (ret < 0)
-			return -ENOMEM;
-	} else {
-		dirname = strdup(dir);
-	}
+	if (!strcmp(file, "ports"))
+		upload_ports = true;
+	ret = asprintf(&dirname, "%s/%s", dir, file);
+	if (ret < 0)
+		return -ENOMEM;
+
 	ret = 0;
 	sd = opendir(dirname);
 	if (!sd) {
@@ -234,6 +200,36 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		if (!strcmp(se->d_name, "passthru"))
 			continue;
 
+		if (upload_ports) {
+			char *path, *key, value[1024];
+
+			/* Check for port number mismatch */
+			ret = asprintf(&path, "%s/%s/addr_origin",
+				       dirname, se->d_name);
+			if (ret < 0) {
+				ret = -ENOMEM;
+				goto out;
+			}
+			key = path_to_key(ctx, path);
+			if (!key) {
+				free(path);
+				ret = -ENOMEM;
+				goto out;
+			}
+			free(path);
+			ret = etcd_kv_get(ctx, key, value);
+			free(key);
+			if (ret < 0)
+				goto update;
+			if (strcmp(value, ctx->node_name)) {
+				fprintf(stderr, "%s: port %s already "
+					"registered for %s\n",
+					__func__, se->d_name, value);
+				ret = -EEXIST;
+				goto out;
+			}
+		}
+	update:
 		ret = update_value(ctx, dirname, se->d_name);
 		if (ret < 0)
 			break;
@@ -249,8 +245,8 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 				break;
 		}
 	}
+out:
 	closedir(sd);
 	free(dirname);
 	return ret;
 }
-
