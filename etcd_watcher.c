@@ -28,27 +28,7 @@ static char *key_to_attr(struct etcd_ctx *ctx, char *key)
 	int ret;
 
 	attr = key + strlen(ctx->prefix) + 1;
-	if (!strncmp(attr, "ports/", 6)) {
-		char *p = attr + 6, *node_name = ctx->node_name;
-
-		if (!node_name)
-			node_name = "localhost";
-		if (strncmp(p, node_name, strlen(node_name))) {
-			printf("%s: ignoring foreign port %s\n",
-			       __func__, attr);
-			return NULL;
-		}
-		p = strchr(attr, ':');
-		if (!p) {
-			printf("%s: invalid port %s\n",
-			       __func__, attr);
-			return NULL;
-		}
-		ret = asprintf(&path, "%s/ports/%s",
-			       ctx->configfs, p + 1);
-	} else
-		ret = asprintf(&path, "%s/%s",
-			       ctx->configfs, attr);
+	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
 	if (ret < 0) {
 		printf("%s: out of memory\n", __func__);
 		return NULL;

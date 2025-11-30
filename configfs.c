@@ -83,8 +83,7 @@ int update_value(struct etcd_ctx *ctx,
 		return ret;
 	if (!strcmp(name, "addr_origin")) {
 		/* Synthetic attribute, not present in configfs */
-		sprintf(value, "%s",
-			ctx->node_name ? ctx->node_name : "localhost");
+		strcpy(value, ctx->node_name);
 		ret = 0;
 		goto store_key;
 	}

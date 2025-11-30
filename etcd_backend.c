@@ -361,15 +361,20 @@ int etcd_find_port_id(struct etcd_ctx *ctx, const char *portid,
 
 	ret = asprintf(&key, "%s/ports", ctx->prefix);
 	if (ret < 0)
-		return ret;
+		return -ENOMEM;
 
-	ret = asprintf(&value, "%s:%s",
-		       ctx->node_name ? ctx->node_name : "localhost",
-		       portid);
+	ret = asprintf(&value, "%s:%s", ctx->node_name, portid);
+	if (ret < 0) {
+		free(key);
+		return -ENOMEM;
+	}
 
 	ret = etcd_kv_range(ctx, key, &kvs);
-	if (ret < 0)
+	if (ret < 0) {
+		free(key);
+		free(value);
 		return ret;
+	}
 	for (i = 0; i < ret; i++) {
 		struct etcd_kv *kv = &kvs[i];
 		char *p, *eptr;
@@ -390,6 +395,8 @@ int etcd_find_port_id(struct etcd_ctx *ctx, const char *portid,
 			found = num;
 	}
 	etcd_kv_free(kvs, ret);
+	free(value);
+	free(key);
 	*mapped_portid = found;
 	return max;
 }
