@@ -614,7 +614,7 @@ int etcd_del_ana_group(struct etcd_ctx *ctx, const char *port, int ana_grpid)
 	return ret;
 }
 
-#define NUM_SUBSYS_ATTRS 9
+#define NUM_SUBSYS_ATTRS 10
 static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_allow_any_host", .value = "1" },
 	{ .key = "attr_firmware", .value = "" },
@@ -625,6 +625,7 @@ static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_type", .value = "nvm" },
 	{ .key = "attr_qid_max", .value = "" },
 	{ .key = "attr_pi_enable", .value = "0" },
+	{ .key = "attr_cntlid_range", .value = "" },
 };
 
 int etcd_fill_subsys_dir(struct etcd_ctx *ctx, void *buf,
@@ -707,6 +708,9 @@ int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 	}
 	if (ret < 0)
 		return ret;
+
+	if (!strcmp(attr, "attr_cntlid_range"))
+		return -EPERM;
 
 	ret = asprintf(&key, "%s/subsystems/%s/%s",
 		       ctx->prefix, subsysnqn, attr);
