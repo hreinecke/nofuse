@@ -301,8 +301,8 @@ int etcd_fill_port(struct etcd_ctx *ctx, const char *port,
 	return 0;
 }
 
-int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
-		  const char *port, const char *traddr, const char *trsvcid)
+int etcd_add_port(struct etcd_ctx *ctx, const char *port,
+		  const char *traddr, const char *trsvcid)
 {
 	int ret, i;
 
@@ -316,18 +316,14 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *origin,
 		if (ret < 0)
 			return ret;
 		value = kv->value;
-		if (!strcmp(kv->key, "addr_node")) {
-			if (ctx->node_name)
-				value = ctx->node_name;
+		if (!strcmp(kv->key, "addr_origin")) {
+			value = ctx->node_name;
 		} else if (!strcmp(kv->key, "addr_traddr")) {
 			if (traddr)
 				value = traddr;
 		} else if (!strcmp(kv->key, "addr_trsvcid")) {
 			if (trsvcid)
 				value = trsvcid;
-		} else if (!strcmp(kv->key, "addr_origin")) {
-			if (origin)
-				value = origin;
 		}
 		ret = etcd_kv_store(ctx, key, value);
 		free(key);

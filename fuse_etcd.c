@@ -589,7 +589,7 @@ static int port_mkdir(char *s)
 
 	p = strtok(NULL, "/");
 	if (!p) {
-		ret = etcd_add_port(ctx, "nofuse", port, NULL, 0);
+		ret = etcd_add_port(ctx, port, NULL, 0);
 		if (ret < 0) {
 			fuse_err("%s: cannot add port %s, error %d",
 				 __func__, port, ret);
@@ -1413,18 +1413,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			 * These are internal values and should not be
 			 * changed during configuration
 			 */
-			if (!strcmp(attr, "addr_origin") ||
-			    !strcmp(attr, "addr_node")) {
+			if (!strcmp(attr, "addr_origin")) {
 				ret = -EPERM;
-				goto out_free;
-			}
-			/*
-			 * trsvcid 8009 is used internally, do
-			 * not allow to create it.
-			 */
-			if (!strcmp(attr, "addr_trsvcid") &&
-			    !strcmp(value, "8009")) {
-				ret = -EINVAL;
 				goto out_free;
 			}
 			ret = etcd_set_port_attr(ctx, port, attr, value);
@@ -1445,6 +1435,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		p = strtok(NULL, "/");
 		if (!p) {
 			if (!strcmp(attr, "attr_type"))
+				return -EPERM;
+			if (!strcmp(attr, "attr_cntlid_range"))
 				return -EPERM;
 			ret = etcd_set_subsys_attr(ctx, subsysnqn, attr, value);
 			if (ret < 0) {
