@@ -7,5 +7,6 @@ int update_value(struct etcd_ctx *ctx,
 int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		    const char *file);
 int validate_cluster(struct etcd_ctx *ctx);
+int purge_ports(struct etcd_ctx *ctx);
 
 #endif /* _CONFIGFS_H */

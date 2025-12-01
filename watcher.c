@@ -235,6 +235,7 @@ int main(int argc, char **argv)
 	pthread_join(watcher_thr, NULL);
 
 out_clear_keys:
+	purge_ports(ctx);
 out_cleanup:
 	etcd_exit(ctx);
 

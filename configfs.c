@@ -505,3 +505,67 @@ int validate_cluster(struct etcd_ctx *ctx)
 	return ret;
 }
 
+int purge_ports(struct etcd_ctx *ctx)
+{
+	unsigned int portid_begin, portid_end, port_spacing;
+	char *key, *end_key;
+	int ret;
+
+	port_spacing = (USHRT_MAX + 1) / ctx->cluster_size;
+	portid_begin = ctx->cluster_id * port_spacing;
+	portid_end = (ctx->cluster_id + 1) * port_spacing;
+	while (portid_begin < portid_end) {
+		unsigned int portid;
+		char end;
+
+		ret = asprintf(&key, "%s/ports/%u",
+			       ctx->prefix, portid_begin);
+		if (ret < 0)
+			return -errno;
+		if (portid_begin < 10) {
+			if (portid_end < 10)
+				portid = portid_end;
+			else
+				portid = 9;
+		} else if (portid_begin < 100) {
+			if (portid_end < 100)
+				portid = portid_end;
+			else
+				portid = 99;
+		} else if (portid_begin < 1000) {
+			if (portid_end < 999)
+				portid = portid_end;
+			else
+				portid = 999;
+		} else if (portid_begin < 10000) {
+			if (portid_end < 9999)
+				portid = portid_end;
+			else
+				portid = 9999;
+		} else
+			portid = portid_end;
+
+		ret = asprintf(&end_key, "%s/ports/%u",
+			       ctx->prefix, portid);
+		if (ret < 0) {
+			free(key);
+			return -errno;
+		}
+		end = end_key[strlen(end_key) - 1];
+		end++;
+		end_key[strlen(end_key) - 1] = end;
+		printf("Deleting port '%s' to '%s'\n",
+		       key, end_key);
+		ret = etcd_kv_delete_range(ctx, key, end_key);
+		if (ret < 0 && ret != -ENOKEY) {
+			fprintf(stderr, "%s: failed to delete port keys\n",
+				__func__);
+			break;
+		}
+		portid_begin = portid + 1;
+		free(end_key);
+		free(key);
+	}
+
+	return ret;
+}
