@@ -66,6 +66,7 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 	struct etcd_kv *kvs;
 	char *key, *attr;
 	int ret, num = 0, i;
+	bool skip_referrals = false;
 
 	ret = asprintf(&key, "%s/%s", ctx->prefix, root);
 	if (ret < 0)
@@ -79,15 +80,18 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 		attr = "dhchap_key";
 	else if (!strcmp(root, "subsystems"))
 		attr = "attr_allow_any_host";
-	else if (!strcmp(root, "ports"))
+	else if (!strcmp(root, "ports")) {
 		attr = "addr_traddr";
-	else
+		skip_referrals = true;
+	} else
 		return -EINVAL;
 
 	for (i = 0; i < ret; i++) {
 		struct etcd_kv *kv = &kvs[i];
 		const char *p;
 
+		if (skip_referrals && strstr(kv->key, "/referrals/"))
+			continue;
 		p = strrchr(kv->key, '/');
 		if (p) {
 			p++;
@@ -107,6 +111,7 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 	struct etcd_kv *kvs;
 	char *key, *val, *attr, *p;
 	int ret, key_offset, i;
+	bool skip_referrals = false;
 
 	ret = asprintf(&key, "%s/%s/", ctx->prefix, root);
 	if (ret < 0)
@@ -116,9 +121,10 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 		attr = "dhchap_hash";
 	else if (!strcmp(root, "subsystems"))
 		attr = "attr_allow_any_host";
-	else if (!strcmp(root, "ports"))
+	else if (!strcmp(root, "ports")) {
 		attr = "addr_traddr";
-	else
+		skip_referrals = true;
+	} else
 		return -EINVAL;
 
 	key_offset = strlen(key);
@@ -132,6 +138,8 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 	for (i = 0; i < ret; i++) {
 		struct etcd_kv *kv = &kvs[i];
 
+		if (skip_referrals && strstr(kv->key, "/referrals/"))
+			continue;
 		p = strrchr(kv->key, '/');
 		if (p) {
 			p++;
