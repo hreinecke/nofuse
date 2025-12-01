@@ -373,12 +373,13 @@ etcd_parse_delete_response (struct json_object *etcd_resp, void *arg)
 	}
 }
 
-int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
+int etcd_kv_delete_range(struct etcd_ctx *ctx, const char *key,
+			 const char *end_key)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	struct json_object *post_obj = NULL;
-	char *encoded_key = NULL, *end_key, *encoded_end, end;
+	char *encoded_key = NULL, *encoded_end;
 	int ret;
 
 	memset(&ev, 0, sizeof(ev));
@@ -387,10 +388,6 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	if (!conn)
 		return -ENOMEM;
 
-	end_key = strdup(key);
-	end = key[strlen(key) - 1];
-	end++;
-	end_key[strlen(key) - 1] = end;
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
 	encoded_end = __b64enc(end_key, strlen(end_key));
@@ -410,6 +407,21 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	free(encoded_key);
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
+	return ret;
+}
+
+int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
+{
+	char *end_key, end;
+	int ret;
+
+	end_key = strdup(key);
+	end = key[strlen(key) - 1];
+	end++;
+	end_key[strlen(key) - 1] = end;
+
+	ret = etcd_kv_delete_range(ctx, key, end_key);
+	free(end_key);
 	return ret;
 }
 

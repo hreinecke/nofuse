@@ -144,6 +144,8 @@ static inline int etcd_kv_store(struct etcd_ctx *ctx, const char *key,
 int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
 int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv **ret_kvs);
+int etcd_kv_delete_range(struct etcd_ctx *ctx, const char *key,
+			 const char *end_key);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
 
 int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
