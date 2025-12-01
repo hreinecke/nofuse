@@ -24,13 +24,13 @@
 #include "etcd_client.h"
 #include "configfs.h"
 
-bool etcd_debug = true;
+bool etcd_debug = false;
 bool http_debug = false;
 bool cmd_debug = false;
 bool tcp_debug = false;
 bool ep_debug = false;
 bool port_debug = false;
-bool configfs_debug = false;
+bool configfs_debug = true;
 
 int stopped = 0;
 sigset_t mask;

@@ -111,39 +111,41 @@ int update_value(struct etcd_ctx *ctx,
 		free(pathname);
 		return 0;
 	}
-store_key:
-	key = path_to_key(ctx, pathname);
-	if (!key) {
-		free(pathname);
-		return -ENOMEM;
-	}
-	if (ret < 0) {
-		fprintf(stderr, "%s: %s value error %d\n",
-			__func__, key, ret);
-		goto out_free;
-	}
-
 	if (!strcmp(name, "attr_cntlid_min")) {
-		unsigned long cntlid, cluster_spacing;
+		unsigned long cntlid, cluster_spacing, cluster_id;
 		char *eptr;
 
 		cntlid = strtoul(value, &eptr, 10);
 		if (cntlid == ULONG_MAX || value == eptr) {
 			fprintf(stderr, "%s: %s parse error\n",
 				__func__, name);
+			ret = -ERANGE;
 			goto out_free;
 		}
 		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
-		if (cntlid % cluster_spacing) {
+		if ((cntlid - 1) % cluster_spacing) {
 			fprintf(stderr, "%s: %s not cluster boundary\n",
 				__func__, name);
+			ret = -EINVAL;
 			goto out_free;
 		}
+		cluster_id = (cntlid - 1) / cluster_spacing;
 		if (ctx->cluster_id == -1) {
-			ctx->cluster_id = cntlid / cluster_spacing;
-			printf("%s: using cluter id %u\n",
+			ctx->cluster_id = cluster_id;
+			printf("%s: using cluster id %u\n",
 			       __func__, ctx->cluster_id);
+		} else if (ctx->cluster_id != cluster_id) {
+			cntlid = ctx->cluster_id * cluster_spacing + 1;
+			fprintf(stderr,
+				"%s: cluster id mismatch (should be %lu)\n",
+				__func__, cntlid);
+			ret = -EINVAL;
+			goto out_free;
 		}
+		sprintf(value, "%lu-%lu", cntlid,
+			(cluster_id + 1) * cluster_spacing);
+		free(pathname);
+		ret = asprintf(&pathname, "%s/attr_cntlid_range", dirname);
 	}
 	if (!strcmp(name, "attr_cntlid_max")) {
 		unsigned long cntlid, cluster_spacing;
@@ -161,13 +163,31 @@ store_key:
 				__func__, name);
 			goto out_free;
 		}
+		printf("%s: skip attr %s\n",
+		       __func__, name);
+		goto out_free;
 	}
+
+store_key:
+	key = path_to_key(ctx, pathname);
+	if (!key) {
+		free(pathname);
+		return -ENOMEM;
+	}
+	if (ret < 0) {
+		fprintf(stderr, "%s: %s value error %d\n",
+			__func__, key, ret);
+		free(key);
+		goto out_free;
+	}
+
 	memset(old, 0, sizeof(old));
 	ret = etcd_kv_get(ctx, key, old);
 	if (ret < 0) {
 		if (ret != -ENOENT) {
 			fprintf(stderr, "%s: key %s create error %d\n",
 				__func__, key, ret);
+			free(key);
 			goto out_free;
 		}
 		if (configfs_debug)
@@ -189,8 +209,8 @@ store_key:
 			fprintf(stderr, "%s: key %s update error %d\n",
 				__func__, key, ret);
 	}
-out_free:
 	free(key);
+out_free:
 	free(pathname);
 	return ret;
 }
