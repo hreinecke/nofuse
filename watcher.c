@@ -236,6 +236,7 @@ int main(int argc, char **argv)
 
 out_clear_keys:
 	purge_ports(ctx);
+	purge_subsystems(ctx);
 out_cleanup:
 	etcd_exit(ctx);
 

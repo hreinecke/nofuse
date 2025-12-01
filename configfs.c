@@ -96,6 +96,27 @@ static void transform_cntlid_range(struct etcd_ctx *ctx, char *old, char *value)
 	strcpy(value, new);
 }
 
+static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
+{
+	char *p, *n;
+	int i = 0;
+
+	memset(new, 0, 1024);
+	p = old;
+	n = strchr(p, ',');
+	while (n) {
+		if (i != ctx->cluster_id &&
+		    (n != p)) {
+			strncat(new, p, (n - p) + 1);
+		} else {
+			strcat(new, ",");
+		}
+		p = n + 1;
+		n = strchr(p, ',');
+		i++;
+	}
+}
+
 int update_value(struct etcd_ctx *ctx,
 		 const char *dirname, const char *name)
 {
@@ -567,5 +588,59 @@ int purge_ports(struct etcd_ctx *ctx)
 		free(key);
 	}
 
+	return ret;
+}
+
+int purge_subsystems(struct etcd_ctx *ctx)
+{
+	struct etcd_kv *kvs;
+	char *key, empty_range[1024];
+	int num_kvs, ret, i;
+
+	memset(empty_range, ',', 1024);
+
+	ret = asprintf(&key, "%s/subsystems", ctx->prefix);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+	num_kvs = ret;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char value[1024], *p;
+
+		p = strrchr(kv->key, '/');
+		if (!p)
+			continue;
+		if (strcmp(p, "/attr_cntlid_range"))
+			continue;
+
+		clear_cntlid_range(ctx, kv->value, value);
+		if (!strcmp(kv->value, value))
+			continue;
+		printf("%s: new range '%s'\n",
+		       __func__, value);
+		ret = etcd_kv_update(ctx, kv->key, value);
+		if (ret < 0) {
+			fprintf(stderr, "%s: failed to update key '%s'\n",
+				__func__, kv->key);
+			break;
+		}
+		if (!strncmp(value, empty_range, ctx->cluster_size)) {
+			strcpy(value, kv->key);
+			p = strrchr(value, '/');
+			*p = '\0';
+			printf("%s: delete subsystem '%s'\n",
+			       __func__, value);
+			ret = etcd_kv_delete(ctx, value);
+			if (ret < 0) {
+				fprintf(stderr, "%s: failed to delete %s\n",
+					__func__, value);
+			}
+		}
+	}
+	etcd_kv_free(kvs, ret);
 	return ret;
 }
