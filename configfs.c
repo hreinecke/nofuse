@@ -113,7 +113,9 @@ int update_value(struct etcd_ctx *ctx,
 	}
 	if (!strcmp(name, "attr_cntlid_min")) {
 		unsigned long cntlid, cluster_spacing, cluster_id;
+		size_t off;
 		char *eptr;
+		int i;
 
 		cntlid = strtoul(value, &eptr, 10);
 		if (cntlid == ULONG_MAX || value == eptr) {
@@ -148,8 +150,17 @@ int update_value(struct etcd_ctx *ctx,
 			ret = -EINVAL;
 			goto out_free;
 		}
-		sprintf(value, "%lu-%lu", cntlid,
-			cntlid + cluster_spacing);
+		off = 0;
+		memset(value, 0, 1024);
+		for (i = 0; i < CLUSTER_DEFAULT_SIZE; i++) {
+			if (i == ctx->cluster_id) {
+				ret = sprintf(value + off, "%lu-%lu", cntlid,
+					      cntlid + cluster_spacing);
+				off += ret;
+			}
+			strcat(value + off, ",");
+			off++;
+		}
 		free(pathname);
 		ret = asprintf(&pathname, "%s/attr_cntlid_range", dirname);
 	}
