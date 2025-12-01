@@ -400,6 +400,32 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 	return 0;
 }
 
+static int validate_port(struct etcd_ctx *ctx, const char *port)
+{
+	unsigned long portid, port_spacing, cluster_id;
+	char *eptr;
+	int ret = 0;
+
+	portid = strtoul(port, &eptr, 10);
+	if (portid == ULONG_MAX || port == eptr) {
+		fprintf(stderr, "%s: port %s parse error\n",
+			__func__, port);
+		return -ERANGE;
+	}
+	port_spacing = (USHRT_MAX  + 1) / ctx->cluster_size;
+	printf("%s: using port spacing %lu\n", __func__, port_spacing);
+	cluster_id = portid / port_spacing;
+	if (cluster_id != ctx->cluster_id) {
+		fprintf(stderr, "%s: port %s out of range\n",
+			__func__, port);
+		fprintf(stderr, "%s: needs to be range %lu - %lu\n",
+			__func__, ctx->cluster_id * port_spacing,
+			((ctx->cluster_id + 1) * port_spacing) - 1);
+		ret = -ERANGE;
+	}
+	return ret;
+}
+
 static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 {
 	DIR *sd;
@@ -551,9 +577,6 @@ int validate_cluster(struct etcd_ctx *ctx)
 		return -errno;
 	}
 	while ((se = readdir(sd))) {
-		char *eptr;
-		unsigned long portid, port_spacing, cluster_id;
-
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
@@ -561,25 +584,9 @@ int validate_cluster(struct etcd_ctx *ctx)
 		if (se->d_type != DT_DIR)
 			continue;
 
-		portid = strtoul(se->d_name, &eptr, 10);
-		if (portid == ULONG_MAX || se->d_name == eptr) {
-			fprintf(stderr, "%s: port %s parse error\n",
-				__func__, se->d_name);
-			ret = -ERANGE;
+		ret = validate_port(ctx, se->d_name);
+		if (ret < 0)
 			break;
-		}
-		port_spacing = (USHRT_MAX  + 1) / ctx->cluster_size;
-		printf("%s: using port spacing %lu\n", __func__, port_spacing);
-		cluster_id = portid / port_spacing;
-		if (cluster_id != ctx->cluster_id) {
-			fprintf(stderr, "%s: port %s out of range\n",
-				__func__, se->d_name);
-			fprintf(stderr, "%s: needs to be range %lu - %lu\n",
-				__func__, ctx->cluster_id * port_spacing,
-				((ctx->cluster_id + 1) * port_spacing) - 1);
-			ret = -ERANGE;
-			break;
-		}
 	}
 	closedir(sd);
 	free(dirname);
