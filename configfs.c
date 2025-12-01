@@ -123,6 +123,45 @@ store_key:
 		goto out_free;
 	}
 
+	if (!strcmp(name, "attr_cntlid_min")) {
+		unsigned long cntlid, cluster_spacing;
+		char *eptr;
+
+		cntlid = strtoul(value, &eptr, 10);
+		if (cntlid == ULONG_MAX || value == eptr) {
+			fprintf(stderr, "%s: %s parse error\n",
+				__func__, name);
+			goto out_free;
+		}
+		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
+		if (cntlid % cluster_spacing) {
+			fprintf(stderr, "%s: %s not cluster boundary\n",
+				__func__, name);
+			goto out_free;
+		}
+		if (ctx->cluster_id == -1) {
+			ctx->cluster_id = cntlid / cluster_spacing;
+			printf("%s: using cluter id %u\n",
+			       __func__, ctx->cluster_id);
+		}
+	}
+	if (!strcmp(name, "attr_cntlid_max")) {
+		unsigned long cntlid, cluster_spacing;
+		char *eptr;
+
+		cntlid = strtoul(value, &eptr, 10);
+		if (cntlid == ULONG_MAX || value == eptr) {
+			fprintf(stderr, "%s: %s parse error\n",
+				__func__, name);
+			goto out_free;
+		}
+		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
+		if ((cntlid + 1) % cluster_spacing) {
+			fprintf(stderr, "%s: %s not cluster boundary\n",
+				__func__, name);
+			goto out_free;
+		}
+	}
 	memset(old, 0, sizeof(old));
 	ret = etcd_kv_get(ctx, key, old);
 	if (ret < 0) {

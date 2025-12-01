@@ -969,6 +969,8 @@ struct etcd_ctx *etcd_init(const char *url, const char *prefix,
 	ctx->configfs = strdup(mnt);
 	ctx->lease = 0;
 	ctx->ttl = ttl > 0 ? ttl : default_etcd_ttl;
+	ctx->cluster_size = CLUSTER_DEFAULT_SIZE;
+	ctx->cluster_id = -1;
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);

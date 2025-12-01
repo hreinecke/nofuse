@@ -14,6 +14,9 @@
 #include <curl/easy.h>
 #endif
 
+#define CLUSTER_MAX_SIZE 65520
+#define CLUSTER_DEFAULT_SIZE 16
+
 #define PORT_NODE_SHIFT 8
 #define PORT_ID_MASK 0xff
 
@@ -38,7 +41,8 @@ struct etcd_ctx {
 	char *host;
 	char *node_name;
 	char *node_id;
-	unsigned int node_prefix;
+	int cluster_id;
+	int cluster_size;
 	int port;
 	bool tls;
 	int64_t lease;
