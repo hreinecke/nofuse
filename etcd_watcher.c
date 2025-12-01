@@ -199,6 +199,31 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		printf("%s: add key %s value %s\n", __func__,
 		       kv->key, kv->value);
 
+	if (!strncmp(kv->key + strlen(ctx->prefix), "/ports", 6)) {
+		unsigned long portid, port_spacing;
+		char *p, *eptr;
+
+		/* Update local ports only */
+		p = kv->key + strlen(ctx->prefix) + 7;
+		portid = strtoul(p, &eptr, 10);
+		if (portid == ULONG_MAX || p == eptr) {
+			fprintf(stderr, "%s: parse error on key %s\n",
+				__func__, kv->key);
+			return;
+		}
+		if (portid > USHRT_MAX) {
+			printf("%s: port %lu out of range, ignoring\n",
+			       __func__, portid);
+			return;
+		}
+		port_spacing = (USHRT_MAX + 1) / ctx->cluster_size;
+		if ((portid / port_spacing) != ctx->cluster_id) {
+			printf("%s: port %lu is not local, ignoring\n",
+			       __func__, portid);
+			return;
+		}
+		printf("%s: updating local port %lu\n", __func__, portid);
+	}
 	path = key_to_attr(ctx, kv->key);
 	if (!path) {
 		printf("%s: invalid path for key %s\n",
