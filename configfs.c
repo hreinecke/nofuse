@@ -373,6 +373,25 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 	return 0;
 }
 
+/**
+ * validate_cluster -- Validate local settings
+ *
+ * The local nvmet configfs settings need to be compatible with the cluster
+ * to allow for a merge of the local configuration with the existing
+ * cluster settings.
+ * - The cluster boundary is given by the max number of cntlids divided
+ *   by the size of the cluster (ie the possible number of nodes in the cluster)
+ * - The cluster id is derived from the 'cntlid_min' subsystem setting.
+ *   The 'cntlid_min' setting needs to fall on a cluster boundary, and
+ *   the cluster id is the cntlid_min setting divided by the cluster boundary.
+ * - 'cntlid_min'/'cntlid_max' settings need to be identical for all
+ *   local subsystems
+ * - the 'cntlid_max' setting need to fall on a cluster boundary - 1,
+ *   and needs to be at the end of the current cluster boundary.
+ *
+ * The port ids needs to be divided per cluster id; all port ids not
+ * in the range of the local cluster node will be rejected.
+ */
 int validate_cluster(struct etcd_ctx *ctx)
 {
 	int ret, errors = 0;
@@ -432,10 +451,57 @@ int validate_cluster(struct etcd_ctx *ctx)
 		if (ret < 0)
 			errors++;
 	}
+	closedir(sd);
+	free(dirname);
 	if (ret < 0)
 		return ret;
 	if (errors)
-		ret = -EINVAL;
+		return -EINVAL;
+
+	ret = asprintf(&dirname, "%s/ports", ctx->configfs);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = 0;
+	sd = opendir(dirname);
+	if (!sd) {
+		fprintf(stderr, "Cannot open %s\n", dirname);
+		free(dirname);
+		return -errno;
+	}
+	while ((se = readdir(sd))) {
+		char *eptr;
+		unsigned long portid, port_spacing, cluster_id;
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+
+		if (se->d_type != DT_DIR)
+			continue;
+
+		portid = strtoul(se->d_name, &eptr, 10);
+		if (portid == ULONG_MAX || se->d_name == eptr) {
+			fprintf(stderr, "%s: port %s parse error\n",
+				__func__, se->d_name);
+			ret = -ERANGE;
+			break;
+		}
+		port_spacing = (USHRT_MAX  + 1) / ctx->cluster_size;
+		printf("%s: using port spacing %lu\n", __func__, port_spacing);
+		cluster_id = portid / port_spacing;
+		if (cluster_id != ctx->cluster_id) {
+			fprintf(stderr, "%s: port %s out of range\n",
+				__func__, se->d_name);
+			fprintf(stderr, "%s: needs to be range %lu - %lu\n",
+				__func__, ctx->cluster_id * port_spacing,
+				((ctx->cluster_id + 1) * port_spacing) - 1);
+			ret = -ERANGE;
+			break;
+		}
+	}
+	closedir(sd);
+	free(dirname);
 	return ret;
 }
 
