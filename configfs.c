@@ -122,20 +122,26 @@ int update_value(struct etcd_ctx *ctx,
 			ret = -ERANGE;
 			goto out_free;
 		}
+		/* Controller ID 0 is invalid */
+		if (cntlid == 1) {
+			cntlid = 0;
+		}
 		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
-		if ((cntlid - 1) % cluster_spacing) {
-			fprintf(stderr, "%s: %s not cluster boundary\n",
-				__func__, name);
+		printf("%s: using cluster spacing %lx\n",
+		       __func__, cluster_spacing);
+		if (cntlid % (cluster_spacing + 1)) {
+			fprintf(stderr, "%s: %s %lu not cluster boundary\n",
+				__func__, name, cntlid);
 			ret = -EINVAL;
 			goto out_free;
 		}
-		cluster_id = (cntlid - 1) / cluster_spacing;
+		cluster_id = cntlid / (cluster_spacing + 1);
 		if (ctx->cluster_id == -1) {
 			ctx->cluster_id = cluster_id;
 			printf("%s: using cluster id %u\n",
 			       __func__, ctx->cluster_id);
 		} else if (ctx->cluster_id != cluster_id) {
-			cntlid = ctx->cluster_id * cluster_spacing + 1;
+			cntlid = (ctx->cluster_id * cluster_spacing);
 			fprintf(stderr,
 				"%s: cluster id mismatch (should be %lu)\n",
 				__func__, cntlid);
@@ -143,7 +149,7 @@ int update_value(struct etcd_ctx *ctx,
 			goto out_free;
 		}
 		sprintf(value, "%lu-%lu", cntlid,
-			(cluster_id + 1) * cluster_spacing);
+			cntlid + cluster_spacing);
 		free(pathname);
 		ret = asprintf(&pathname, "%s/attr_cntlid_range", dirname);
 	}
