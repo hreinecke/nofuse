@@ -575,12 +575,15 @@ int purge_ports(struct etcd_ctx *ctx)
 		end = end_key[strlen(end_key) - 1];
 		end++;
 		end_key[strlen(end_key) - 1] = end;
-		printf("Deleting port '%s' to '%s'\n",
-		       key, end_key);
+		if (configfs_debug)
+			printf("Deleting port '%s' to '%s'\n",
+			       key, end_key);
 		ret = etcd_kv_delete_range(ctx, key, end_key);
 		if (ret < 0 && ret != -ENOKEY) {
-			fprintf(stderr, "%s: failed to delete port keys\n",
-				__func__);
+			if (configfs_debug)
+				fprintf(stderr,
+					"%s: failed to delete port keys\n",
+					__func__);
 			break;
 		}
 		portid_begin = portid + 1;
@@ -620,24 +623,29 @@ int purge_subsystems(struct etcd_ctx *ctx)
 		clear_cntlid_range(ctx, kv->value, value);
 		if (!strcmp(kv->value, value))
 			continue;
-		printf("%s: new range '%s'\n",
-		       __func__, value);
+		if (configfs_debug)
+			printf("%s: new range '%s'\n",
+			       __func__, value);
 		ret = etcd_kv_update(ctx, kv->key, value);
 		if (ret < 0) {
-			fprintf(stderr, "%s: failed to update key '%s'\n",
-				__func__, kv->key);
+			if (configfs_debug)
+				fprintf(stderr, "%s: failed to update key '%s'\n",
+					__func__, kv->key);
 			break;
 		}
 		if (!strncmp(value, empty_range, ctx->cluster_size)) {
 			strcpy(value, kv->key);
 			p = strrchr(value, '/');
 			*p = '\0';
-			printf("%s: delete subsystem '%s'\n",
-			       __func__, value);
+			if (configfs_debug)
+				printf("%s: delete subsystem '%s'\n",
+				       __func__, value);
 			ret = etcd_kv_delete(ctx, value);
 			if (ret < 0) {
-				fprintf(stderr, "%s: failed to delete %s\n",
-					__func__, value);
+				if (configfs_debug)
+					fprintf(stderr,
+						"%s: failed to delete %s\n",
+						__func__, value);
 			}
 		}
 	}
