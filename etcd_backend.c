@@ -959,13 +959,14 @@ int etcd_del_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
 	return ret;
 }
 
-#define NUM_NS_ATTRS 7
+#define NUM_NS_ATTRS 8
 static struct key_value_template ns_template[NUM_NS_ATTRS] = {
 	{ .key = "device_eui64", .value = "" },
 	{ .key = "device_nguid", .value = "" },
 	{ .key = "device_uuid", .value = "" },
 	{ .key = "device_path", .value = "" },
 	{ .key = "device_node", .value = "" },
+	{ .key = "device_origin", .value = "" },
 	{ .key = "ana_grpid", .value = "1" },
 	{ .key = "enable", .value = "0" },
 };

@@ -128,7 +128,8 @@ int update_value(struct etcd_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
 	if (ret < 0)
 		return ret;
-	if (!strcmp(name, "addr_origin")) {
+	if (!strcmp(name, "addr_origin") ||
+	    !strcmp(name, "device_origin")) {
 		/* Synthetic attribute, not present in configfs */
 		strcpy(value, ctx->node_name);
 		ret = 0;
@@ -326,6 +327,11 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			if (ret < 0)
 				break;
 		}
+		if (!strcmp(se->d_name, "device_path")) {
+			ret = update_value(ctx, dirname, "device_origin");
+			if (ret < 0)
+				break;
+		}
 		if (se->d_type == DT_DIR) {
 			ret = upload_configfs(ctx, dirname, se->d_name);
 			if (ret < 0)
@@ -392,6 +398,56 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 		return -EINVAL;
 	}
 	return 0;
+}
+
+static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
+{
+	DIR *sd;
+	struct dirent *se;
+	char *dirname;
+	int ret;
+
+	ret = asprintf(&dirname, "%s/subsystems/%s/namespaces",
+		       ctx->configfs, subsys);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = 0;
+	sd = opendir(dirname);
+	if (!sd) {
+		fprintf(stderr, "Cannot open %s\n", dirname);
+		free(dirname);
+		return -errno;
+	}
+	while ((se = readdir(sd))) {
+		char *key, value[1024];
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+		if (se->d_type != DT_DIR)
+			continue;
+
+		printf("%s: validate %s namespace %s\n",
+		       __func__, subsys, se->d_name);
+		ret = asprintf(&key, "%s/subsystems/%s/namespaces/%s",
+			       ctx->prefix, subsys, se->d_name);
+		if (ret < 0)
+			continue;
+		ret = etcd_kv_get(ctx, key, value);
+		free(key);
+		if (ret >= 0 && strcmp(value, ctx->node_name)) {
+			fprintf(stderr,
+				"%s: subsys %s namespace %s it remote\n",
+				__func__, subsys, se->d_name);
+			ret = -EEXIST;
+			break;
+		}
+		ret = 0;
+	}
+	closedir(sd);
+	free(dirname);
+	return ret;
 }
 
 /**
@@ -469,6 +525,10 @@ int validate_cluster(struct etcd_ctx *ctx)
 			break;
 
 		ret = validate_cluster_id(ctx, se->d_name, value, true);
+		if (ret < 0)
+			errors++;
+
+		ret = validate_namespaces(ctx, se->d_name);
 		if (ret < 0)
 			errors++;
 	}
