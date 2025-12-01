@@ -195,6 +195,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
+	ret = validate_cluster(ctx);
+	if (ret < 0) {
+		fprintf(stderr, "cluster validation failed\n");
+		goto out_cancel_sig;
+	}
 	ret = upload_configfs(ctx, ctx->configfs, "ports");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload port configuration\n");

@@ -138,7 +138,7 @@ int update_value(struct etcd_ctx *ctx,
 		return 0;
 	}
 	if (!strcmp(name, "attr_cntlid_min")) {
-		unsigned long cntlid, cluster_spacing, cluster_id;
+		unsigned long cntlid, cluster_spacing;
 		char *eptr;
 
 		cntlid = strtoul(value, &eptr, 10);
@@ -153,50 +153,15 @@ int update_value(struct etcd_ctx *ctx,
 			cntlid = 0;
 		}
 		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
-		printf("%s: using cluster spacing %lx\n",
-		       __func__, cluster_spacing);
-		if (cntlid % (cluster_spacing + 1)) {
-			fprintf(stderr, "%s: %s %lu not cluster boundary\n",
-				__func__, name, cntlid);
-			ret = -EINVAL;
-			goto out_free;
-		}
-		cluster_id = cntlid / (cluster_spacing + 1);
-		if (ctx->cluster_id == -1) {
-			ctx->cluster_id = cluster_id;
-			printf("%s: using cluster id %u\n",
-			       __func__, ctx->cluster_id);
-		} else if (ctx->cluster_id != cluster_id) {
-			cntlid = (ctx->cluster_id * cluster_spacing);
-			fprintf(stderr,
-				"%s: cluster id mismatch (should be %lu)\n",
-				__func__, cntlid);
-			ret = -EINVAL;
-			goto out_free;
-		}
 		sprintf(value, "%lu-%lu", cntlid,
 			cntlid + cluster_spacing);
 		free(pathname);
 		ret = asprintf(&pathname, "%s/attr_cntlid_range", dirname);
 	}
 	if (!strcmp(name, "attr_cntlid_max")) {
-		unsigned long cntlid, cluster_spacing;
-		char *eptr;
-
-		cntlid = strtoul(value, &eptr, 10);
-		if (cntlid == ULONG_MAX || value == eptr) {
-			fprintf(stderr, "%s: %s parse error\n",
-				__func__, name);
-			goto out_free;
-		}
-		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
-		if ((cntlid + 1) % cluster_spacing) {
-			fprintf(stderr, "%s: %s not cluster boundary\n",
-				__func__, name);
-			goto out_free;
-		}
-		printf("%s: skip attr %s\n",
-		       __func__, name);
+		if (configfs_debug)
+			printf("%s: skip attr %s\n",
+			       __func__, name);
 		goto out_free;
 	}
 
@@ -351,3 +316,126 @@ out:
 	free(dirname);
 	return ret;
 }
+
+static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
+			       char *value, bool cntlid_max)
+{
+	unsigned long cntlid, cntlid_min, cluster_spacing, cluster_id;
+	char *eptr;
+
+	cluster_spacing = (CLUSTER_MAX_SIZE / ctx->cluster_size);
+	cntlid = strtoul(value, &eptr, 10);
+	if (cntlid == ULONG_MAX || value == eptr) {
+		fprintf(stderr, "%s: %s parse error on %s\n",
+			__func__, subsys, value);
+		return -ERANGE;
+	}
+	/* Controller ID 0 is invalid */
+	if (cntlid == 1)
+		cntlid = 0;
+	else if (cntlid_max) {
+		cntlid ++;
+		cntlid_min = ctx->cluster_id * cluster_spacing;
+	}
+
+	if (cntlid % cluster_spacing) {
+		fprintf(stderr,
+			"%s: subsys %s cntlid_%s %lu not cluster boundary\n",
+			__func__, subsys, cntlid_max ? "max": "min", cntlid);
+		if (cntlid_max)
+			fprintf(stderr, "%s: should be %lu\n", __func__,
+				cntlid_min + (cluster_spacing - 1));
+		else
+			fprintf(stderr, "%s: should be %lu\n", __func__,
+				(cntlid / cluster_spacing) * cluster_spacing);
+		return -EINVAL;
+	} else if (cntlid_max &&
+		   (cntlid / cluster_spacing) != ctx->cluster_id + 1) {
+		fprintf(stderr, "%s: subsys %s cntlid_max %lu out of range for cluster\n",
+			__func__, subsys, cntlid);
+		fprintf(stderr, "%s: should be %lu\n", __func__,
+			cntlid_min + (cluster_spacing - 1));
+		return -EINVAL;
+	}
+	if (cntlid_max)
+		return 0;
+	cluster_id = cntlid / cluster_spacing;
+	if (ctx->cluster_id == -1) {
+		ctx->cluster_id = cluster_id;
+		printf("%s: subsys %s using cluster id %u\n",
+		       __func__, subsys, ctx->cluster_id);
+	} else if (ctx->cluster_id != cluster_id) {
+		cntlid = ctx->cluster_id * cluster_spacing;
+		fprintf(stderr, "%s: subsys %s cluster id mismatch (should be %lu)\n",
+			__func__, subsys, cntlid);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+int validate_cluster(struct etcd_ctx *ctx)
+{
+	int ret, errors = 0;
+	DIR *sd;
+	struct dirent *se;
+	char *dirname;
+
+	ret = asprintf(&dirname, "%s/subsystems", ctx->configfs);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = 0;
+	sd = opendir(dirname);
+	if (!sd) {
+		fprintf(stderr, "Cannot open %s\n", dirname);
+		free(dirname);
+		return -errno;
+	}
+	while ((se = readdir(sd))) {
+		char *path, value[1024];
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+
+		if (se->d_type != DT_DIR)
+			continue;
+		ret = asprintf(&path, "%s/%s/attr_cntlid_min",
+			       dirname, se->d_name);
+		if (ret < 0) {
+			ret = -errno;
+			break;
+		}
+		ret = read_attr(path, value, sizeof(value));
+		free(path);
+		if (ret < 0)
+			break;
+
+		ret = validate_cluster_id(ctx, se->d_name, value, false);
+		if (ret < 0) {
+			errors++;
+			continue;
+		}
+
+		ret = asprintf(&path, "%s/%s/attr_cntlid_max",
+			       dirname, se->d_name);
+		if (ret < 0) {
+			ret = -errno;
+			break;
+		}
+		ret = read_attr(path, value, sizeof(value));
+		free(path);
+		if (ret < 0)
+			break;
+
+		ret = validate_cluster_id(ctx, se->d_name, value, true);
+		if (ret < 0)
+			errors++;
+	}
+	if (ret < 0)
+		return ret;
+	if (errors)
+		ret = -EINVAL;
+	return ret;
+}
+
