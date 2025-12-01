@@ -70,6 +70,32 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	return key;
 }
 
+static void transform_cntlid_range(struct etcd_ctx *ctx, char *old, char *value)
+{
+	char new[1024], *p, *n;
+	int i = 0;
+
+	memset(new, 0, 1024);
+	p = old;
+	n = strchr(p, ',');
+	while (n) {
+		if (i != ctx->cluster_id) {
+			if (n == p) {
+				strcat(new, ",");
+			} else {
+				strncat(new, p, (n - p) + 1);
+			}
+		} else {
+			strcat(new, value);
+			strcat(new, ",");
+		}
+		p = n + 1;
+		n = strchr(p, ',');
+		i++;
+	}
+	strcpy(value, new);
+}
+
 int update_value(struct etcd_ctx *ctx,
 		 const char *dirname, const char *name)
 {
@@ -113,9 +139,7 @@ int update_value(struct etcd_ctx *ctx,
 	}
 	if (!strcmp(name, "attr_cntlid_min")) {
 		unsigned long cntlid, cluster_spacing, cluster_id;
-		size_t off;
 		char *eptr;
-		int i;
 
 		cntlid = strtoul(value, &eptr, 10);
 		if (cntlid == ULONG_MAX || value == eptr) {
@@ -150,17 +174,8 @@ int update_value(struct etcd_ctx *ctx,
 			ret = -EINVAL;
 			goto out_free;
 		}
-		off = 0;
-		memset(value, 0, 1024);
-		for (i = 0; i < CLUSTER_DEFAULT_SIZE; i++) {
-			if (i == ctx->cluster_id) {
-				ret = sprintf(value + off, "%lu-%lu", cntlid,
-					      cntlid + cluster_spacing);
-				off += ret;
-			}
-			strcat(value + off, ",");
-			off++;
-		}
+		sprintf(value, "%lu-%lu", cntlid,
+			cntlid + cluster_spacing);
 		free(pathname);
 		ret = asprintf(&pathname, "%s/attr_cntlid_range", dirname);
 	}
@@ -207,6 +222,10 @@ store_key:
 			free(key);
 			goto out_free;
 		}
+		if (!strcmp(name, "attr_cntlid_min")) {
+			memset(old, ',', ctx->cluster_size);
+			transform_cntlid_range(ctx, old, value);
+		}
 		if (configfs_debug)
 			printf("%s: upload key %s value '%s'\n", __func__,
 			       key, value);
@@ -217,6 +236,13 @@ store_key:
 				__func__, key, ret);
 		}
 	} else if (strcmp(old, value)) {
+		if (!strcmp(name, "attr_cntlid_min")) {
+			transform_cntlid_range(ctx, old, value);
+			if (!strcmp(old, value)) {
+				free(key);
+				goto out_free;
+			}
+		}
 		if (configfs_debug)
 			printf("%s: update key %s value '%s'\n", __func__,
 			       key, value);
