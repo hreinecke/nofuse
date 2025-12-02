@@ -188,8 +188,10 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 			ev->ev_revision = -1;
 	}
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
-	if (!kvs_obj)
+	if (!kvs_obj) {
+		ev->num_kvs = 0;
 		return;
+	}
 
 	ev->num_kvs = json_object_array_length(kvs_obj);
 	ev->kvs = malloc(sizeof(struct etcd_kv) * ev->num_kvs);

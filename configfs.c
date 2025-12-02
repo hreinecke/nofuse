@@ -404,27 +404,20 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 
 static int validate_port(struct etcd_ctx *ctx, const char *port)
 {
-	unsigned long portid, port_spacing, cluster_id;
-	char *eptr;
+	char *key, value[1024];
 	int ret = 0;
 
-	portid = strtoul(port, &eptr, 10);
-	if (portid == ULONG_MAX || port == eptr) {
-		fprintf(stderr, "%s: port %s parse error\n",
-			__func__, port);
-		return -ERANGE;
+	ret = asprintf(&key, "%s/ports/%s/addr_origin",
+		       ctx->prefix, port);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	if (ret < 0) {
+		free(key);
+		return ret == -ENOENT ? 0 : ret;
 	}
-	port_spacing = (USHRT_MAX  + 1) / ctx->cluster_size;
-	printf("%s: using port spacing %lu\n", __func__, port_spacing);
-	cluster_id = portid / port_spacing;
-	if (cluster_id != ctx->cluster_id) {
-		fprintf(stderr, "%s: port %s out of range\n",
-			__func__, port);
-		fprintf(stderr, "%s: needs to be range %lu - %lu\n",
-			__func__, ctx->cluster_id * port_spacing,
-			((ctx->cluster_id + 1) * port_spacing) - 1);
-		ret = -ERANGE;
-	}
+	if (strcmp(ctx->node_name, value))
+		ret = -EEXIST;
 	return ret;
 }
 
@@ -653,69 +646,40 @@ int validate_cluster(struct etcd_ctx *ctx)
 
 int purge_ports(struct etcd_ctx *ctx)
 {
-	unsigned int portid_begin, portid_end, port_spacing;
-	char *key, *end_key;
-	int ret;
+	struct etcd_kv *kvs;
+	char *key;
+	int num_kvs, i, ret;
 
-	port_spacing = (USHRT_MAX + 1) / ctx->cluster_size;
-	portid_begin = ctx->cluster_id * port_spacing;
-	portid_end = (ctx->cluster_id + 1) * port_spacing;
-	while (portid_begin < portid_end) {
-		unsigned int portid;
-		char end;
+	ret = asprintf(&key, "%s/ports", ctx->prefix);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+	num_kvs = ret;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char *attr;
 
-		ret = asprintf(&key, "%s/ports/%u",
-			       ctx->prefix, portid_begin);
-		if (ret < 0)
-			return -errno;
-		if (portid_begin < 10) {
-			if (portid_end < 10)
-				portid = portid_end;
-			else
-				portid = 9;
-		} else if (portid_begin < 100) {
-			if (portid_end < 100)
-				portid = portid_end;
-			else
-				portid = 99;
-		} else if (portid_begin < 1000) {
-			if (portid_end < 999)
-				portid = portid_end;
-			else
-				portid = 999;
-		} else if (portid_begin < 10000) {
-			if (portid_end < 9999)
-				portid = portid_end;
-			else
-				portid = 9999;
-		} else
-			portid = portid_end;
-
-		ret = asprintf(&end_key, "%s/ports/%u",
-			       ctx->prefix, portid);
-		if (ret < 0) {
-			free(key);
-			return -errno;
-		}
-		end = end_key[strlen(end_key) - 1];
-		end++;
-		end_key[strlen(end_key) - 1] = end;
+		attr = strrchr(kv->key, '/');
+		if (!attr)
+			continue;
+		if (strcmp(attr, "/addr_origin"))
+			continue;
+		if (strcmp(kv->value, ctx->node_name))
+			continue;
+		*attr = '\0';
 		if (configfs_debug)
-			printf("Deleting port '%s' to '%s'\n",
-			       key, end_key);
-		ret = etcd_kv_delete_range(ctx, key, end_key);
-		if (ret < 0 && ret != -ENOKEY) {
-			if (configfs_debug)
-				fprintf(stderr,
-					"%s: failed to delete port keys\n",
-					__func__);
+			printf("Deleting port '%s'\n", kv->key);
+		ret = etcd_kv_delete(ctx, kv->key);
+		if (ret < 0) {
+			fprintf(stderr, "%s: failed to delete '%s'\n",
+				__func__, kv->key);
 			break;
 		}
-		portid_begin = portid + 1;
-		free(end_key);
-		free(key);
 	}
-
+	etcd_kv_free(kvs, num_kvs);
 	return ret;
 }
 
