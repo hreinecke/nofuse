@@ -230,7 +230,8 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 		}
 		if (etcd_debug)
 			fprintf(stderr, "%s: key '%s', val '%s'\n",
-				__func__, kv->key, kv->value);
+				__func__, kv->key,
+				kv->value ? kv->value : "");
 	}
 }
 

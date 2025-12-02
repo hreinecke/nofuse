@@ -255,7 +255,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	if (ns == eptr)
 		return -EINVAL;
 	ret = etcd_test_namespace(ctx, subsysnqn, nsid);
-	if (ret)
+	if (ret < 0)
 		return -ENOENT;
 	fuse_info("%s: subsys %s ns %u", __func__, subsysnqn, nsid);
 	attr = strtok(NULL, "/");
