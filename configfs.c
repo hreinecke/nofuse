@@ -39,18 +39,90 @@ struct ana_group {
 struct ana_group_entry {
 	struct linked_list list;
 	struct ana_group *grp;
-	char *port;
+	unsigned int portid;
 	bool is_local;
 };
 
 struct ana_ns_entry {
 	struct linked_list list;
 	struct ana_group *grp;
+	char *subsys;
 	char *ns;
-	bool is_local;
+	bool enabled;
 };
 
 LINKED_LIST(ana_group_list);
+
+struct ana_group *find_ana_group(unsigned int ana_grpid)
+{
+	struct ana_group *tmp_grp, *grp = NULL;
+
+	list_for_each_entry(tmp_grp, &ana_group_list, list) {
+		if (tmp_grp->grpid == ana_grpid) {
+			grp = tmp_grp;
+			break;
+		}
+	}
+	if (grp) {
+		printf("%s: using ANA group %u\n",
+		       __func__, grp->grpid);
+		return grp;
+	}
+	grp = malloc(sizeof(*grp));
+	if (!grp)
+		return NULL;
+
+	grp->grpid = ana_grpid;
+	INIT_LINKED_LIST(&grp->namespaces);
+	INIT_LINKED_LIST(&grp->optimized);
+	INIT_LINKED_LIST(&grp->non_optimized);
+	INIT_LINKED_LIST(&grp->inaccessible);
+	INIT_LINKED_LIST(&grp->persistent_loss);
+	list_add(&grp->list, &ana_group_list);
+	printf("%s: allocating new ANA group %u\n",
+	       __func__, ana_grpid);
+	return grp;
+}
+
+struct ana_group_entry *find_ana_port(struct ana_group *grp,
+				      unsigned int portid,
+				      char *state)
+{
+	struct ana_group_entry *tmp_ge, *ge = NULL;
+	struct linked_list *grp_list;
+
+	if (!strcmp(state, "optimized")) {
+		grp_list = &grp->optimized;
+	} else if (!strcmp(state, "non-optimized")) {
+		grp_list = &grp->non_optimized;
+	} else if (!strcmp(state, "persistent-loss")) {
+		grp_list = &grp->persistent_loss;
+	} else {
+		grp_list = &grp->inaccessible;
+	}
+
+	list_for_each_entry(tmp_ge, grp_list, list) {
+		if (tmp_ge->portid == portid) {
+			ge = tmp_ge;
+			break;
+		}
+	}
+	if (ge) {
+		printf("%s: using port %u grp %u state %s\n",
+		       __func__, portid, ge->grp->grpid, state);
+		return ge;
+	}
+	ge = malloc(sizeof(*ge));
+	if (!ge)
+		return NULL;
+	ge->grp = grp;
+	ge->portid = portid;
+	ge->is_local = false;
+	list_add(&ge->list, grp_list);
+	printf("%s: add new port %u to ana group %u\n",
+	       __func__, portid, ge->grp->grpid);
+	return ge;
+}
 
 int read_attr(char *attr_path, char *value, size_t value_len)
 {
@@ -278,10 +350,7 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 	DIR *sd;
 	struct dirent *se;
 	int ret;
-	bool upload_ports = false;
 
-	if (!strcmp(file, "ports"))
-		upload_ports = true;
 	ret = asprintf(&dirname, "%s/%s", dir, file);
 	if (ret < 0)
 		return -ENOMEM;
@@ -314,12 +383,6 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		if (!strcmp(se->d_name, "passthru"))
 			continue;
 
-		if (upload_ports) {
-			ret = etcd_validate_port(ctx, se->d_name);
-			if (ret < 0)
-				goto out;
-		}
-
 		ret = update_value_to_key(ctx, dirname, se->d_name);
 		if (ret < 0)
 			break;
@@ -340,7 +403,7 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 				break;
 		}
 	}
-out:
+
 	closedir(sd);
 	free(dirname);
 	return ret;
@@ -402,17 +465,31 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 	return 0;
 }
 
-static int validate_ana_grpid(struct etcd_ctx *ctx, const char *dirname,
+static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
 			      const char *ns)
 {
 	unsigned long ana_grpid;
-	struct ana_group *grp = NULL, *tmp_grp;
+	struct ana_group *grp = NULL;
 	struct ana_ns_entry *ans = NULL, *tmp_ans;
 	char *path, value[1024], *eptr;
+	bool ns_enabled = false;
 	int ret;
 
-	ret = asprintf(&path, "%s/%s/ana_grpid",
-		       dirname, ns);
+	ret = asprintf(&path, "%s/subsystems/%s/namespaces/%s/enable",
+		       ctx->configfs, subsys, ns);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = read_attr(path, value, sizeof(value));
+	free(path);
+	if (ret < 0)
+		return -ENOENT;
+
+	if (strcmp(value, "1"))
+		ns_enabled = true;
+
+	ret = asprintf(&path, "%s/subsystems/%s/namespaces/%s/ana_grpid",
+		       ctx->configfs, subsys, ns);
 	if (ret < 0)
 		return -errno;
 
@@ -423,44 +500,36 @@ static int validate_ana_grpid(struct etcd_ctx *ctx, const char *dirname,
 
 	ana_grpid = strtoul(value, &eptr, 10);
 	if (ana_grpid == ULONG_MAX || value == eptr) {
-		fprintf(stderr, "%s ns %s grpid %s parse error\n",
-			dirname, ns, value);
+		fprintf(stderr, "subsys %s ns %s grpid %s parse error\n",
+			subsys, ns, value);
 		return -ERANGE;
 	}
-	list_for_each_entry(tmp_grp, &ana_group_list, list) {
-		if (grp->grpid == ana_grpid) {
-			grp = tmp_grp;
-			break;
-		}
-	}
-	if (!grp) {
-		grp = malloc(sizeof(*grp));
-		if (!grp)
-			return -ENOMEM;
-		grp->grpid = ana_grpid;
-		INIT_LINKED_LIST(&grp->namespaces);
-		INIT_LINKED_LIST(&grp->optimized);
-		INIT_LINKED_LIST(&grp->non_optimized);
-		INIT_LINKED_LIST(&grp->inaccessible);
-		INIT_LINKED_LIST(&grp->persistent_loss);
-		list_add(&grp->list, &ana_group_list);
-	}
+	grp = find_ana_group(ana_grpid);
+	if (!grp)
+		return -ENOMEM;
 	list_for_each_entry(tmp_ans, &grp->namespaces, list) {
+		if (strcmp(tmp_ans->subsys, subsys))
+			continue;
 		if (!strcmp(tmp_ans->ns, ns)) {
 			ans = tmp_ans;
 			break;
 		}
 	}
 	if (ans) {
-		fprintf(stderr, "%s ns %s already allocated\n",
-			dirname, ns);
+		fprintf(stderr, "subsys %s ns %s allocated with grpid %lu\n",
+			subsys, ns, ana_grpid);
 		ret = -EEXIST;
 	} else {
 		ans = malloc(sizeof(*ans));
 		if (!ans)
 			return -ENOMEM;
+		ans->subsys = strdup(subsys);
 		ans->ns = strdup(ns);
+		ans->grp = grp;
+		ans->enabled = ns_enabled;
 		list_add(&ans->list, &grp->namespaces);
+		printf("%s: adding subsys %s ns %s to ANA group %u\n",
+		       __func__, subsys, ns, ans->grp->grpid);
 	}
 
 	return ret;
@@ -507,16 +576,75 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 				continue;
 			if (ret == 1) {
 				fprintf(stderr,
-					"%s: subsys %s namespace %s it remote\n",
+					"%s: subsys %s namespace %s is remote\n",
 					__func__, subsys, se->d_name);
 				ret = -EEXIST;
 				break;
 			}
 		}
-		ret = validate_ana_grpid(ctx, dirname, se->d_name);
+		ret = validate_ana_grpid(ctx, subsys, se->d_name);
 		if (ret < 0)
 			break;
 		ret = 0;
+	}
+	closedir(sd);
+	free(dirname);
+	return ret;
+}
+
+static int validate_port(struct etcd_ctx *ctx, char *port)
+{
+	unsigned long portid;
+	char *dirname, *eptr;
+	DIR *sd;
+	struct dirent *se;
+	int ret;
+
+	portid = strtoul(port, &eptr, 10);
+	if (portid == ULONG_MAX || port == eptr)
+		return -ERANGE;
+
+	ret = asprintf(&dirname, "%s/ports/%lu/ana_groups",
+		       ctx->configfs, portid);
+	if (ret < 0)
+		return -ENOMEM;
+	sd = opendir(dirname);
+	if (!sd) {
+		fprintf(stderr, "cannot open %s\n", dirname);
+		free(dirname);
+		return -errno;
+	}
+	while ((se = readdir(sd))) {
+		char *path, value[1024];
+		unsigned long ana_grpid;
+		struct ana_group *grp;
+		struct ana_group_entry *ge;
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+
+		if (se->d_type != DT_DIR)
+			continue;
+
+		ana_grpid = strtoul(se->d_name, NULL, 10);
+		if (ana_grpid == ULONG_MAX)
+			continue;
+		grp = find_ana_group(ana_grpid);
+		if (!grp)
+			continue;
+		ret = asprintf(&path, "%s/%s/ana_state",
+			       dirname, se->d_name);
+		if (ret < 0)
+			continue;
+		ret = read_attr(path, value, sizeof(value));
+		free(path);
+		if (ret < 0)
+			continue;
+		ge = find_ana_port(grp, portid, value);
+		if (!ge)
+			continue;
+		ge->is_local = true;
 	}
 	closedir(sd);
 	free(dirname);
@@ -631,7 +759,7 @@ int validate_cluster(struct etcd_ctx *ctx)
 		if (se->d_type != DT_DIR)
 			continue;
 
-		ret = etcd_validate_port(ctx, se->d_name);
+		ret = validate_port(ctx, se->d_name);
 		if (ret < 0)
 			break;
 	}
@@ -640,6 +768,60 @@ int validate_cluster(struct etcd_ctx *ctx)
 	return ret;
 }
 
+int load_ana(struct etcd_ctx *ctx)
+{
+	struct etcd_kv *kvs;
+	char *key;
+	int ret, num_kvs, i;
+
+	ret = asprintf(&key, "%s/ports", ctx->prefix);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+	num_kvs = ret;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv =&kvs[i];
+		char *attr, *p, *eptr;
+		unsigned long portid, ana_grpid;
+		struct ana_group *grp;
+		struct ana_group_entry *ge = NULL;
+		bool is_local = false;
+
+		attr = kv->key + strlen(ctx->prefix) + 7;
+		p = strrchr(attr, '/');
+		if (!p || strcmp(p, "/ana_state"))
+			continue;
+		portid = strtoul(attr, &eptr, 10);
+		if (portid == ULONG_MAX || attr == eptr)
+			continue;
+		ret = etcd_validate_port(ctx, portid);
+		if (ret == 0)
+			is_local = true;
+
+		if (!strcmp(eptr, "/ana_groups/"))
+			continue;
+		p = eptr + strlen("/ana_groups/");
+		ana_grpid = strtoul(p, &eptr, 10);
+		if (ana_grpid == ULONG_MAX || p == eptr)
+			continue;
+		printf("%s: parsing %s portid %lu ana grpid %lu\n",
+		       __func__, kv->key, portid, ana_grpid);
+		grp = find_ana_group(ana_grpid);
+		if (!grp)
+			continue;
+		ge = find_ana_port(grp, portid, kv->value);
+		if (!ge)
+			continue;
+		ge->is_local = is_local;
+	}
+	etcd_kv_free(kvs, num_kvs);
+	return ret;
+}
+		
 int purge_ports(struct etcd_ctx *ctx)
 {
 	struct etcd_kv *kvs;

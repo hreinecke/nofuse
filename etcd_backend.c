@@ -355,13 +355,13 @@ int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 	return ret;
 }
 
-int etcd_validate_port(struct etcd_ctx *ctx, const char *port)
+int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid)
 {
 	char *key, value[1024];
 	int ret = 0;
 
-	ret = asprintf(&key, "%s/ports/%s/addr_origin",
-		       ctx->prefix, port);
+	ret = asprintf(&key, "%s/ports/%u/addr_origin",
+		       ctx->prefix, portid);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);

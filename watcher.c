@@ -195,6 +195,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
+	ret = load_ana(ctx);
+	if (ret < 0) {
+		fprintf(stderr, "loading ANA information failed\n");
+		goto out_cancel_sig;
+	}
 	ret = validate_cluster(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "cluster validation failed\n");

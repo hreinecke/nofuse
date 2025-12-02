@@ -7,6 +7,7 @@ int update_value_to_key(struct etcd_ctx *ctx, const char *dirname,
 int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		    const char *file);
 int validate_cluster(struct etcd_ctx *ctx);
+int load_ana(struct etcd_ctx *ctx);
 int purge_ports(struct etcd_ctx *ctx);
 int purge_subsystems(struct etcd_ctx *ctx);
 

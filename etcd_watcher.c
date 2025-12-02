@@ -191,19 +191,14 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	int ret = 0;
 
 	if (!strncmp(kv->key + strlen(ctx->prefix), "/ports", 6)) {
-		char *port, *p;
+		char *port, *eptr;
+		unsigned long portid;
 
-		port = strdup(kv->key + strlen(ctx->prefix) + 7);
-		if (!port)
-			return -ENOMEM;
-		p = strchr(port, '/');
-		if (!p) {
-			free(port);
-			return -EINVAL;
-		}
-		*p = '\0';
-		ret = etcd_validate_port(ctx, port);
-		free(port);
+		port = kv->key + strlen(ctx->prefix) + 7;
+		portid = strtoul(port, &eptr, 10);
+		if (portid == ULONG_MAX || port == eptr)
+			return -ERANGE;
+		ret = etcd_validate_port(ctx, portid);
 	}
 	return ret;
 }
