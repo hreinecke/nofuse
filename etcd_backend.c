@@ -1115,6 +1115,26 @@ int etcd_test_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 	return ret;
 }
 
+int etcd_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
+			    int nsid)
+{
+	char *key, value[1024];
+	int ret = 0;
+
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_origin",
+		       ctx->prefix, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	if (ret < 0) {
+		free(key);
+		return ret == -ENOENT ? 0 : ret;
+	}
+	if (strcmp(ctx->node_name, value))
+		ret = -EEXIST;
+	return ret;
+}
+
 int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 			    int nsid, const char *attr, const char *value)
 {
