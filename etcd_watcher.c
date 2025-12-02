@@ -186,6 +186,28 @@ static int update_key_to_value(char *path, char *value)
 	return ret;
 }
 
+static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
+{
+	int ret = 0;
+
+	if (!strncmp(kv->key + strlen(ctx->prefix), "/ports", 6)) {
+		char *port, *p;
+
+		port = strdup(kv->key + strlen(ctx->prefix) + 7);
+		if (!port)
+			return -ENOMEM;
+		p = strchr(port, '/');
+		if (!p) {
+			free(port);
+			return -EINVAL;
+		}
+		*p = '\0';
+		ret = etcd_validate_port(ctx, port);
+		free(port);
+	}
+	return ret;
+}
+
 void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
@@ -221,19 +243,11 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 			       __func__);
 			goto out_free;
 		}
-		if (!strncmp(kv->key + strlen(ctx->prefix), "/ports", 6)) {
-			char *port, *p;
-
-			port = strdup(kv->key + strlen(ctx->prefix) + 7);
-			p = strchr(port, '/');
-			*p = '\0';
-			ret = etcd_validate_port(ctx, port);
-			free(port);
-			if (ret < 0) {
-				printf("%s: skip port %s creation\n",
-				       __func__, kv->key);
-				goto out_free;
-			}
+		ret = validate_key(ctx, kv);
+		if (ret < 0) {
+			printf("%s: skip key %s creation\n",
+			       __func__, kv->key);
+			goto out_free;
 		}
 		ret = create_value(path, kv->value);
 		if (ret < 0) {
