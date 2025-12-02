@@ -26,6 +26,8 @@
 #include "etcd_client.h"
 #include "etcd_backend.h"
 
+unsigned long ana_groups[1024];
+
 int read_attr(char *attr_path, char *value, size_t value_len)
 {
 	int fd, len;
@@ -426,6 +428,37 @@ static int validate_port(struct etcd_ctx *ctx, const char *port)
 	return ret;
 }
 
+static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
+			      const char *ns, char *value)
+{
+	unsigned long ana_grpid, cluster_id;
+	unsigned int idx, off;
+	char *eptr;
+	int ret;
+
+	ana_grpid = strtoul(value, &eptr, 10);
+	if (ana_grpid == ULONG_MAX || value == eptr) {
+		fprintf(stderr, "subsys %s ns %s ana_grpid %s parse error\n",
+			subsys, ns, value);
+		return -ERANGE;
+	}
+	cluster_id = ana_grpid / ANA_NODE_SPACING;
+	if (cluster_id != ctx->cluster_id) {
+		unsigned long ana_min, ana_max;
+
+		ana_min = ctx->cluster_id * ANA_NODE_SPACING;
+		ana_max = ana_min + ANA_NODE_SPACING - 1;
+		fprintf(stderr, "subsys %s ns %s ana_grpid %lu out of range, "
+			"need to be in range %lu - %lu\n",
+			subsys, ns, ana_grpid, ana_min, ana_max);
+		ret = -ERANGE;
+	}
+	off = ana_grpid / 64;
+	idx = ana_grpid % 64;
+	ana_groups[off] |= 1 << idx;
+	return ret;
+}
+
 static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 {
 	DIR *sd;
@@ -446,7 +479,7 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		return -errno;
 	}
 	while ((se = readdir(sd))) {
-		char *key, value[1024];
+		char *path, *key, value[1024];
 
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
@@ -456,7 +489,20 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 
 		printf("%s: validate %s namespace %s\n",
 		       __func__, subsys, se->d_name);
-		ret = asprintf(&key, "%s/subsystems/%s/namespaces/%s",
+		ret = asprintf(&path, "%s/%s/enable", dirname, se->d_name);
+		if (ret < 0)
+			break;
+		ret = read_attr(path, value, sizeof(value));
+		free(path);
+		if (ret < 0)
+			break;
+		if (!strcmp(value, "0")) {
+			printf("%s: skip %s namespace %s, disabled\n",
+			       __func__, subsys, se->d_name);
+			continue;
+		}
+
+		ret = asprintf(&key, "%s/subsystems/%s/namespaces/%s/device_origin",
 			       ctx->prefix, subsys, se->d_name);
 		if (ret < 0)
 			continue;
@@ -469,6 +515,18 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 			ret = -EEXIST;
 			break;
 		}
+		ret = asprintf(&path, "%s/%s/ana_grpid",
+			       dirname, se->d_name);
+		if (ret < 0)
+			break;
+		ret = read_attr(path, value, sizeof(value));
+		free(path);
+		if (ret < 0)
+			break;
+
+		ret = validate_ana_grpid(ctx, subsys, se->d_name, value);
+		if (ret < 0)
+			break;
 		ret = 0;
 	}
 	closedir(sd);
