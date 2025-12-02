@@ -99,7 +99,6 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 				num++;
 		}
 	}
-	printf("%s: root %s %d elements\n", __func__, root, num);
 	etcd_kv_free(kvs, ret);
 	*nlinks = num;
 	return 0;
@@ -704,9 +703,7 @@ int etcd_test_subsys(struct etcd_ctx *ctx, const char *nqn)
 		       ctx->prefix, nqn);
 	if (ret < 0)
 		return false;
-	printf("%s: key %s\n", __func__, key);
 	ret = etcd_kv_get(ctx, key, NULL);
-	printf("%s: ret %d\n", __func__, ret);
 	free(key);
 	return ret;
 }
