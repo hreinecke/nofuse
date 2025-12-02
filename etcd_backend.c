@@ -355,6 +355,25 @@ int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 	return ret;
 }
 
+int etcd_validate_port(struct etcd_ctx *ctx, const char *port)
+{
+	char *key, value[1024];
+	int ret = 0;
+
+	ret = asprintf(&key, "%s/ports/%s/addr_origin",
+		       ctx->prefix, port);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	if (ret < 0) {
+		free(key);
+		return ret == -ENOENT ? 0 : ret;
+	}
+	if (strcmp(ctx->node_name, value))
+		ret = -EEXIST;
+	return ret;
+}
+
 int etcd_find_port_id(struct etcd_ctx *ctx, const char *portid,
 		      int *mapped_portid)
 {

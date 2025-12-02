@@ -402,25 +402,6 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 	return 0;
 }
 
-static int validate_port(struct etcd_ctx *ctx, const char *port)
-{
-	char *key, value[1024];
-	int ret = 0;
-
-	ret = asprintf(&key, "%s/ports/%s/addr_origin",
-		       ctx->prefix, port);
-	if (ret < 0)
-		return ret;
-	ret = etcd_kv_get(ctx, key, value);
-	if (ret < 0) {
-		free(key);
-		return ret == -ENOENT ? 0 : ret;
-	}
-	if (strcmp(ctx->node_name, value))
-		ret = -EEXIST;
-	return ret;
-}
-
 static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
 			      const char *ns, char *value)
 {
@@ -635,7 +616,7 @@ int validate_cluster(struct etcd_ctx *ctx)
 		if (se->d_type != DT_DIR)
 			continue;
 
-		ret = validate_port(ctx, se->d_name);
+		ret = etcd_validate_port(ctx, se->d_name);
 		if (ret < 0)
 			break;
 	}

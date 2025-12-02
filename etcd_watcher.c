@@ -21,6 +21,7 @@
 
 #include "common.h"
 #include "etcd_client.h"
+#include "etcd_backend.h"
 
 static char *key_to_attr(struct etcd_ctx *ctx, char *key)
 {
@@ -220,11 +221,19 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 			       __func__);
 			goto out_free;
 		}
-		/* TBD: match on 'addr_origin' to create port */
 		if (!strncmp(kv->key + strlen(ctx->prefix), "/ports", 6)) {
-			printf("%s: skip port %s creation\n",
-			       __func__, kv->key);
-			goto out_free;
+			char *port, *p;
+
+			port = strdup(kv->key + strlen(ctx->prefix) + 7);
+			p = strchr(port, '/');
+			*p = '\0';
+			ret = etcd_validate_port(ctx, port);
+			free(port);
+			if (ret < 0) {
+				printf("%s: skip port %s creation\n",
+				       __func__, kv->key);
+				goto out_free;
+			}
 		}
 		ret = create_value(path, kv->value);
 		if (ret < 0) {
