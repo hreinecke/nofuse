@@ -50,7 +50,7 @@ watcher: watcher.o etcd_watcher.o configfs.o $(CURL_OBJS) $(OBJS)
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
 
-%.o: %.c common.h utils.h ops.h firmware.h
+%.o: %.c common.h etcd_client.h utils.h ops.h firmware.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 tcp.o: tcp.c common.h utils.h tcp.h tls.h

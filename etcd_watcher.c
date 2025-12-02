@@ -151,7 +151,7 @@ out:
 	return ret;
 }
 
-static int update_value(char *path, char *value)
+static int update_key_to_value(char *path, char *value)
 {
 	int fd, ret;
 	char buf[256];
@@ -258,7 +258,7 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		ret = delete_value(path, (st.st_mode & S_IFMT));
 	} else if ((st.st_mode & S_IFMT) == S_IFREG) {
 		if (kv->value)
-			ret = update_value(path, kv->value);
+			ret = update_key_to_value(path, kv->value);
 	} else if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		/* All done in create_value() */
 		ret = 0;

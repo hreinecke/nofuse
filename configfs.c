@@ -119,8 +119,8 @@ static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
 	}
 }
 
-int update_value(struct etcd_ctx *ctx,
-		 const char *dirname, const char *name)
+int update_value_to_key(struct etcd_ctx *ctx,
+			const char *dirname, const char *name)
 {
 	struct stat st;
 	char *pathname, value[1024], old[1024], *key;
@@ -320,17 +320,17 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			}
 		}
 	update:
-		ret = update_value(ctx, dirname, se->d_name);
+		ret = update_value_to_key(ctx, dirname, se->d_name);
 		if (ret < 0)
 			break;
 
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = update_value(ctx, dirname, "addr_origin");
+			ret = update_value_to_key(ctx, dirname, "addr_origin");
 			if (ret < 0)
 				break;
 		}
 		if (!strcmp(se->d_name, "device_path")) {
-			ret = update_value(ctx, dirname, "device_origin");
+			ret = update_value_to_key(ctx, dirname, "device_origin");
 			if (ret < 0)
 				break;
 		}
