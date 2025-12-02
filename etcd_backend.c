@@ -1103,15 +1103,23 @@ int etcd_add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 
 int etcd_test_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 {
-	char *key;
+	char *key, value[1024];
 	int ret;
 
 	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/enable",
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, NULL);
+	ret = etcd_kv_get(ctx, key, value);
 	free(key);
+	if (ret < 0)
+		return ret;
+	if (strcmp(value, "0"))
+		ret = 0;
+	else if (strcmp(value, "1"))
+		ret = 1;
+	else
+		ret = -EINVAL;
 	return ret;
 }
 

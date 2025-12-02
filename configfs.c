@@ -26,7 +26,31 @@
 #include "etcd_client.h"
 #include "etcd_backend.h"
 
-unsigned long ana_groups[1024];
+struct ana_group {
+	struct linked_list list;
+	int grpid;
+	struct linked_list namespaces;
+	struct linked_list optimized;
+	struct linked_list non_optimized;
+	struct linked_list inaccessible;
+	struct linked_list persistent_loss;
+};
+
+struct ana_group_entry {
+	struct linked_list list;
+	struct ana_group *grp;
+	char *port;
+	bool is_local;
+};
+
+struct ana_ns_entry {
+	struct linked_list list;
+	struct ana_group *grp;
+	char *ns;
+	bool is_local;
+};
+
+LINKED_LIST(ana_group_list);
 
 int read_attr(char *attr_path, char *value, size_t value_len)
 {
@@ -379,15 +403,16 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 }
 
 static int validate_ana_grpid(struct etcd_ctx *ctx, const char *dirname,
-			      const char *ana_grp)
+			      const char *ns)
 {
-	unsigned long ana_grpid, cluster_id;
-	unsigned int idx, off;
+	unsigned long ana_grpid;
+	struct ana_group *grp = NULL, *tmp_grp;
+	struct ana_ns_entry *ans = NULL, *tmp_ans;
 	char *path, value[1024], *eptr;
 	int ret;
 
 	ret = asprintf(&path, "%s/%s/ana_grpid",
-		       dirname, ana_grp);
+		       dirname, ns);
 	if (ret < 0)
 		return -errno;
 
@@ -398,24 +423,46 @@ static int validate_ana_grpid(struct etcd_ctx *ctx, const char *dirname,
 
 	ana_grpid = strtoul(value, &eptr, 10);
 	if (ana_grpid == ULONG_MAX || value == eptr) {
-		fprintf(stderr, "%s ana_grp %s grpid %s parse error\n",
-			dirname, ana_grp, value);
+		fprintf(stderr, "%s ns %s grpid %s parse error\n",
+			dirname, ns, value);
 		return -ERANGE;
 	}
-	cluster_id = ana_grpid / ANA_NODE_SPACING;
-	if (cluster_id != ctx->cluster_id) {
-		unsigned long ana_min, ana_max;
-
-		ana_min = ctx->cluster_id * ANA_NODE_SPACING;
-		ana_max = ana_min + ANA_NODE_SPACING - 1;
-		fprintf(stderr, "%s ana_grp %s grpid %lu out of range, "
-			"need to be in range %lu - %lu\n",
-			dirname, ana_grp, ana_grpid, ana_min, ana_max);
-		ret = -ERANGE;
+	list_for_each_entry(tmp_grp, &ana_group_list, list) {
+		if (grp->grpid == ana_grpid) {
+			grp = tmp_grp;
+			break;
+		}
 	}
-	off = ana_grpid / 64;
-	idx = ana_grpid % 64;
-	ana_groups[off] |= 1 << idx;
+	if (!grp) {
+		grp = malloc(sizeof(*grp));
+		if (!grp)
+			return -ENOMEM;
+		grp->grpid = ana_grpid;
+		INIT_LINKED_LIST(&grp->namespaces);
+		INIT_LINKED_LIST(&grp->optimized);
+		INIT_LINKED_LIST(&grp->non_optimized);
+		INIT_LINKED_LIST(&grp->inaccessible);
+		INIT_LINKED_LIST(&grp->persistent_loss);
+		list_add(&grp->list, &ana_group_list);
+	}
+	list_for_each_entry(tmp_ans, &grp->namespaces, list) {
+		if (!strcmp(tmp_ans->ns, ns)) {
+			ans = tmp_ans;
+			break;
+		}
+	}
+	if (ans) {
+		fprintf(stderr, "%s ns %s already allocated\n",
+			dirname, ns);
+		ret = -EEXIST;
+	} else {
+		ans = malloc(sizeof(*ans));
+		if (!ans)
+			return -ENOMEM;
+		ans->ns = strdup(ns);
+		list_add(&ans->list, &grp->namespaces);
+	}
+
 	return ret;
 }
 
@@ -452,20 +499,19 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 			continue;
 		printf("%s: validate %s namespace %lu\n",
 		       __func__, subsys, nsid);
-		ret = etcd_test_namespace(ctx, subsys, nsid);
-		if (ret < 0) {
-			printf("%s: skip %s namespace %s, disabled\n",
-			       __func__, subsys, se->d_name);
-			continue;
-		}
 
 		ret = etcd_validate_namespace(ctx, subsys, nsid);
 		if (ret < 0) {
-			fprintf(stderr,
-				"%s: subsys %s namespace %s it remote\n",
-				__func__, subsys, se->d_name);
-			ret = -EEXIST;
-			break;
+			ret = etcd_test_namespace(ctx, subsys, nsid);
+			if (ret < 0)
+				continue;
+			if (ret == 1) {
+				fprintf(stderr,
+					"%s: subsys %s namespace %s it remote\n",
+					__func__, subsys, se->d_name);
+				ret = -EEXIST;
+				break;
+			}
 		}
 		ret = validate_ana_grpid(ctx, dirname, se->d_name);
 		if (ret < 0)
