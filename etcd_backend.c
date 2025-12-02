@@ -1157,6 +1157,12 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 	if (ret < 0)
 		return ret;
 
+	if (strcmp(attr, "enable")) {
+		ret = etcd_test_namespace(ctx, subsysnqn, nsid);
+		if (ret == 1)
+			return -EPERM;
+	}
+
 	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/%s",
 		       ctx->prefix, subsysnqn, nsid, attr);
 	if (ret < 0)

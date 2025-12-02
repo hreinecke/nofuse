@@ -1297,9 +1297,6 @@ static int write_namespace(const char *subsysnqn, const char *p,
 
 	fuse_info("%s: subsys %s nsid %u attr %s value %s", __func__,
 		  subsysnqn, nsid, attr, buf);
-	if (!strcmp(attr, "device_origin"))
-		return -EPERM;
-	fuse_info("%s: attr %s", __func__, attr);
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
 				      attr, buf);
 	if (ret < 0)
