@@ -578,7 +578,7 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		       __func__, subsys, nsid);
 
 		ret = etcd_validate_namespace(ctx, subsys, nsid);
-		if (ret < 0) {
+		if (ret < 0 && ret != -ENOENT) {
 			ret = etcd_test_namespace(ctx, subsys, nsid);
 			if (ret < 0)
 				continue;

@@ -1111,9 +1111,9 @@ int etcd_test_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 	free(key);
 	if (ret < 0)
 		return ret;
-	if (strcmp(value, "0"))
+	if (!strcmp(value, "0"))
 		ret = 0;
-	else if (strcmp(value, "1"))
+	else if (!strcmp(value, "1"))
 		ret = 1;
 	else
 		ret = -EINVAL;
@@ -1133,7 +1133,7 @@ int etcd_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
 	ret = etcd_kv_get(ctx, key, value);
 	if (ret < 0) {
 		free(key);
-		return ret == -ENOENT ? 0 : ret;
+		return ret;
 	}
 	if (strcmp(ctx->node_name, value))
 		ret = -EEXIST;
@@ -1157,10 +1157,29 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 	if (ret < 0)
 		return ret;
 
+	/* Do not allow to change attributes if the namespace is enabled */
 	if (strcmp(attr, "enable")) {
 		ret = etcd_test_namespace(ctx, subsysnqn, nsid);
-		if (ret == 1)
+		if (ret == 1) {
+			fprintf(stderr, "%s: subsys %s nsid %d enabled\n",
+				__func__, subsysnqn, nsid);
 			return -EPERM;
+		}
+		if (ret)
+			printf("%s: subsys %s nsid %d enable error %d\n",
+			       __func__, subsysnqn, nsid, ret);
+	} else {
+		/*
+		 * Do not allow to enable it if 'device_origin' is not set
+		 */
+		ret = etcd_validate_namespace(ctx, subsysnqn, nsid);
+		if (ret < 0 && ret != -EEXIST) {
+			fprintf(stderr,
+				"%s: subsys %s nsid %d validation error %d\n",
+				__func__, subsysnqn, nsid, ret);
+			return -EPERM;
+		}
+		ret = 0;
 	}
 
 	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/%s",
@@ -1169,8 +1188,11 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		return ret;
 	ret = etcd_kv_update(ctx, key, value);
 	free(key);
-	if (ret < 0)
+	if (ret < 0) {
+		printf("%s: subsys %s nsid %d attr error %d\n",
+		       __func__, subsysnqn, nsid, ret);
 		return -errno;
+	}
 	return 0;
 }
 
