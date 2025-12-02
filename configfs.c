@@ -542,6 +542,8 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 	char *dirname;
 	int ret;
 
+	printf("%s: validating namespaces for subsys %s\n",
+	       __func__, subsys);
 	ret = asprintf(&dirname, "%s/subsystems/%s/namespaces",
 		       ctx->configfs, subsys);
 	if (ret < 0)
@@ -563,6 +565,8 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		if (se->d_type != DT_DIR)
 			continue;
 
+		printf("%s: validating subsys %s ns %s\n",
+		       __func__, subsys, se->d_name);
 		nsid = strtoul(se->d_name, NULL, 10);
 		if (nsid == ULONG_MAX)
 			continue;
@@ -821,7 +825,38 @@ int load_ana(struct etcd_ctx *ctx)
 	etcd_kv_free(kvs, num_kvs);
 	return ret;
 }
-		
+
+int validate_ana(struct etcd_ctx *ctx)
+{
+	struct ana_group *grp;
+
+	list_for_each_entry(grp, &ana_group_list, list) {
+		struct ana_group_entry *ge;
+		struct ana_ns_entry *ns;
+		bool ns_enabled = false, is_local = false;
+
+		list_for_each_entry(ns, &grp->namespaces, list) {
+			if (ns->enabled)
+				ns_enabled = true;
+		}
+		if (!ns_enabled) {
+			printf("%s: ANA group %u no namespaces enabled\n",
+			       __func__, grp->grpid);
+			continue;
+		}
+		list_for_each_entry(ge, &grp->optimized, list) {
+			if (ge->is_local)
+				is_local = true;
+		}
+		if (!is_local) {
+			fprintf(stderr, "%s: ANA group %u no local ports\n",
+				__func__, grp->grpid);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
 int purge_ports(struct etcd_ctx *ctx)
 {
 	struct etcd_kv *kvs;
