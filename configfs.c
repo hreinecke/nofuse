@@ -319,7 +319,8 @@ store_key:
 		if (ret < 0) {
 			fprintf(stderr, "%s: key %s create error %d\n",
 				__func__, key, ret);
-		}
+		} else
+			ret = strlen(value);
 	} else if (strcmp(old, value)) {
 		if (!strcmp(name, "attr_cntlid_min")) {
 			transform_cntlid_range(ctx, old, value);
@@ -336,6 +337,8 @@ store_key:
 		if (ret < 0)
 			fprintf(stderr, "%s: key %s update error %d\n",
 				__func__, key, ret);
+		else
+			ret = strlen(value);
 	}
 	free(key);
 out_free:
@@ -392,7 +395,8 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			if (ret < 0)
 				break;
 		}
-		if (!strcmp(se->d_name, "device_path")) {
+		/* Do not set 'origin' if no device path is set */
+		if (!strcmp(se->d_name, "device_path") && ret > 0) {
 			ret = update_value_to_key(ctx, dirname, "device_origin");
 			if (ret < 0)
 				break;
