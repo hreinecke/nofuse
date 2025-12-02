@@ -291,35 +291,11 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			continue;
 
 		if (upload_ports) {
-			char *path, *key, value[1024];
-
-			/* Check for port number mismatch */
-			ret = asprintf(&path, "%s/%s/addr_origin",
-				       dirname, se->d_name);
-			if (ret < 0) {
-				ret = -ENOMEM;
-				goto out;
-			}
-			key = path_to_key(ctx, path);
-			if (!key) {
-				free(path);
-				ret = -ENOMEM;
-				goto out;
-			}
-			free(path);
-			ret = etcd_kv_get(ctx, key, value);
-			free(key);
+			ret = etcd_validate_port(ctx, se->d_name);
 			if (ret < 0)
-				goto update;
-			if (strcmp(value, ctx->node_name)) {
-				fprintf(stderr, "%s: port %s already "
-					"registered for %s\n",
-					__func__, se->d_name, value);
-				ret = -EEXIST;
 				goto out;
-			}
 		}
-	update:
+
 		ret = update_value_to_key(ctx, dirname, se->d_name);
 		if (ret < 0)
 			break;
