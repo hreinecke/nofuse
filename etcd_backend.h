@@ -23,8 +23,6 @@ int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
 		       const char *attr, char *value);
 int etcd_del_host(struct etcd_ctx *ctx, const char *nqn);
 
-int etcd_find_port_id(struct etcd_ctx *ctx, const char *portid,
-		      int *mapped_portid);
 int etcd_fill_port(struct etcd_ctx *ctx, const char *port,
 		   void *buf, fuse_fill_dir_t filler);
 int etcd_add_port(struct etcd_ctx *ctx, const char *port,
