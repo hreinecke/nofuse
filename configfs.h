@@ -1,4 +1,5 @@
 #ifndef _CONFIGFS_H
+#define _CONFIGFS_H
 
 int read_attr(char *attr_path, char *value, size_t value_len);
 char *path_to_key(struct etcd_ctx *ctx, const char *path);

@@ -23,8 +23,6 @@
 #include <fuse.h>
 
 #include "common.h"
-#include "ops.h"
-#include "tls.h"
 #include "etcd_client.h"
 #include "etcd_backend.h"
 

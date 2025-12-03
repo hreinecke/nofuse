@@ -50,7 +50,7 @@ watcher: watcher.o etcd_watcher.o configfs.o $(CURL_OBJS) $(OBJS)
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
 
-%.o: %.c common.h etcd_client.h utils.h ops.h firmware.h
+%.o: %.c common.h etcd_client.h etcd_backend.h utils.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 tcp.o: tcp.c common.h utils.h tcp.h tls.h
@@ -64,6 +64,10 @@ etcd_client_socket.o: etcd_client.c
 
 etcd_curl.o: etcd_curl.c
 	$(CC) $(CFLAGS) -D_USE_CURL -c -o $@ $<
+
+configfs.o: configfs.c configfs.h
+
+etcd_backend.o: etcd_backend.c etcd_client.h common.h etcd_backend.h utils.h firmware.h
 
 firmware.h: gen_firmware_rev.sh
 	bash ./$< $@
