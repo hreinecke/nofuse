@@ -33,7 +33,7 @@ int stopped = 0;
 sigset_t mask;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t wait = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t cond_wait = PTHREAD_COND_INITIALIZER;
 
 static void *signal_handler(void *arg)
 {
@@ -49,7 +49,7 @@ static void *signal_handler(void *arg)
 		pthread_mutex_lock(&lock);
 		stopped = 1;
 		pthread_mutex_unlock(&lock);
-		pthread_cond_signal(&wait);
+		pthread_cond_signal(&cond_wait);
 		return NULL;
 	}
 	pthread_exit(NULL);
@@ -516,7 +516,7 @@ int main(int argc, char **argv)
 
 	pthread_mutex_lock(&lock);
 	while (!stopped)
-		pthread_cond_wait(&wait, &lock);
+		pthread_cond_wait(&cond_wait, &lock);
 	pthread_mutex_unlock(&lock);
 
 	printf("cancelling watcher\n");
