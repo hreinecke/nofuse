@@ -30,7 +30,7 @@ DISCD_LIBS += $(ETCD_LIBS)
 
 OBJS := $(ETCD_OBJS)
 
-all: nofuse portd discd nvmetd xdp_drop_port.o watcher
+all: nofuse portd discd nvmetd watcher
 
 nofuse: $(DAEMON_OBJS) $(CURL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lfuse3 $(CURL_LIBS) $(DAEMON_LIBS)
