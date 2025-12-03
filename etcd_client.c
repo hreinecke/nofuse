@@ -983,11 +983,11 @@ struct etcd_ctx *etcd_init(const char *url, const char *prefix,
 		if (!strncmp(u, "http://", 7)) {
 			u[4] = '\0';
 			proto = u;
-			host = u + 8;
+			host = u + 7;
 		} else if (!strncmp(u, "https://", 8)) {
 			u[5] = '\0';
 			proto = u;
-			host = u + 9;
+			host = u + 8;
 		} else {
 			host = u;
 		}
