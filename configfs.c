@@ -200,6 +200,8 @@ static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
 	int i = 0;
 
 	memset(new, 0, 1024);
+	if (!old)
+		return;
 	p = old;
 	n = strchr(p, ',');
 	while (n) {
@@ -926,6 +928,8 @@ int purge_subsystems(struct etcd_ctx *ctx)
 		if (strcmp(p, "/attr_cntlid_range"))
 			continue;
 
+		if (!kv->value)
+			continue;
 		clear_cntlid_range(ctx, kv->value, value);
 		if (!strcmp(kv->value, value))
 			continue;

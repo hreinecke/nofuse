@@ -1135,6 +1135,8 @@ int etcd_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
 		free(key);
 		return ret;
 	}
+	if (!strlen(value))
+		return -ENOENT;
 	if (strcmp(ctx->node_name, value))
 		ret = -EEXIST;
 	return ret;
@@ -1168,7 +1170,7 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		if (ret)
 			printf("%s: subsys %s nsid %d enable error %d\n",
 			       __func__, subsysnqn, nsid, ret);
-	} else {
+	} else if (strcmp(value, "0")) {
 		/*
 		 * Do not allow to enable it if 'device_origin' is not set
 		 */
@@ -1179,6 +1181,8 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 				__func__, subsysnqn, nsid, ret);
 			return -EPERM;
 		}
+		printf("%s: subsys %s nsid %d validation ok\n",
+		       __func__, subsysnqn, nsid);
 		ret = 0;
 	}
 
