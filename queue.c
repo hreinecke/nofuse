@@ -471,7 +471,7 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 		printf("%s: ctrl %d qid %d subsys %s\n",
 		       __func__,
 		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		       ep->ctrl->subsysnqn ? ep->ctrl->subsysnqn : "<none>");
+		       ep->ctrl ? ep->ctrl->subsysnqn : "<none>");
 		if (ep->state != CONNECTED)
 			continue;
 		if (!ep->ctrl)
