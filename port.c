@@ -9,7 +9,6 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <urcu/uatomic.h>
 
 #include "common.h"
 #include "ops.h"
