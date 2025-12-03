@@ -1047,6 +1047,8 @@ void etcd_exit(struct etcd_ctx *ctx)
 		return;
 	if (ctx->node_name)
 		free(ctx->node_name);
+	if (ctx->node_id)
+		free(ctx->node_id);
 	free(ctx->configfs);
 	free(ctx->prefix);
 	free(ctx->host);

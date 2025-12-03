@@ -22,6 +22,7 @@
 #include "common.h"
 #include "etcd_client.h"
 #include "etcd_backend.h"
+#include "configfs.h"
 
 static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,
 			     char **attr)
@@ -242,7 +243,7 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		portid = strtoul(port, &eptr, 10);
 		if (portid == ULONG_MAX || port == eptr)
 			return -ERANGE;
-		ret = etcd_validate_port(ctx, portid);
+		ret = validate_local_port(ctx, portid);
 	}
 	if (!strncmp(key, "subsystems", 10)) {
 		int nsid = -1;

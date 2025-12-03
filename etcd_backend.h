@@ -30,7 +30,6 @@ int etcd_fill_port(struct etcd_ctx *ctx, const char *port,
 int etcd_add_port(struct etcd_ctx *ctx, const char *port,
 		  const char *traddr, const char *trsvcid);
 int etcd_test_port(struct etcd_ctx *ctx, const char *port);
-int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid);
 int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, const char *value);
 int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,

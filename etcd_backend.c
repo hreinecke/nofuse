@@ -323,9 +323,7 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *port,
 		if (ret < 0)
 			return ret;
 		value = kv->value;
-		if (!strcmp(kv->key, "addr_origin")) {
-			value = ctx->node_name;
-		} else if (!strcmp(kv->key, "addr_traddr")) {
+		if (!strcmp(kv->key, "addr_traddr")) {
 			if (traddr)
 				value = traddr;
 		} else if (!strcmp(kv->key, "addr_trsvcid")) {
@@ -351,25 +349,6 @@ int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 		return ret;
 	ret = etcd_kv_get(ctx, key, NULL);
 	free(key);
-	return ret;
-}
-
-int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid)
-{
-	char *key, value[1024];
-	int ret = 0;
-
-	ret = asprintf(&key, "%s/ports/%u/addr_origin",
-		       ctx->prefix, portid);
-	if (ret < 0)
-		return ret;
-	ret = etcd_kv_get(ctx, key, value);
-	if (ret < 0) {
-		free(key);
-		return ret == -ENOENT ? 0 : ret;
-	}
-	if (strcmp(ctx->node_name, value))
-		ret = -EEXIST;
 	return ret;
 }
 

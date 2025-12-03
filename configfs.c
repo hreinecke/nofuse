@@ -217,6 +217,25 @@ static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
 	}
 }
 
+int validate_local_port(struct etcd_ctx *ctx, unsigned int portid)
+{
+	char *key, value[1024];
+	int ret = 0;
+
+	ret = asprintf(&key, "%s/ports/%u/addr_origin",
+		       ctx->prefix, portid);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	if (ret < 0) {
+		free(key);
+		return ret == -ENOENT ? 0 : ret;
+	}
+	if (strcmp(ctx->node_name, value))
+		ret = -EEXIST;
+	return ret;
+}
+
 int update_value_to_key(struct etcd_ctx *ctx,
 			const char *dirname, const char *name)
 {
@@ -808,7 +827,7 @@ int load_ana(struct etcd_ctx *ctx)
 		portid = strtoul(attr, &eptr, 10);
 		if (portid == ULONG_MAX || attr == eptr)
 			continue;
-		ret = etcd_validate_port(ctx, portid);
+		ret = validate_local_port(ctx, portid);
 		if (ret == 0)
 			is_local = true;
 

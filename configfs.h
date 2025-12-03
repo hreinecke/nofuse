@@ -3,6 +3,7 @@
 
 int read_attr(char *attr_path, char *value, size_t value_len);
 char *path_to_key(struct etcd_ctx *ctx, const char *path);
+int validate_local_port(struct etcd_ctx *ctx, unsigned int portid);
 int update_value_to_key(struct etcd_ctx *ctx, const char *dirname,
 			const char *name);
 int upload_configfs(struct etcd_ctx *ctx, const char *dir,
