@@ -236,6 +236,28 @@ int validate_local_port(struct etcd_ctx *ctx, unsigned int portid)
 	return ret;
 }
 
+int validate_local_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
+			     int nsid)
+{
+	char *key, value[1024];
+	int ret = 0;
+
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_origin",
+		       ctx->prefix, subsysnqn, nsid);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, value);
+	if (ret < 0) {
+		free(key);
+		return ret;
+	}
+	if (!strlen(value))
+		return -ENOENT;
+	if (strcmp(ctx->node_name, value))
+		ret = -EEXIST;
+	return ret;
+}
+
 int update_value_to_key(struct etcd_ctx *ctx,
 			const char *dirname, const char *name)
 {
@@ -598,7 +620,7 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		printf("%s: validate %s namespace %lu\n",
 		       __func__, subsys, nsid);
 
-		ret = etcd_validate_namespace(ctx, subsys, nsid);
+		ret = validate_local_namespace(ctx, subsys, nsid);
 		if (ret < 0 && ret != -ENOENT) {
 			ret = etcd_test_namespace(ctx, subsys, nsid);
 			if (ret < 0)

@@ -263,7 +263,7 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		 * running on the local node */
 		if (!strcmp(attr, "enable") ||
 		    !strcmp(attr, "device_path"))
-			ret = etcd_validate_namespace(ctx, subsys, nsid);
+			ret = validate_local_namespace(ctx, subsys, nsid);
 		free(arg);
 	}
 	return ret;
