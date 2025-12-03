@@ -458,6 +458,12 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 	if (rev_obj && ev) {
 		ev->ev_revision = json_object_get_int64(rev_obj);
 
+		/*
+		 * 'revision' is the revision number for _this_
+		 * event, so we need to increase it to get notified
+		 * for the next event.
+		 */
+		ev->ev_revision++;
 		if (etcd_debug)
 			printf("%s: new revision %ld\n",
 			       __func__, ev->ev_revision);
