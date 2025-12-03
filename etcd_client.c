@@ -924,8 +924,10 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 			url_obj = json_object_array_get_idx(urls_obj, j);
 			url = json_object_get_string(url_obj);
 
-			if (!strcmp(url, default_url)) {
+			if (!ctx->node_name &&
+			    !strcmp(url, default_url))
 				ctx->node_name = strdup(node_name);
+			if (!strcmp(ctx->node_name, node_name)) {
 				ctx->node_id = strdup(node_id);
 				if (etcd_debug)
 					printf("%s: using node name %s (id %s)\n",
@@ -954,15 +956,16 @@ int etcd_member_id(struct etcd_ctx *ctx)
 
 	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
 			   etcd_parse_member_response, ctx);
-	if (!ret && !ctx->node_name)
+	if (!ret && !ctx->node_id)
 		ret = -ENOENT;
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
 	return ret;
 }
 
-struct etcd_ctx *etcd_init(const char *url, const char *prefix,
-			   const char *mnt, unsigned int ttl)
+struct etcd_ctx *etcd_init(const char *url, const char *node_name,
+			   const char *prefix, const char *mnt,
+			   unsigned int ttl)
 {
 	struct etcd_ctx *ctx;
 	unsigned long port = default_etcd_port;
@@ -1018,6 +1021,8 @@ struct etcd_ctx *etcd_init(const char *url, const char *prefix,
 	ctx->prefix = strdup(prefix);
 	if (!mnt)
 		mnt = NVMET_CONFIGFS;
+	if (node_name)
+		ctx->node_name = strdup(node_name);
 	ctx->configfs = strdup(mnt);
 	ctx->lease = 0;
 	ctx->ttl = ttl > 0 ? ttl : default_etcd_ttl;

@@ -105,6 +105,7 @@ void usage(void) {
 	printf("usage: etcd_watcher <args>\n");
 	printf("Arguments are:\n");
 	printf("\t[-m|--mount] <dir>\tinternal configfs mount point\n");
+	printf("\t[-n|--node] <name>\tetcd node name\n");
 	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-t|--ttl] <ttl>\tetcd TTL value\n");
 	printf("\t[-u|--url] <url>\tetcd daemon URL\n");
@@ -116,6 +117,7 @@ int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
 		{"mount", required_argument, 0, 'm'},
+		{"node", required_argument, 0, 'n'},
 		{"prefix", required_argument, 0, 'p'},
 		{"ttl", required_argument, 0, 't'},
 		{"url", required_argument, 0, 'u'},
@@ -125,17 +127,20 @@ int main(int argc, char **argv)
 	static pthread_t watcher_thr, signal_thr;
 	struct stat st;
 	sigset_t oldmask;
-	char c, *prefix = NULL, *eptr, *mnt = NULL, *url = NULL;
+	char c, *node_name = NULL, *prefix = NULL, *eptr, *mnt = NULL, *url = NULL;
 	unsigned int ttl = 0;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
 	int ret = 0;
 
-	while ((c = getopt_long(argc, argv, "m:p:t:u:v?",
+	while ((c = getopt_long(argc, argv, "m:n:p:t:u:v?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'm':
 			mnt = optarg;
+			break;
+		case 'n':
+			node_name = optarg;
 			break;
 		case 'p':
 			prefix = optarg;
@@ -190,7 +195,7 @@ int main(int argc, char **argv)
 		goto out_restore_sig;
 	}
 
-	ctx = etcd_init(url, prefix, mnt, ttl);
+	ctx = etcd_init(url, node_name, prefix, mnt, ttl);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;

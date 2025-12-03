@@ -107,6 +107,7 @@ void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
 	printf("Arguments are:\n");
+	printf("\t[-n|--node] <name>\tetcd node name\n");
 	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-u|--url] <url>\tetcd URL\n");
 	printf("\t[-w|--watcher]\tEnable watcher\n");
@@ -117,6 +118,7 @@ void usage(void) {
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
+		{"node", required_argument, 0, 'n'},
 		{"prefix", required_argument, 0, 'p'},
 		{"url", required_argument, 0, 'u'},
 		{"verbose", no_argument, 0, 'v'},
@@ -130,11 +132,14 @@ int main(int argc, char **argv)
 	bool enable_watcher = false;
 	struct watcher_ctx *ctx;
 	int ret = 0, getopt_ind;
-	char c, *prefix = NULL, *url = NULL;
+	char c, *node_name, *prefix = NULL, *url = NULL;
 
-	while ((c = getopt_long(argc, argv, "p:h:u:vw?",
+	while ((c = getopt_long(argc, argv, "n:p:h:u:vw?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
+		case 'n':
+			node_name = optarg;
+			break;
 		case 'p':
 			prefix = optarg;
 			break;
@@ -164,7 +169,7 @@ int main(int argc, char **argv)
 		exit(1);
 
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->etcd = etcd_init(url, prefix, NULL, 0);
+	ctx->etcd = etcd_init(url, node_name, prefix, NULL, 0);
 	if (!ctx->etcd) {
 		ret = ENOMEM;
 		fprintf(stderr, "cannot allocate context\n");

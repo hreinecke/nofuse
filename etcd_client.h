@@ -88,8 +88,9 @@ struct etcd_kv_event {
 extern bool etcd_debug;
 extern bool http_debug;
 
-struct etcd_ctx *etcd_init(const char *url, const char *prefix,
-			   const char *mnt, unsigned int ttl);
+struct etcd_ctx *etcd_init(const char *url, const char *node_name,
+			   const char *prefix, const char *mnt,
+			   unsigned int ttl);
 void etcd_exit(struct etcd_ctx *ctx);
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 int etcd_conn_init(struct etcd_conn_ctx *conn);

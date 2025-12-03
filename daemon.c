@@ -37,9 +37,9 @@ struct nofuse_context {
 	struct etcd_ctx *etcd;
 	char *subsysnqn;
 	const char *traddr;
-	const char *dbname;
 	const char *prefix;
 	const char *url;
+	const char *node_name;
 	int debug;
 	int help;
 	int ttl;
@@ -113,6 +113,7 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--subsysnqn=%s", subsysnqn),
 	OPTION("--help", help),
 	OPTION("--debug", debug),
+	OPTION("--node", node_name),
 	OPTION("--traddr=%s", traddr),
 	OPTION("--prefix=%s", prefix),
 	OPTION("--ttl=%d", ttl),
@@ -125,6 +126,7 @@ static void show_help(void)
 	printf("Usage: nofuse <args>");
 	printf("Possible values for <args>");
 	printf("  --debug - enable debug prints in log files");
+	printf("  --node=<name> - etcd node name");
 	printf("  --traddr=<traddr> - transport address (default: '127.0.0.1')");
 	printf("  --subsysnqn=<NQN> - Discovery subsystem NQN to use");
 	printf("  --prefix=<prefix> - etcd key-value prefix");
@@ -155,7 +157,8 @@ int main(int argc, char *argv[])
 		etcd_debug = true;
 	}
 
-	ctx->etcd = etcd_init(ctx->url, ctx->prefix, NULL, ctx->ttl);
+	ctx->etcd = etcd_init(ctx->url, ctx->node_name,
+			      ctx->prefix, NULL, ctx->ttl);
 	if (!ctx->etcd) {
 		fprintf(stderr, "cannot connect to etcd\n");
 		free(ctx);

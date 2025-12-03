@@ -417,6 +417,7 @@ void usage(void) {
 	printf("etcd_discovery - decentralized nvme discovery\n");
 	printf("usage: etcd_discovery <args>\n");
 	printf("Arguments are:\n");
+	printf("\t[-n|--node] <name>\tetcd node name\n");
 	printf("\t[-p|--prefix] <prefix>\tetcd key prefix\n");
 	printf("\t[-t|--ttl] <ttl>\tetcd TTL value\n");
 	printf("\t[-u|--url] <url>\tetcd URL\n");
@@ -427,6 +428,7 @@ void usage(void) {
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
+		{"node", required_argument, 0, 'n'},
 		{"prefix", required_argument, 0, 'p'},
 		{"ttl", required_argument, 0, 't'},
 		{"url", required_argument, 0, 'u'},
@@ -440,12 +442,15 @@ int main(int argc, char **argv)
 	unsigned long ttl = 0;
 	int getopt_ind;
 	struct etcd_ctx *ctx;
-	char *prefix = NULL, *eptr, *url = NULL;
+	char *node_name = NULL, *prefix = NULL, *eptr, *url = NULL;
 	int ret = 0, i;
 
-	while ((c = getopt_long(argc, argv, "p:t:u:v?",
+	while ((c = getopt_long(argc, argv, "n:p:t:u:v?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
+		case 'n':
+			node_name = optarg;
+			break;
 		case 'p':
 			prefix = optarg;
 			break;
@@ -482,7 +487,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ctx = etcd_init(url, prefix, NULL, ttl);
+	ctx = etcd_init(url, node_name, prefix, NULL, ttl);
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_restore_sig;
