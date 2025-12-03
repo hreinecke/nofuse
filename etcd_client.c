@@ -927,7 +927,8 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 			if (!ctx->node_name &&
 			    !strcmp(url, default_url))
 				ctx->node_name = strdup(node_name);
-			if (!strcmp(ctx->node_name, node_name)) {
+			if (ctx->node_name &&
+			    !strcmp(ctx->node_name, node_name)) {
 				ctx->node_id = strdup(node_id);
 				if (etcd_debug)
 					printf("%s: using node name %s (id %s)\n",
