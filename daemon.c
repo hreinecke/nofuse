@@ -113,7 +113,7 @@ static const struct fuse_opt nofuse_options[] = {
 	OPTION("--subsysnqn=%s", subsysnqn),
 	OPTION("--help", help),
 	OPTION("--debug", debug),
-	OPTION("--node", node_name),
+	OPTION("--node=%s", node_name),
 	OPTION("--traddr=%s", traddr),
 	OPTION("--prefix=%s", prefix),
 	OPTION("--ttl=%d", ttl),
