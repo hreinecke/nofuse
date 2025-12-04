@@ -287,7 +287,7 @@ int etcd_del_host(struct etcd_ctx *ctx, const char *nqn)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/hosts/%s", ctx->prefix, nqn);
+	ret = asprintf(&key, "%s/hosts/%s/", ctx->prefix, nqn);
 	if (ret < 0)
 		return ret;
 
@@ -433,7 +433,7 @@ int etcd_del_port(struct etcd_ctx *ctx, const char *port)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/ports/%s", ctx->prefix, port);
+	ret = asprintf(&key, "%s/ports/%s/", ctx->prefix, port);
 	if (ret < 0)
 		return ret;
 
@@ -721,7 +721,7 @@ int etcd_del_subsys(struct etcd_ctx *ctx, const char *nqn)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/subsystems/%s", ctx->prefix, nqn);
+	ret = asprintf(&key, "%s/subsystems/%s/", ctx->prefix, nqn);
 	if (ret < 0)
 		return ret;
 
@@ -1219,7 +1219,7 @@ int etcd_del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d",
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/",
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;

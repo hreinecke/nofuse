@@ -949,7 +949,7 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 			continue;
 		if (strcmp(attr, "/addr_origin"))
 			continue;
-		if (strcmp(kv->value, ctx->node_name))
+		if (kv->value && strcmp(kv->value, ctx->node_name))
 			continue;
 		*attr = '\0';
 		if (configfs_debug)
