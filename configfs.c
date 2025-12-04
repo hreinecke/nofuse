@@ -1018,3 +1018,50 @@ int configfs_purge_subsystems(struct etcd_ctx *ctx)
 	etcd_kv_free(kvs, ret);
 	return ret;
 }
+
+int configfs_register(struct etcd_ctx *ctx)
+{
+	char name_key[256];
+	char value[256];
+	int ret;
+
+	sprintf(name_key, "%s/cluster/nodes/%s/name",
+		ctx->prefix, ctx->node_id);
+	strcpy(value, ctx->node_name);
+	ret = etcd_kv_store(ctx, name_key, value);
+	if (ret < 0) {
+		fprintf(stderr, "%s: node %s register error %d\n",
+			__func__, ctx->node_id, ret);
+		return ret;
+	}
+	if (ctx->cluster_id >= 0) {
+		char cluster_key[256];
+
+		sprintf(cluster_key, "%s/cluster/nodes/%s/id",
+			ctx->prefix, ctx->node_id);
+		sprintf(value, "%d", ctx->cluster_id);
+		ret = etcd_kv_store(ctx, cluster_key, value);
+		if (ret < 0) {
+			fprintf(stderr, "%s: node %s cluster %d error %d\n",
+				__func__, ctx->node_id, ctx->cluster_id, ret);
+			etcd_kv_delete(ctx, name_key);
+			return ret;
+		}
+	}
+	return ret;
+}
+
+int configfs_unregister(struct etcd_ctx *ctx)
+{
+	char name_key[256];
+	int ret;
+
+	sprintf(name_key, "%s/cluster/nodes/%s/",
+		ctx->prefix, ctx->node_id);
+	ret = etcd_kv_delete(ctx, name_key);
+	if (ret < 0) {
+		fprintf(stderr, "%s: node %s unregister error %d\n",
+			__func__, ctx->node_id, ret);
+	}
+	return ret;
+}

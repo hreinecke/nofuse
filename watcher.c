@@ -200,42 +200,47 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
+	ret = configfs_register(ctx);
+	if (ret < 0) {
+		fprintf(stderr, "cluster registration failed\n");
+		goto out_cleanup;
+	}
 	ret = configfs_load_ana(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "loading ANA information failed\n");
-		goto out_cancel_sig;
+		goto out_unregister;
 	}
 	ret = configfs_validate_cluster(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "cluster validation failed\n");
-		goto out_cancel_sig;
+		goto out_unregister;
 	}
 	ret = configfs_validate_ana(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "ANA validation failed\n");
-		goto out_cancel_sig;
+		goto out_unregister;
 	}
 	ret = upload_configfs(ctx, ctx->configfs, "ports");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload port configuration\n");
-		goto out_cleanup;
+		goto out_purge;
 	}
 	ret = upload_configfs(ctx, ctx->configfs, "hosts");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload hosts configuration\n");
-		goto out_cleanup;
+		goto out_purge;
 	}
 	ret = upload_configfs(ctx, ctx->configfs, "subsystems");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload subsystem configuration\n");
-		goto out_cleanup;
+		goto out_purge;
 	}
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_clear_keys;
+		goto out_purge;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -249,9 +254,11 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
-out_clear_keys:
+out_purge:
 	configfs_purge_ports(ctx);
 	configfs_purge_subsystems(ctx);
+out_unregister:
+	configfs_unregister(ctx);
 out_cleanup:
 	etcd_exit(ctx);
 

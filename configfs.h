@@ -16,5 +16,7 @@ int configfs_load_ana(struct etcd_ctx *ctx);
 int configfs_validate_ana(struct etcd_ctx *ctx);
 int configfs_purge_ports(struct etcd_ctx *ctx);
 int configfs_purge_subsystems(struct etcd_ctx *ctx);
+int configfs_register(struct etcd_ctx *ctx);
+int configfs_unregister(struct etcd_ctx *ctx);
 
 #endif /* _CONFIGFS_H */
