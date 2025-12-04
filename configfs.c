@@ -53,6 +53,8 @@ struct ana_ns_entry {
 
 LINKED_LIST(ana_group_list);
 
+static int configfs_register_id(struct etcd_ctx *ctx);
+
 struct ana_group *find_ana_group(unsigned int ana_grpid)
 {
 	struct ana_group *tmp_grp, *grp = NULL;
@@ -515,20 +517,14 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 		return 0;
 	cluster_id = cntlid / cluster_spacing;
 	if (ctx->cluster_id == -1) {
-		char key[256], value[256];
 		int ret;
 
 		ctx->cluster_id = cluster_id;
 		printf("%s: subsys %s using cluster id %u\n",
 		       __func__, subsys, ctx->cluster_id);
-		sprintf(key, "%s/cluster/nodes/%s/id",
-			ctx->prefix, ctx->node_id);
-		sprintf(value, "%d", ctx->cluster_id);
-		ret = etcd_kv_store(ctx, key, value);
-		if (ret < 0) {
-			fprintf(stderr, "%s: node %s register error %d\n",
-				__func__, ctx->node_id, ret);
-		}
+		ret = configfs_register_id(ctx);
+		if (ret < 0)
+			return ret;
 	} else if (ctx->cluster_id != cluster_id) {
 		cntlid = ctx->cluster_id * cluster_spacing;
 		fprintf(stderr, "%s: subsys %s cluster id mismatch (should be %lu)\n",
@@ -1030,13 +1026,29 @@ int configfs_purge_subsystems(struct etcd_ctx *ctx)
 	return ret;
 }
 
+static int configfs_register_id(struct etcd_ctx *ctx)
+{
+	char key[256], value[256];
+	int ret;
+
+	sprintf(key, "%s/cluster/%s/id",
+		ctx->prefix, ctx->node_id);
+	sprintf(value, "%d", ctx->cluster_id);
+	ret = etcd_kv_store(ctx, key, value);
+	if (ret < 0) {
+		fprintf(stderr, "%s: node %s register error %d\n",
+			__func__, ctx->node_id, ret);
+	}
+	return ret;
+}
+
 int configfs_register(struct etcd_ctx *ctx)
 {
 	char name_key[256];
 	char value[256];
 	int ret;
 
-	sprintf(name_key, "%s/cluster/nodes/%s/name",
+	sprintf(name_key, "%s/cluster/%s/name",
 		ctx->prefix, ctx->node_id);
 	strcpy(value, ctx->node_name);
 	ret = etcd_kv_store(ctx, name_key, value);
@@ -1046,18 +1058,9 @@ int configfs_register(struct etcd_ctx *ctx)
 		return ret;
 	}
 	if (ctx->cluster_id >= 0) {
-		char cluster_key[256];
-
-		sprintf(cluster_key, "%s/cluster/nodes/%s/id",
-			ctx->prefix, ctx->node_id);
-		sprintf(value, "%d", ctx->cluster_id);
-		ret = etcd_kv_store(ctx, cluster_key, value);
-		if (ret < 0) {
-			fprintf(stderr, "%s: node %s cluster %d error %d\n",
-				__func__, ctx->node_id, ctx->cluster_id, ret);
+		ret = configfs_register_id(ctx);
+		if (ret < 0)
 			etcd_kv_delete(ctx, name_key);
-			return ret;
-		}
 	}
 	return ret;
 }
@@ -1067,7 +1070,7 @@ int configfs_unregister(struct etcd_ctx *ctx)
 	char name_key[256];
 	int ret;
 
-	sprintf(name_key, "%s/cluster/nodes/%s/",
+	sprintf(name_key, "%s/cluster/%s/",
 		ctx->prefix, ctx->node_id);
 	ret = etcd_kv_delete(ctx, name_key);
 	if (ret < 0) {
