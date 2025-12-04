@@ -200,17 +200,17 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		goto out_cancel_sig;
 	}
-	ret = load_ana(ctx);
+	ret = configfs_load_ana(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "loading ANA information failed\n");
 		goto out_cancel_sig;
 	}
-	ret = validate_cluster(ctx);
+	ret = configfs_validate_cluster(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "cluster validation failed\n");
 		goto out_cancel_sig;
 	}
-	ret = validate_ana(ctx);
+	ret = configfs_validate_ana(ctx);
 	if (ret < 0) {
 		fprintf(stderr, "ANA validation failed\n");
 		goto out_cancel_sig;
@@ -250,8 +250,8 @@ int main(int argc, char **argv)
 	pthread_join(watcher_thr, NULL);
 
 out_clear_keys:
-	purge_ports(ctx);
-	purge_subsystems(ctx);
+	configfs_purge_ports(ctx);
+	configfs_purge_subsystems(ctx);
 out_cleanup:
 	etcd_exit(ctx);
 

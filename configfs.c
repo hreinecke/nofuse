@@ -736,7 +736,7 @@ static int validate_port(struct etcd_ctx *ctx, char *port)
  * The port ids needs to be divided per cluster id; all port ids not
  * in the range of the local cluster node will be rejected.
  */
-int validate_cluster(struct etcd_ctx *ctx)
+int configfs_validate_cluster(struct etcd_ctx *ctx)
 {
 	int ret, errors = 0;
 	DIR *sd;
@@ -834,7 +834,7 @@ int validate_cluster(struct etcd_ctx *ctx)
 	return ret;
 }
 
-int load_ana(struct etcd_ctx *ctx)
+int configfs_load_ana(struct etcd_ctx *ctx)
 {
 	struct etcd_kv *kvs;
 	char *key;
@@ -888,7 +888,7 @@ int load_ana(struct etcd_ctx *ctx)
 	return ret;
 }
 
-int validate_ana(struct etcd_ctx *ctx)
+int configfs_validate_ana(struct etcd_ctx *ctx)
 {
 	struct ana_group *grp;
 
@@ -919,7 +919,7 @@ int validate_ana(struct etcd_ctx *ctx)
 	return 0;
 }
 
-int purge_ports(struct etcd_ctx *ctx)
+int configfs_purge_ports(struct etcd_ctx *ctx)
 {
 	struct etcd_kv *kvs;
 	char *key;
@@ -958,7 +958,7 @@ int purge_ports(struct etcd_ctx *ctx)
 	return ret;
 }
 
-int purge_subsystems(struct etcd_ctx *ctx)
+int configfs_purge_subsystems(struct etcd_ctx *ctx)
 {
 	struct etcd_kv *kvs;
 	char *key, empty_range[1024];
