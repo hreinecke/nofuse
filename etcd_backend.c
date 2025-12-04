@@ -266,6 +266,22 @@ int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
 	return ret;
 }
 
+int etcd_set_host_attr(struct etcd_ctx *ctx, const char *nqn,
+		       const char *attr, char *value)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/hosts/%s/%s",
+		       ctx->prefix, nqn, attr);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_update(ctx, key, value);
+	free(key);
+	return ret < 0 ? -errno : 0;
+}
+
 int etcd_del_host(struct etcd_ctx *ctx, const char *nqn)
 {
 	char *key;

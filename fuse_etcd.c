@@ -1461,8 +1461,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	if (!root)
 		goto out_free;
 
-	if (!strcmp(root, hosts_dir) ||
-	    !strcmp(root, cluster_dir))
+	if (!strcmp(root, cluster_dir))
 		goto out_free;
 
 	p = strtok(NULL, "/");
@@ -1574,6 +1573,22 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		} else {
 			ret = write_namespace(subsysnqn, p, value, len);
 		}
+	} else if (!strcmp(root, hosts_dir)) {
+		const char *hostnqn = p;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		attr = p;
+		p = strtok(NULL, "/");
+		if (p)
+			goto out_free;
+		ret = etcd_set_host_attr(ctx, hostnqn, attr, value);
+		if (ret < 0) {
+			ret = -EINVAL;
+			goto out_free;
+		}
+		ret = len;
 	}
 out_free:
 	free(value);

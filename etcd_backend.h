@@ -21,6 +21,8 @@ int etcd_add_host(struct etcd_ctx *ctx, const char *nqn);
 int etcd_test_host(struct etcd_ctx *ctx, const char *nqn);
 int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
 		       const char *attr, char *value);
+int etcd_set_host_attr(struct etcd_ctx *ctx, const char *nqn,
+		       const char *attr, char *value);
 int etcd_del_host(struct etcd_ctx *ctx, const char *nqn);
 
 int etcd_fill_port(struct etcd_ctx *ctx, const char *port,
