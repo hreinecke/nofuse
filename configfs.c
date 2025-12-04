@@ -231,7 +231,7 @@ static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
 	}
 }
 
-int validate_local_port(struct etcd_ctx *ctx, unsigned int portid)
+int configfs_validate_port(struct etcd_ctx *ctx, unsigned int portid)
 {
 	char *key, value[1024];
 	int ret = 0;
@@ -250,8 +250,8 @@ int validate_local_port(struct etcd_ctx *ctx, unsigned int portid)
 	return ret;
 }
 
-int validate_local_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
-			     int nsid)
+int configfs_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
+				int nsid)
 {
 	char *key, value[1024];
 	int ret = 0;
@@ -272,7 +272,7 @@ int validate_local_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
 	return ret;
 }
 
-int update_value_to_key(struct etcd_ctx *ctx,
+int configfs_update_key(struct etcd_ctx *ctx,
 			const char *dirname, const char *name)
 {
 	struct stat st;
@@ -443,18 +443,19 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		if (!strcmp(se->d_name, "passthru"))
 			continue;
 
-		ret = update_value_to_key(ctx, dirname, se->d_name);
+		ret = configfs_update_key(ctx, dirname, se->d_name);
 		if (ret < 0)
 			break;
 
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = update_value_to_key(ctx, dirname, "addr_origin");
+			ret = configfs_update_key(ctx, dirname, "addr_origin");
 			if (ret < 0)
 				break;
 		}
 		/* Do not set 'origin' if no device path is set */
 		if (!strcmp(se->d_name, "device_path") && ret > 0) {
-			ret = update_value_to_key(ctx, dirname, "device_origin");
+			ret = configfs_update_key(ctx, dirname,
+						  "device_origin");
 			if (ret < 0)
 				break;
 		}
@@ -634,7 +635,7 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		printf("%s: validate %s namespace %lu\n",
 		       __func__, subsys, nsid);
 
-		ret = validate_local_namespace(ctx, subsys, nsid);
+		ret = configfs_validate_namespace(ctx, subsys, nsid);
 		if (ret < 0 && ret != -ENOENT) {
 			ret = etcd_test_namespace(ctx, subsys, nsid);
 			if (ret < 0)
@@ -863,7 +864,7 @@ int load_ana(struct etcd_ctx *ctx)
 		portid = strtoul(attr, &eptr, 10);
 		if (portid == ULONG_MAX || attr == eptr)
 			continue;
-		ret = validate_local_port(ctx, portid);
+		ret = configfs_validate_port(ctx, portid);
 		if (ret == 0)
 			is_local = true;
 

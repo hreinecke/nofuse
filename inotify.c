@@ -144,7 +144,7 @@ static int mark_file(struct watcher_ctx *ctx, const char *dirname,
 			return -EINVAL;
 		}
 	}
-	ret = update_value_to_key(ctx->etcd, dirname, filename);
+	ret = configfs_update_key(ctx->etcd, dirname, filename);
 	return ret;
 }
 
@@ -333,7 +333,7 @@ int process_inotify_event(char *iev_buf, int iev_len)
 	} else if (ev->mask & IN_MODIFY) {
 		if (inotify_debug)
 			printf("write %s %s\n", watcher->dirname, ev->name);
-		update_value_to_key(watcher->ctx->etcd, watcher->dirname,
+		configfs_update_key(watcher->ctx->etcd, watcher->dirname,
 				    ev->name);
 	}
 	return ev_len;

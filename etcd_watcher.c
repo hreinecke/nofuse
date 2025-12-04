@@ -229,7 +229,7 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		portid = strtoul(port, &eptr, 10);
 		if (portid == ULONG_MAX || port == eptr)
 			return -ERANGE;
-		ret = validate_local_port(ctx, portid);
+		ret = configfs_validate_port(ctx, portid);
 	}
 	if (!strncmp(key, "subsystems", 10)) {
 		int nsid = -1;
@@ -249,7 +249,7 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		 * running on the local node */
 		if (!strcmp(attr, "enable") ||
 		    !strcmp(attr, "device_path"))
-			ret = validate_local_namespace(ctx, subsys, nsid);
+			ret = configfs_validate_namespace(ctx, subsys, nsid);
 		free(arg);
 	}
 	return ret;
