@@ -250,19 +250,6 @@ int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
 
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (ret == -ENOENT) {
-		int i;
-
-		for (i = 0; i < NUM_HOST_ATTRS; i++) {
-			struct key_value_template *kv = &host_template[i];
-
-			if (!strcmp(kv->key, attr)) {
-				if (value)
-					*value = '\0';
-				return 0;
-			}
-		}
-	}
 	return ret;
 }
 
@@ -298,9 +285,9 @@ int etcd_del_host(struct etcd_ctx *ctx, const char *nqn)
 
 #define NUM_PORT_ATTRS 7
 static struct key_value_template port_template[NUM_PORT_ATTRS] = {
-	{ .key = "addr_trtype", .value = "tcp" },
-	{ .key = "addr_adrfam", .value = "ipv4" },
-	{ .key = "addr_traddr", .value = "127.0.0.1" },
+	{ .key = "addr_trtype", .value = "" },
+	{ .key = "addr_adrfam", .value = "" },
+	{ .key = "addr_traddr", .value = "" },
 	{ .key = "addr_trsvcid", .value = "" },
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
@@ -376,18 +363,7 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, const char *value)
 {
 	char *key;
-	int ret = -ENOENT, i;
-
-	for (i = 0; i < NUM_PORT_ATTRS; i++) {
-		struct key_value_template *kv = &port_template[i];
-
-		if (!strcmp(kv->key, attr)) {
-			ret = 0;
-			break;
-		}
-	}
-	if (ret < 0)
-		return ret;
+	int ret = -ENOENT;
 
 	ret = asprintf(&key, "%s/ports/%s/%s",
 		       ctx->prefix, port, attr);
@@ -412,19 +388,6 @@ int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (ret == -ENOENT) {
-		int i;
-
-		for (i = 0; i < NUM_PORT_ATTRS; i++) {
-			struct key_value_template *kv = &port_template[i];
-
-			if (!strcmp(kv->key, attr)) {
-				if (value)
-					*value = '\0';
-				return 0;
-			}
-		}
-	}
 	return ret;
 }
 
@@ -661,18 +624,7 @@ int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 			 const char *attr, const char *value)
 {
 	char *key;
-	int ret = -ENOENT, i;
-
-	for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
-		struct key_value_template *kv = &subsys_template[i];
-
-		if (!strcmp(kv->key, attr)) {
-			ret = 0;
-			break;
-		}
-	}
-	if (ret < 0)
-		return ret;
+	int ret = -ENOENT;
 
 	if (!strcmp(attr, "attr_cntlid_range"))
 		return -EPERM;
@@ -700,19 +652,6 @@ int etcd_get_subsys_attr(struct etcd_ctx *ctx, const char *nqn,
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (ret == -ENOENT) {
-		int i;
-
-		for (i = 0; i < NUM_SUBSYS_ATTRS; i++) {
-			struct key_value_template *kv = &subsys_template[i];
-
-			if (!strcmp(kv->key, attr)) {
-				if (value)
-					*value = '\0';
-				return 0;
-			}
-		}
-	}
 	return ret;
 }
 
@@ -1071,18 +1010,7 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 			    int nsid, const char *attr, const char *value)
 {
 	char *key;
-	int ret = -ENOENT, i;
-
-	for (i = 0; i < NUM_NS_ATTRS; i++) {
-		struct key_value_template *kv = &ns_template[i];
-
-		if (!strcmp(kv->key, attr)) {
-			ret = 0;
-			break;
-		}
-	}
-	if (ret < 0)
-		return ret;
+	int ret = -ENOENT;
 
 	/* Do not allow to change attributes if the namespace is enabled */
 	if (strcmp(attr, "enable")) {
@@ -1139,19 +1067,6 @@ int etcd_get_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		return ret;
 	ret = etcd_kv_get(ctx, key, value);
 	free(key);
-	if (ret == -ENOENT) {
-		int i;
-
-		for (i = 0; i < NUM_NS_ATTRS; i++) {
-			struct key_value_template *kv = &ns_template[i];
-
-			if (!strcmp(kv->key, attr)) {
-				if (value)
-					*value = '\0';
-				return 0;
-			}
-		}
-	}
 	return ret;
 }
 
