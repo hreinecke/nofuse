@@ -957,8 +957,7 @@ int etcd_member_id(struct etcd_ctx *ctx)
 
 	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
 			   etcd_parse_member_response, ctx);
-	if (!ret && !ctx->node_id)
-		ret = -ENOENT;
+
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
 	return ret;

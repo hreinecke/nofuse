@@ -168,6 +168,20 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	return key;
 }
 
+char *key_to_attr(struct etcd_ctx *ctx, char *key)
+{
+	char *attr = key + strlen(ctx->prefix) + 1;
+	char *path;
+	int ret;
+
+	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
+	if (ret < 0) {
+		printf("%s: out of memory\n", __func__);
+		return NULL;
+	}
+	return path;
+}
+
 static void transform_cntlid_range(struct etcd_ctx *ctx, char *old, char *value)
 {
 	char new[1024], *p, *n;

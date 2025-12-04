@@ -67,20 +67,6 @@ out:
 	return ret;
 }
 
-static char *key_to_attr(struct etcd_ctx *ctx, char *key)
-{
-	char *attr, *path;
-	int ret;
-
-	attr = key + strlen(ctx->prefix) + 1;
-	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
-	if (ret < 0) {
-		printf("%s: out of memory\n", __func__);
-		return NULL;
-	}
-	return path;
-}
-
 static int create_value(char *path, char *value)
 {
 	char *parent, *ptr;
