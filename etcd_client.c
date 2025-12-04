@@ -910,11 +910,18 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 		if (!name_obj)
 			continue;
 		node_name = json_object_get_string(name_obj);
-
 		id_obj = json_object_object_get(mb_obj, "ID");
 		if (!id_obj)
 			continue;
 		node_id = json_object_get_string(id_obj);
+		if (ctx->node_name &&
+		    !strcmp(ctx->node_name, node_name)) {
+			if (etcd_debug)
+				printf("%s: node %s using id %s\n",
+				       __func__, node_name, node_id);
+			ctx->node_id = strdup(node_id);
+			goto out;
+		}
 
 		urls_obj = json_object_object_get(mb_obj, "clientURLs");
 		for (j = 0; j < json_object_array_length(urls_obj); j++) {
@@ -925,19 +932,16 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 			url = json_object_get_string(url_obj);
 
 			if (!ctx->node_name &&
-			    !strcmp(url, default_url))
-				ctx->node_name = strdup(node_name);
-			if (ctx->node_name &&
-			    !strcmp(ctx->node_name, node_name)) {
-				ctx->node_id = strdup(node_id);
+			    !strcmp(url, default_url)) {
 				if (etcd_debug)
-					printf("%s: using node name %s (id %s)\n",
-					       __func__,
-					       ctx->node_name,
-					       ctx->node_id);
+					printf("%s: using node %s id %s\n",
+					       __func__, node_name, node_id);
+				ctx->node_name = strdup(node_name);
+				ctx->node_id = strdup(node_id);
 			}
 		}
 	}
+	out:
 	free(default_url);
 }
 
@@ -1036,6 +1040,9 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
 	ret = etcd_member_id(ctx, !!mnt);
 	if (ret < 0) {
+		if (etcd_debug)
+			fprintf(stderr, "%s: cluster id failed, error %d\n",
+				__func__, ret);
 		etcd_exit(ctx);
 		errno = -ret;
 		return NULL;
