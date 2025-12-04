@@ -365,6 +365,12 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 	char *key;
 	int ret = -ENOENT;
 
+	/* Do not allow to set an invalid origin value */
+	if (!strcmp(attr, "addr_origin")) {
+		ret = etcd_test_cluster(ctx, value);
+		if (ret < 0)
+			return -EINVAL;
+	}
 	ret = asprintf(&key, "%s/ports/%s/%s",
 		       ctx->prefix, port, attr);
 	if (ret < 0)
@@ -1040,7 +1046,12 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       __func__, subsysnqn, nsid);
 		ret = 0;
 	}
-
+	/* Do not allow to set an invalid origin value */
+	if (!strcmp(attr, "device_origin")) {
+		ret = etcd_test_cluster(ctx, value);
+		if (ret < 0)
+			return -EINVAL;
+	}
 	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/%s",
 		       ctx->prefix, subsysnqn, nsid, attr);
 	if (ret < 0)
