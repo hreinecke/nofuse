@@ -769,20 +769,20 @@ int etcd_fill_subsys_port(struct etcd_ctx *ctx, const char *port,
 int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 			 const char *port)
 {
-	char *key, *value;
+	char *key, value[1024];
 	int ret;
+
+	/* Only allow to create symlink if 'addr_origin' is set */
+	ret = etcd_get_port_attr(ctx, port, "addr_origin", value);
+	if (ret >= 0 && !strlen(value))
+		return -EPERM;
 
 	ret = asprintf(&key, "%s/ports/%s/subsystems/%s",
 		       ctx->prefix, port, subsysnqn);
 	if (ret < 0)
 		return ret;
-	ret = asprintf(&value, "../../../subsystems/%s", subsysnqn);
-	if (ret < 0) {
-		free(key);
-		return ret;
-	}
+	sprintf(value, "../../../subsystems/%s", subsysnqn);
 	ret = etcd_kv_store(ctx, key, value);
-	free(value);
 	free(key);
 	if (ret < 0)
 		return -errno;
