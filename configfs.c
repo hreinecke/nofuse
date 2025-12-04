@@ -515,9 +515,20 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 		return 0;
 	cluster_id = cntlid / cluster_spacing;
 	if (ctx->cluster_id == -1) {
+		char key[256], value[256];
+		int ret;
+
 		ctx->cluster_id = cluster_id;
 		printf("%s: subsys %s using cluster id %u\n",
 		       __func__, subsys, ctx->cluster_id);
+		sprintf(key, "%s/cluster/nodes/%s/id",
+			ctx->prefix, ctx->node_id);
+		sprintf(value, "%d", ctx->cluster_id);
+		ret = etcd_kv_store(ctx, key, value);
+		if (ret < 0) {
+			fprintf(stderr, "%s: node %s register error %d\n",
+				__func__, ctx->node_id, ret);
+		}
 	} else if (ctx->cluster_id != cluster_id) {
 		cntlid = ctx->cluster_id * cluster_spacing;
 		fprintf(stderr, "%s: subsys %s cluster id mismatch (should be %lu)\n",
