@@ -305,7 +305,7 @@ static int cluster_getattr(char *node, struct stat *stbuf)
 	if (ret < 0)
 		return -ENOENT;
 
-	stbuf->st_mode = S_IFREG | 0644;
+	stbuf->st_mode = S_IFREG | 0444;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = 256;
 	return 0;
@@ -1104,9 +1104,6 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 	if (!root)
 		goto out_free;
 
-	if (!strcmp(root, hosts_dir))
-		goto out_free;
-
 	p = strtok(NULL, "/");
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn") ||
@@ -1185,6 +1182,42 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		if (ret < 0)
 			ret = -ENOENT;
 		goto out_free;
+	} else if (!strcmp(root, hosts_dir)) {
+		const char *hostnqn = p;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		attr = p;
+		p = strtok(NULL, "/");
+		fuse_info("%s: hostnqn %s attr %s p %s\n", __func__,
+			  hostnqn, attr, p);
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL);
+		if (ret < 0)
+			ret = -ENOENT;
+		goto out_free;
+	} else if (!strcmp(root, cluster_dir)) {
+		const char *node = p;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		attr = p;
+		p = strtok(NULL, "/");
+		fuse_info("%s: node %s attr %s p %s\n", __func__,
+			  node, attr, p);
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		ret = etcd_get_cluster_attr(ctx, node, attr, NULL);
+		if (ret < 0)
+			ret = -ENOENT;
+		goto out_free;
 	}
 	if ((fi->flags & O_ACCMODE) != O_RDONLY)
 		ret = -EACCES;
@@ -1216,9 +1249,6 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		return -ENOMEM;
 	root = strtok(pathbuf, "/");
 	if (!root)
-		goto out_free;
-
-	if (!strcmp(root, hosts_dir))
 		goto out_free;
 
 	p = strtok(NULL, "/");
@@ -1322,6 +1352,44 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				ret = -ENOENT;
 				goto out_free;
 			}
+		}
+	} else if (!strcmp(root, hosts_dir)) {
+		const char *hostnqn = p;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		attr = p;
+		p = strtok(NULL, "/");
+		fuse_info("%s: hostnqn %s attr %s p %s\n", __func__,
+			  hostnqn, attr, p);
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		ret = etcd_get_host_attr(ctx, hostnqn, attr, value);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+	} else if (!strcmp(root, cluster_dir)) {
+		const char *node = p;
+
+		p = strtok(NULL, "/");
+		if (!p)
+			goto out_free;
+		attr = p;
+		p = strtok(NULL, "/");
+		fuse_info("%s: node %s attr %s p %s\n", __func__,
+			  node, attr, p);
+		if (p) {
+			ret = -ENOENT;
+			goto out_free;
+		}
+		ret = etcd_get_cluster_attr(ctx, node, attr, value);
+		if (ret < 0) {
+			ret = -ENOENT;
+			goto out_free;
 		}
 	}
 	if (strlen(value))
