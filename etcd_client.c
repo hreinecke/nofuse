@@ -941,7 +941,7 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 	free(default_url);
 }
 
-int etcd_member_id(struct etcd_ctx *ctx)
+static int etcd_member_id(struct etcd_ctx *ctx, bool validate_id)
 {
 	struct etcd_conn_ctx *conn;
 	struct json_object *post_obj;
@@ -957,6 +957,9 @@ int etcd_member_id(struct etcd_ctx *ctx)
 
 	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
 			   etcd_parse_member_response, ctx);
+
+	if (!ret && validate_id && !ctx->node_id)
+		ret = -ENOENT;
 
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
@@ -1031,7 +1034,7 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
 	if (etcd_debug)
 		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
-	ret = etcd_member_id(ctx);
+	ret = etcd_member_id(ctx, !!mnt);
 	if (ret < 0) {
 		etcd_exit(ctx);
 		errno = -ret;
