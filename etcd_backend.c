@@ -83,7 +83,9 @@ int etcd_count_root(struct etcd_ctx *ctx, const char *root, int *nlinks)
 	else if (!strcmp(root, "ports")) {
 		attr = "addr_traddr";
 		skip_referrals = true;
-	} else
+	} else if (!strcmp(root, "cluster"))
+		attr = "node_name";
+	else
 		return -EINVAL;
 
 	for (i = 0; i < ret; i++) {
@@ -123,7 +125,9 @@ int etcd_fill_root(struct etcd_ctx *ctx, const char *root,
 	else if (!strcmp(root, "ports")) {
 		attr = "addr_traddr";
 		skip_referrals = true;
-	} else
+	} else if (!strcmp(root, "cluster"))
+		attr = "node_name";
+	else
 		return -EINVAL;
 
 	key_offset = strlen(key);
@@ -1220,6 +1224,71 @@ int etcd_count_subsys_port(struct etcd_ctx *ctx, const char *port, int *nsubsys)
 		return ret;
 
 	ret = _count_key_range(ctx, key, nsubsys);
+	free(key);
+	return ret;
+}
+
+int etcd_fill_cluster_dir(struct etcd_ctx *ctx, void *buf,
+			  fuse_fill_dir_t filler)
+{
+	return etcd_fill_root(ctx, "cluster", buf, filler);
+}
+
+int etcd_fill_cluster(struct etcd_ctx *ctx, const char *node,
+		      void *buf, fuse_fill_dir_t filler)
+{
+	struct etcd_kv *kvs;
+	int i, ret;
+	char *key;
+
+	ret = asprintf(&key, "%s/cluster/%s",
+		       ctx->prefix, node);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+
+	for (i = 0; i < ret; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char *p;
+
+		p = strrchr(kv->key, '/');
+		if (p)
+			filler(buf, p + 1, NULL, 0, FUSE_FILL_DIR_PLUS);
+	}
+	etcd_kv_free(kvs, ret);
+	return 0;
+}
+
+int etcd_test_cluster(struct etcd_ctx *ctx, const char *node)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/cluster/%s/node_name",
+		       ctx->prefix, node);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_get(ctx, key, NULL);
+	free(key);
+	return ret;
+}
+
+int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
+			  const char *attr, char *value)
+{
+	char *key;
+	int ret;
+
+	ret = asprintf(&key, "%s/cluster/%s/%s",
+		       ctx->prefix, node, attr);
+	if (ret < 0)
+		return ret;
+
+	ret = etcd_kv_get(ctx, key, value);
 	free(key);
 	return ret;
 }

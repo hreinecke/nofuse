@@ -27,6 +27,7 @@ bool http_debug;
 const char hosts_dir[] = "hosts";
 const char ports_dir[] = "ports";
 const char subsys_dir[] = "subsystems";
+const char cluster_dir[] = "cluster";
 
 struct etcd_ctx *ctx;
 
@@ -280,6 +281,36 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	return 0;
 }
 
+static int cluster_getattr(char *node, struct stat *stbuf)
+{
+	int ret;
+	char *attr, *p;
+
+	fuse_info("%s: cluster node %s\n", __func__, node);
+	ret = etcd_test_cluster(ctx, node);
+	if (ret < 0)
+		return -ENOENT;
+
+	p = strtok(NULL, "/");
+	if (!p) {
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		return 0;
+	}
+	attr = p;
+	p = strtok(NULL, "/");
+	if (p)
+		return -ENOENT;
+	ret = etcd_get_cluster_attr(ctx, node, attr, NULL);
+	if (ret < 0)
+		return -ENOENT;
+
+	stbuf->st_mode = S_IFREG | 0644;
+	stbuf->st_nlink = 1;
+	stbuf->st_size = 256;
+	return 0;
+}
+
 static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 {
 	char *p, *attr;
@@ -332,7 +363,7 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 	root = strtok(pathbuf, "/");
 	if (!root) {
 		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 5;
+		stbuf->st_nlink = 6;
 		goto out_free;
 	}
 
@@ -350,7 +381,8 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		}
 		if (strcmp(root, hosts_dir) &&
 		    strcmp(root, ports_dir) &&
-		    strcmp(root, subsys_dir)) {
+		    strcmp(root, subsys_dir) &&
+		    strcmp(root, cluster_dir)) {
 			res = -ENOENT;
 			goto out_free;
 		}
@@ -367,8 +399,10 @@ static int nofuse_getattr(const char *path, struct stat *stbuf,
 		res = host_getattr(p, stbuf);
 	} else if (!strcmp(root, ports_dir)) {
 		res = port_getattr(p, stbuf);
-	} else if (!strcmp(root, subsys_dir)){
+	} else if (!strcmp(root, subsys_dir)) {
 		res = subsys_getattr(p, stbuf);
+	} else if (!strcmp(root, cluster_dir)) {
+		res = cluster_getattr(p, stbuf);
 	} else
 		res = -ENOENT;
 
@@ -534,6 +568,26 @@ static int fill_subsys(const char *subsys,
 	return -ENOENT;
 }
 
+static int fill_cluster(const char *node,
+			void *buf, fuse_fill_dir_t filler)
+{
+	const char *p = node;
+
+	if (!node) {
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return etcd_fill_cluster_dir(ctx, buf, filler);
+	}
+	p = strtok(NULL, "/");
+	if (!p) {
+		fuse_info("%s: node %s", __func__, node);
+		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
+		return etcd_fill_cluster(ctx, node, buf, filler);
+	}
+	return -ENOENT;
+}
+
 static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			  off_t offset, struct fuse_file_info *fi,
 			  enum fuse_readdir_flags flags)
@@ -555,6 +609,7 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		filler(buf, hosts_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, ports_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, subsys_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
+		filler(buf, cluster_dir, NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "discovery_nqn", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "debug", NULL, 0, FUSE_FILL_DIR_PLUS);
 		ret = 0;
@@ -568,6 +623,8 @@ static int nofuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		ret = fill_port(p, buf, filler);
 	else if (!strcmp(root, subsys_dir))
 		ret = fill_subsys(p, buf, filler);
+	else if (!strcmp(root, cluster_dir))
+		ret = fill_cluster(p, buf, filler);
 
 out_free:
 	free(pathbuf);
@@ -1336,7 +1393,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	if (!root)
 		goto out_free;
 
-	if (!strcmp(root, hosts_dir))
+	if (!strcmp(root, hosts_dir) ||
+	    !strcmp(root, cluster_dir))
 		goto out_free;
 
 	p = strtok(NULL, "/");

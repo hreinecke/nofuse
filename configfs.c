@@ -1031,7 +1031,7 @@ static int configfs_register_id(struct etcd_ctx *ctx)
 	char key[256], value[256];
 	int ret;
 
-	sprintf(key, "%s/cluster/%s/id",
+	sprintf(key, "%s/cluster/%s/node_id",
 		ctx->prefix, ctx->node_id);
 	sprintf(value, "%d", ctx->cluster_id);
 	ret = etcd_kv_store(ctx, key, value);
@@ -1048,7 +1048,7 @@ int configfs_register(struct etcd_ctx *ctx)
 	char value[256];
 	int ret;
 
-	sprintf(name_key, "%s/cluster/%s/name",
+	sprintf(name_key, "%s/cluster/%s/node_name",
 		ctx->prefix, ctx->node_id);
 	strcpy(value, ctx->node_name);
 	ret = etcd_kv_store(ctx, name_key, value);

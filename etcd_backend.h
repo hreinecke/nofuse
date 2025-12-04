@@ -94,6 +94,13 @@ int etcd_count_subsys_port(struct etcd_ctx *ctx, const char *port, int *nsubsys)
 int etcd_count_ana_groups(struct etcd_ctx *ctx, const char *port, int *ngrps);
 int etcd_count_host_subsys(struct etcd_ctx *ctx, const char *subsysnqn, int *nhosts);
 
+int etcd_fill_cluster_dir(struct etcd_ctx *ctx, void *buf,
+			  fuse_fill_dir_t filler);
+int etcd_fill_cluster(struct etcd_ctx *ctx, const char *node,
+		      void *buf, fuse_fill_dir_t filler);
+int etcd_test_cluster(struct etcd_ctx *ctx, const char *node);
+int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
+			  const char *attr, char *value);
 int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid);
 int etcd_host_disc_entries(const char *hostnqn, u8 *log, int log_len);
 int etcd_host_genctr(const char *hostnqn, int *genctr);
