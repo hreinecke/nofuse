@@ -129,7 +129,7 @@ int main(int argc, char **argv)
 	sigset_t oldmask;
 	char c, *node_name = NULL, *prefix = NULL, *eptr, *mnt = NULL, *url = NULL;
 	unsigned int ttl = 0;
-	int getopt_ind;
+	int getopt_ind = 0;
 	struct etcd_ctx *ctx;
 	int ret = 0;
 

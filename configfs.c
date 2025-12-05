@@ -514,16 +514,7 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 	if (cntlid_max)
 		return 0;
 	cluster_id = cntlid / cluster_spacing;
-	if (ctx->cluster_id == -1) {
-		int ret;
-
-		ctx->cluster_id = cluster_id;
-		printf("%s: subsys %s using cluster id %u\n",
-		       __func__, subsys, ctx->cluster_id);
-		ret = etcd_set_cluster_id(ctx);
-		if (ret < 0)
-			return ret;
-	} else if (ctx->cluster_id != cluster_id) {
+	if (ctx->cluster_id != cluster_id) {
 		cntlid = ctx->cluster_id * cluster_spacing;
 		fprintf(stderr, "%s: subsys %s cluster id mismatch (should be %lu)\n",
 			__func__, subsys, cntlid);
@@ -811,14 +802,6 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 	if (errors)
 		return -EINVAL;
 
-	if (ctx->cluster_id < 0) {
-		ret = etcd_generate_cluster_id(ctx);
-		if (ret < 0) {
-			fprintf(stderr, "cluster id generation failed\n");
-			return ret;
-		}
-	}
-
 	ret = asprintf(&dirname, "%s/ports", ctx->configfs);
 	if (ret < 0)
 		return -ENOMEM;
@@ -1054,10 +1037,9 @@ int configfs_register(struct etcd_ctx *ctx)
 			__func__, ctx->node_id, ret);
 		return ret;
 	}
-	if (ctx->cluster_id >= 0) {
-		ret = etcd_set_cluster_id(ctx);
-		if (ret < 0)
-			etcd_kv_delete(ctx, name_key);
+	ret = etcd_set_cluster_id(ctx);
+	if (ret < 0) {
+		etcd_kv_delete(ctx, name_key);
 	}
 	return ret;
 }
@@ -1067,6 +1049,9 @@ int configfs_unregister(struct etcd_ctx *ctx)
 	char name_key[256];
 	int ret;
 
+	ret = etcd_unset_cluster_id(ctx);
+	if (ret < 0)
+		return ret;
 	sprintf(name_key, "%s/cluster/%s/",
 		ctx->prefix, ctx->node_id);
 	ret = etcd_kv_delete(ctx, name_key);

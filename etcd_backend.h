@@ -104,7 +104,7 @@ int etcd_test_cluster(struct etcd_ctx *ctx, const char *node);
 int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 			  const char *attr, char *value);
 int etcd_set_cluster_id(struct etcd_ctx *ctx);
-int etcd_generate_cluster_id(struct etcd_ctx *ctx);
+int etcd_unset_cluster_id(struct etcd_ctx *ctx);
 int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid);
 int etcd_host_disc_entries(const char *hostnqn, u8 *log, int log_len);
 int etcd_host_genctr(const char *hostnqn, int *genctr);
