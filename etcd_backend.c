@@ -14,6 +14,25 @@ struct key_value_template {
 	const char *value;
 };
 
+char *bin2hex(unsigned char *input, int input_len, size_t *out_len)
+{
+	char *output, *p;
+	int output_len, i;
+
+	output_len = input_len * 2 + 1;
+	output = malloc(output_len);
+	if (!output)
+		return NULL;
+	memset(output, 0, output_len);
+
+	for (i = 0; i < input_len; i++) {
+		p = &output[i * 2];
+		sprintf(p, "%02x", input[i]);
+	}
+	*out_len = output_len;
+	return output;
+}
+
 int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 {
 	char *key;
@@ -1238,8 +1257,28 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 int etcd_set_cluster_id(struct etcd_ctx *ctx)
 {
 	char key[256], value[256];
+	u64 cur_map;
 	int ret;
 
+	sprintf(key, "%s/cluster/map/0", ctx->prefix);
+	ret = etcd_kv_get(ctx, key, value);
+	if (ret < 0) {
+		char *new_value;
+		size_t new_len;
+
+		cur_map = 1;
+		new_value = bin2hex((unsigned char *)&cur_map,
+				    sizeof(cur_map), &new_len);
+		memset(value, 0, sizeof(value));
+		ret = etcd_kv_txn_update(ctx, key, value, new_value);
+		if (ret < 0) {
+			fprintf(stderr, "%s: failed to set cluster map '%s'\n",
+				__func__, new_value);
+			free(new_value);
+			return ret;
+		}
+		free(new_value);
+	}
 	sprintf(key, "%s/cluster/%s/node_id",
 		ctx->prefix, ctx->node_id);
 	sprintf(value, "%d", ctx->cluster_id);

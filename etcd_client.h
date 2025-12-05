@@ -150,6 +150,8 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 int etcd_kv_delete_range(struct etcd_ctx *ctx, const char *key,
 			 const char *end_key);
 int etcd_kv_delete(struct etcd_ctx *ctx, const char *key);
+int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
+		       const char *old_value, const char *new_value);
 
 int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		  struct etcd_kv_event *ev, int64_t watch_id);

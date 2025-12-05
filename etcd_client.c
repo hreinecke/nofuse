@@ -428,6 +428,107 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	return ret;
 }
 
+static void etcd_parse_txn_response(struct json_object *resp, void *arg)
+{
+	struct etcd_kv_event *ev = arg;
+	json_object *result_obj, *header_obj, *succ_obj;
+
+	if (!resp)
+		return;
+
+	result_obj = json_object_object_get(resp, "result");
+	if (!result_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'result' not found\n",
+			       __func__);
+		ev->error = -EBADMSG;
+		return;
+	}
+
+	header_obj = json_object_object_get(result_obj, "header");
+	if (!header_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'header' not found\n",
+			       __func__);
+		ev->error = -EBADMSG;
+		return;
+	}
+	succ_obj = json_object_object_get(result_obj, "succeeded");
+	if (!succ_obj) {
+		if (etcd_debug)
+			printf("%s: invalid response, 'succeeded' not found\n",
+			       __func__);
+		ev->error = -EBADMSG;
+		return;
+	}
+
+	if (!json_object_get_boolean(succ_obj))
+		ev->error = -EREMOTEIO;
+	else
+		ev->error = 0;
+}
+
+int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
+		       const char *old_value, const char *new_value)
+{
+	struct etcd_conn_ctx *conn;
+	struct etcd_kv_event ev;
+	struct json_object *post_obj = NULL;
+	struct json_object *comp_obj, *comp_op_obj;
+	struct json_object *succ_obj, *succ_op_obj, *put_obj;
+	char *encoded_key, *encoded_old, *encoded_new;
+	int ret;
+
+	memset(&ev, 0, sizeof(ev));
+
+	conn = etcd_conn_create(ctx);
+	if (!conn)
+		return -ENOMEM;
+
+	encoded_key = __b64enc(key, strlen(key));
+	encoded_old = __b64enc(old_value, strlen(old_value));
+	encoded_new = __b64enc(new_value, strlen(new_value));
+
+	post_obj = json_object_new_object();
+
+	comp_obj = json_object_new_array();
+	comp_op_obj = json_object_new_object();
+	json_object_object_add(comp_op_obj, "result",
+			       json_object_new_string("EQUAL"));
+	json_object_object_add(comp_op_obj, "target",
+			       json_object_new_string("VALUE"));
+	json_object_object_add(comp_op_obj, "key",
+			       json_object_new_string(encoded_key));
+	json_object_object_add(comp_op_obj, "value",
+			       json_object_new_string(encoded_old));
+	json_object_array_add(comp_obj, comp_op_obj);
+	json_object_object_add(post_obj, "compare", comp_obj);
+
+	succ_obj = json_object_new_object();
+	succ_op_obj = json_object_new_array();
+	put_obj = json_object_new_object();
+	json_object_object_add(put_obj, "key",
+			       json_object_new_string(encoded_key));
+	json_object_object_add(put_obj, "value",
+			       json_object_new_string(encoded_new));
+	json_object_array_add(succ_op_obj, put_obj);
+	json_object_object_add(succ_op_obj, "requestPut", succ_op_obj);
+	json_object_object_add(post_obj, "success", succ_obj);
+
+
+	ret = etcd_kv_exec(conn, "/v3/kv/txn", post_obj,
+			   etcd_parse_txn_response, &ev);
+	if (!ret && ev.error < 0) {
+		ret = ev.error;
+	}
+	free(encoded_key);
+	free(encoded_old);
+	free(encoded_new);
+	json_object_put(post_obj);
+	etcd_conn_delete(conn);
+	return ret;
+}
+
 static void parse_watch_response(struct json_object *resp, void *arg)
 {
 	struct etcd_kv_event *ev = arg;

@@ -862,6 +862,7 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 	if (ret < 0)
 		return ret;
 	num_kvs = ret;
+	ret = 0;
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv =&kvs[i];
 		char *attr, *p, *eptr;
@@ -875,18 +876,24 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 		if (!p || strcmp(p, "/ana_state"))
 			continue;
 		portid = strtoul(attr, &eptr, 10);
-		if (portid == ULONG_MAX || attr == eptr)
-			continue;
+		if (portid == ULONG_MAX || attr == eptr) {
+			ret = -ERANGE;
+			break;
+		}
 		ret = configfs_validate_port(ctx, portid);
 		if (ret == 0)
 			is_local = true;
+		else
+			ret = 0;
 
 		if (!strcmp(eptr, "/ana_groups/"))
 			continue;
 		p = eptr + strlen("/ana_groups/");
 		ana_grpid = strtoul(p, &eptr, 10);
-		if (ana_grpid == ULONG_MAX || p == eptr)
-			continue;
+		if (ana_grpid == ULONG_MAX || p == eptr) {
+			ret = -ERANGE;
+			break;
+		}
 		printf("%s: parsing %s portid %lu ana grpid %lu\n",
 		       __func__, kv->key, portid, ana_grpid);
 		grp = find_ana_group(ana_grpid);
