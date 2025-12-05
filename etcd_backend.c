@@ -1237,31 +1237,52 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 
 int etcd_set_cluster_id(struct etcd_ctx *ctx)
 {
-	char key[256], value[256];
-	u64 cur_map;
-	int ret;
+	char key[256], value[256], *eptr;
+	u64 cur_map = ULONG_MAX;
+	int ret, map_num;
 
-	sprintf(key, "%s/cluster/map/0", ctx->prefix);
-	ret = etcd_kv_get(ctx, key, value);
-	if (ret < 0) {
+	for (map_num = 0; map_num < 4; map_num++) {
+		sprintf(key, "%s/cluster/map/%d", ctx->prefix, map_num);
+		ret = etcd_kv_get(ctx, key, value);
+		if (ret < 0) {
+			if (ret != -ENOENT) {
+				fprintf(stderr,
+					"%s: failed to get cluster map '%d'\n",
+					__func__, map_num);
+				return ret;
+			}
+			cur_map = 0;
+			break;
+		}
+
+		errno = 0;
+		cur_map = strtoul(value, &eptr, 10);
+		if (errno || value == eptr) {
+			fprintf(stderr,
+				"%s: parsing error on cluster map '%s'\n",
+				__func__, value);
+			return -EINVAL;
+		}
+		if (cur_map != ULONG_MAX)
+			break;
+		map_num ++;
+	}
+	if (!cur_map) {
+		ctx->cluster_id = (map_num * 64);
 		cur_map = 1;
 		sprintf(value, "%llu" , cur_map);
+		printf("%s: using cluster id %d\n",
+		       __func__, ctx->cluster_id);
 		ret = etcd_kv_store(ctx, key, value);
 		if (ret < 0) {
 			fprintf(stderr, "%s: failed to set cluster map to '%s'\n",
 				__func__, value);
 		}
 	} else {
-		char new_value[256], *eptr;
+		char new_value[256];
 		int id = -1;
 		u64 tmp_map;
 
-		cur_map = strtoul(value, &eptr, 10);
-		if (cur_map == ULONG_MAX || value == eptr) {
-			fprintf(stderr, "%s: parsing error on cluster map '%s'\n",
-				__func__, value);
-			return -EINVAL;
-		}
 		tmp_map = cur_map;
 		while (tmp_map) {
 			id = ffsll(tmp_map);
@@ -1272,19 +1293,14 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 			printf("%s: checking id %u map %llu\n",
 			       __func__, id, tmp_map);
 		}
-		if (id < 0) {
-			ctx->cluster_id = 0;
-			printf("%s: using cluster id %d\n",
-			       __func__, ctx->cluster_id);
-		} else {
-			ctx->cluster_id = id;
-			printf("%s: found cluster id %d\n",
-			       __func__, ctx->cluster_id);
-		}
-		cur_map |= (1 << ctx->cluster_id);
+		ctx->cluster_id = (map_num * 64) + id;
+		printf("%s: found cluster id %d\n",
+		       __func__, ctx->cluster_id);
+
+		cur_map |= (1 << id);
 		sprintf(new_value, "%llu", cur_map);
-		printf("%s: updating map 0 from '%s' to '%s'\n",
-		       __func__, value, new_value);
+		printf("%s: updating map %d from '%s' to '%s'\n",
+		       __func__, map_num, value, new_value);
 		ret = etcd_kv_txn_update(ctx, key, value, new_value);
 		if (ret < 0) {
 			fprintf(stderr,
@@ -1307,32 +1323,37 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 int etcd_unset_cluster_id(struct etcd_ctx *ctx)
 {
 	char key[256], value[256], new_value[256], *eptr;
-	u64 cur_map;
-	int ret;
+	u64 cur_map = ULONG_MAX, id;
+	int ret, map;
 
-	sprintf(key, "%s/cluster/map/0", ctx->prefix);
+	id = ctx->cluster_id % 64;
+	map = ctx->cluster_id / 64;
+	sprintf(key, "%s/cluster/map/%d", ctx->prefix, map);
 	ret = etcd_kv_get(ctx, key, value);
 	if (ret < 0) {
-		fprintf(stderr, "%s: failed to get cluster map '0'\n",
-			__func__);
+		fprintf(stderr, "%s: failed to get cluster map '%d'\n",
+			__func__, map);
 		return ret;
 	}
 
+	errno = 0;
 	cur_map = strtoul(value, &eptr, 10);
-	if (cur_map == ULONG_MAX || value == eptr) {
-		fprintf(stderr, "%s: parsing error on cluster map '%s'\n",
-			__func__, value);
+	if (errno || value == eptr) {
+		fprintf(stderr,
+			"%s: parsing error on cluster map '%d' value '%s'\n",
+			__func__, map, value);
 		return -EINVAL;
 	}
-	cur_map &= ~(1 << ctx->cluster_id);
+
+	cur_map &= ~(1 << id);
 	sprintf(new_value, "%llu", cur_map);
-	printf("%s: updating map 0 from '%s' to '%s'\n",
-	       __func__, value, new_value);
+	printf("%s: updating map '%d from '%s' to '%s'\n",
+	       __func__, map, value, new_value);
 	ret = etcd_kv_txn_update(ctx, key, value, new_value);
 	if (ret < 0) {
 		fprintf(stderr,
-			"%s: failed to set cluster map '%s' to '%s'\n",
-			__func__, value, new_value);
+			"%s: failed to update cluster map '%d', error %d\n",
+			__func__, map, ret);
 	}
 	return ret;
 }
