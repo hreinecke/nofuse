@@ -53,8 +53,6 @@ struct ana_ns_entry {
 
 LINKED_LIST(ana_group_list);
 
-static int configfs_register_id(struct etcd_ctx *ctx);
-
 struct ana_group *find_ana_group(unsigned int ana_grpid)
 {
 	struct ana_group *tmp_grp, *grp = NULL;
@@ -522,7 +520,7 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 		ctx->cluster_id = cluster_id;
 		printf("%s: subsys %s using cluster id %u\n",
 		       __func__, subsys, ctx->cluster_id);
-		ret = configfs_register_id(ctx);
+		ret = etcd_set_cluster_id(ctx);
 		if (ret < 0)
 			return ret;
 	} else if (ctx->cluster_id != cluster_id) {
@@ -813,6 +811,14 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 	if (errors)
 		return -EINVAL;
 
+	if (ctx->cluster_id < 0) {
+		ret = etcd_generate_cluster_id(ctx);
+		if (ret < 0) {
+			fprintf(stderr, "cluster id generation failed\n");
+			return ret;
+		}
+	}
+
 	ret = asprintf(&dirname, "%s/ports", ctx->configfs);
 	if (ret < 0)
 		return -ENOMEM;
@@ -1026,22 +1032,6 @@ int configfs_purge_subsystems(struct etcd_ctx *ctx)
 	return ret;
 }
 
-static int configfs_register_id(struct etcd_ctx *ctx)
-{
-	char key[256], value[256];
-	int ret;
-
-	sprintf(key, "%s/cluster/%s/node_id",
-		ctx->prefix, ctx->node_id);
-	sprintf(value, "%d", ctx->cluster_id);
-	ret = etcd_kv_store(ctx, key, value);
-	if (ret < 0) {
-		fprintf(stderr, "%s: node %s register error %d\n",
-			__func__, ctx->node_id, ret);
-	}
-	return ret;
-}
-
 int configfs_register(struct etcd_ctx *ctx)
 {
 	char name_key[256];
@@ -1058,7 +1048,7 @@ int configfs_register(struct etcd_ctx *ctx)
 		return ret;
 	}
 	if (ctx->cluster_id >= 0) {
-		ret = configfs_register_id(ctx);
+		ret = etcd_set_cluster_id(ctx);
 		if (ret < 0)
 			etcd_kv_delete(ctx, name_key);
 	}

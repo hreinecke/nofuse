@@ -1235,6 +1235,73 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 	return ret;
 }
 
+int etcd_set_cluster_id(struct etcd_ctx *ctx)
+{
+	char key[256], value[256];
+	int ret;
+
+	sprintf(key, "%s/cluster/%s/node_id",
+		ctx->prefix, ctx->node_id);
+	sprintf(value, "%d", ctx->cluster_id);
+	ret = etcd_kv_store(ctx, key, value);
+	if (ret < 0) {
+		fprintf(stderr, "%s: node %s register error %d\n",
+			__func__, ctx->node_id, ret);
+	}
+	return ret;
+}
+
+int etcd_generate_cluster_id(struct etcd_ctx *ctx)
+{
+	struct etcd_kv *kvs;
+	int ret, num_kvs, i, max_id = -1, num_nodes = 0;
+	char *key;
+
+	ret = asprintf(&key, "%s/cluster/", ctx->prefix);
+	if (ret < 0)
+		return ret;
+	num_kvs = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		char *node = kv->key + strlen(ctx->prefix) + 9, *attr;
+		unsigned long id;
+		char *eptr;
+
+		attr = strrchr(node, '/');
+		if (!attr)
+			continue;
+		if (strcmp(attr, "/node_id"))
+			continue;
+		num_nodes++;
+		if (!strlen(kv->value))
+			continue;
+
+		id = strtoul(kv->value, &eptr, 10);
+		if (id == ULONG_MAX || kv->value == eptr) {
+			fprintf(stderr, "%s: node %s invalid id '%s'\n",
+				__func__, node, kv->value);
+			ret = -EINVAL;
+			break;
+		}
+		if (id > max_id)
+			max_id = id;
+	}
+	etcd_kv_free(kvs, num_kvs);
+	if (max_id < 0)
+		ctx->cluster_id = num_nodes;
+	else
+		ctx->cluster_id = max_id + 1;
+
+	ret = etcd_set_cluster_id(ctx);
+	if (ret < 0)
+		ctx->cluster_id = -1;
+
+	return ret;
+}
+
 int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid)
 {
 	return -ENOTSUP;
