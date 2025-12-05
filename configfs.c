@@ -998,7 +998,10 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 		attr = strrchr(kv->key, '/');
 		if (!attr)
 			continue;
-		if (strcmp(attr, "/addr_origin"))
+		attr++;
+		if (strcmp(attr, "addr_origin"))
+			continue;
+		if (strstr(kv->key, "referrals"))
 			continue;
 		if (kv->value && strcmp(kv->value, ctx->node_name))
 			continue;
