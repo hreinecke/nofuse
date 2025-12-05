@@ -156,6 +156,24 @@ int read_attr(char *attr_path, char *value, size_t value_len)
 	return len;
 }
 
+int write_attr(char *attr_path, char *value, size_t value_len)
+{
+	int fd, len;
+
+	fd = open(attr_path, O_RDWR);
+	if (fd < 0) {
+		fprintf(stderr, "Failed to open '%s', error %d\n",
+			attr_path, errno);
+		return -errno;
+	}
+	len = write(fd, value, value_len);
+	if (len < 0)
+		len = -errno;
+
+	close(fd);
+	return len;
+}
+
 char *path_to_key(struct etcd_ctx *ctx, const char *path)
 {
 	const char *attr = path + strlen(ctx->configfs) + 1;
@@ -471,11 +489,13 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 	return ret;
 }
 
-static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
-			       char *value, bool cntlid_max)
+static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
+			   char *value, bool cntlid_max)
 {
-	unsigned long cntlid, cntlid_min, cluster_spacing, cluster_id;
+	unsigned long cntlid, cntlid_min, new_cntlid;
+	unsigned int cluster_spacing, cluster_id;
 	char *eptr;
+	int ret = 0;
 
 	cluster_spacing = (CLUSTER_MAX_SIZE / ctx->cluster_size);
 	cntlid = strtoul(value, &eptr, 10);
@@ -496,31 +516,37 @@ static int validate_cluster_id(struct etcd_ctx *ctx, char *subsys,
 		fprintf(stderr,
 			"%s: subsys %s cntlid_%s %lu not cluster boundary\n",
 			__func__, subsys, cntlid_max ? "max": "min", cntlid);
-		if (cntlid_max)
+		if (cntlid_max) {
+			new_cntlid = cntlid_min + (cluster_spacing - 1);
 			fprintf(stderr, "%s: should be %lu\n", __func__,
-				cntlid_min + (cluster_spacing - 1));
-		else
+				new_cntlid);
+		} else {
+			new_cntlid = (cntlid / cluster_spacing) *
+				cluster_spacing;
 			fprintf(stderr, "%s: should be %lu\n", __func__,
-				(cntlid / cluster_spacing) * cluster_spacing);
-		return -EINVAL;
+				new_cntlid);
+		}
+		ret = sprintf(value, "%lu", new_cntlid);
 	} else if (cntlid_max &&
 		   (cntlid / cluster_spacing) != ctx->cluster_id + 1) {
 		fprintf(stderr, "%s: subsys %s cntlid_max %lu out of range for cluster\n",
 			__func__, subsys, cntlid);
+		new_cntlid = cntlid_min + (cluster_spacing - 1);
 		fprintf(stderr, "%s: should be %lu\n", __func__,
-			cntlid_min + (cluster_spacing - 1));
-		return -EINVAL;
+			new_cntlid);
+		ret = sprintf(value, "%lu", new_cntlid);
 	}
-	if (cntlid_max)
-		return 0;
-	cluster_id = cntlid / cluster_spacing;
-	if (ctx->cluster_id != cluster_id) {
-		cntlid = ctx->cluster_id * cluster_spacing;
-		fprintf(stderr, "%s: subsys %s cluster id mismatch (should be %lu)\n",
-			__func__, subsys, cntlid);
-		return -EINVAL;
+	if (!cntlid_max) {
+		cluster_id = cntlid / cluster_spacing;
+		if (ctx->cluster_id != cluster_id) {
+			new_cntlid = ctx->cluster_id * cluster_spacing;
+			fprintf(stderr,
+				"%s: subsys %s cntlid_min mismatch (should be %lu)\n",
+				__func__, subsys, new_cntlid);
+			ret = sprintf(value, "%lu", new_cntlid);
+		}
 	}
-	return 0;
+	return ret;
 }
 
 static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
@@ -766,15 +792,30 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 			break;
 		}
 		ret = read_attr(path, value, sizeof(value));
-		free(path);
-		if (ret < 0)
-			break;
-
-		ret = validate_cluster_id(ctx, se->d_name, value, false);
 		if (ret < 0) {
+			free(path);
+			break;
+		}
+
+		ret = validate_cntlid(ctx, se->d_name, value, false);
+		if (ret < 0) {
+			free(path);
 			errors++;
 			continue;
 		}
+		if (ret > 0) {
+			ret = write_attr(path, value, strlen(value));
+			if (ret < 0) {
+				fprintf(stderr,
+					"%s: failed to update, error %d\n",
+					__func__, ret);
+				free(path);
+				errors++;
+				continue;
+			}
+			ret = 0;
+		}
+		free(path);
 
 		ret = asprintf(&path, "%s/%s/attr_cntlid_max",
 			       dirname, se->d_name);
@@ -783,14 +824,28 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 			break;
 		}
 		ret = read_attr(path, value, sizeof(value));
-		free(path);
-		if (ret < 0)
+		if (ret < 0) {
+			free(path);
 			break;
+		}
 
-		ret = validate_cluster_id(ctx, se->d_name, value, true);
-		if (ret < 0)
+		ret = validate_cntlid(ctx, se->d_name, value, true);
+		if (ret < 0) {
+			free(path);
 			errors++;
-
+			continue;
+		}
+		if (ret > 0) {
+			ret = write_attr(path, value, strlen(value));
+			if (ret < 0) {
+				fprintf(stderr,
+					"%s: failed to update, error %d\n",
+					__func__, ret);
+				errors++;
+			}
+			ret = 0;
+		}
+		free(path);
 		ret = validate_namespaces(ctx, se->d_name);
 		if (ret < 0)
 			errors++;
