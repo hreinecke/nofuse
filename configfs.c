@@ -23,8 +23,8 @@
 
 #include "common.h"
 #include "utils.h"
-#include "etcd_client.h"
-#include "etcd_backend.h"
+#include "etcd/client.h"
+#include "etcd/backend.h"
 
 struct ana_group {
 	struct linked_list list;

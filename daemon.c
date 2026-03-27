@@ -23,8 +23,8 @@
 #include <fuse.h>
 
 #include "common.h"
-#include "etcd_client.h"
-#include "etcd_backend.h"
+#include "etcd/client.h"
+#include "etcd/backend.h"
 
 int stopped;
 bool tcp_debug;

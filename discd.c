@@ -18,7 +18,7 @@
 #include <dirent.h>
 
 #include "common.h"
-#include "etcd_client.h"
+#include "etcd/client.h"
 #include "configfs.h"
 
 bool ep_debug;

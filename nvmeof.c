@@ -16,7 +16,7 @@
 #include "ops.h"
 #include "nvme.h"
 #include "tcp.h"
-#include "etcd_backend.h"
+#include "etcd/backend.h"
 #include "firmware.h"
 
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,

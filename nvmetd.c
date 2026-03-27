@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <pthread.h>
 
-#include "etcd_client.h"
+#include "etcd/client.h"
 #include "nvmetd.h"
 
 int stopped = 0;

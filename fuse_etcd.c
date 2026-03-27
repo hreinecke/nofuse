@@ -18,7 +18,7 @@
 #include <ctype.h>
 
 #include "common.h"
-#include "etcd_backend.h"
+#include "etcd/backend.h"
 
 bool fuse_debug;
 bool etcd_debug;

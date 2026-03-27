@@ -20,8 +20,8 @@
 #include <errno.h>
 
 #include "common.h"
-#include "etcd_client.h"
-#include "etcd_backend.h"
+#include "etcd/client.h"
+#include "etcd/backend.h"
 #include "configfs.h"
 
 static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,

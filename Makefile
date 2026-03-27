@@ -1,11 +1,11 @@
 
-CFLAGS = -Wall -g -I/usr/include/fuse3
+CFLAGS = -Wall -g -I. -I/usr/include/fuse3
 DAEMON_OBJS := daemon.o
 NVME_OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o tls.o
 
-ETCD_OBJS := etcd_backend.o etcd_watcher.o configfs.o
-CURL_OBJS := etcd_client_curl.o etcd_curl.o base64.o
-SOCKET_OBJS := etcd_client_socket.o etcd_socket.o base64.o http_parser.o
+ETCD_OBJS := etcd/backend.o etcd/watcher.o configfs.o
+CURL_OBJS := etcd/client_curl.o etcd/curl.o etcd/base64.o
+SOCKET_OBJS := etcd/client_socket.o etcd/socket.o etcd/base64.o etcd/http_parser.o
 
 NVME_LIBS := -luring -lpthread -lcrypto -lssl -lz -lkeyutils
 ETCD_LIBS := -luuid -ljson-c
@@ -44,30 +44,30 @@ discd: $(DISCD_OBJS) $(CURL_OBJS)
 nvmetd: nvmetd.o inotify.o $(CURL_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
 
-watcher: watcher.o etcd_watcher.o configfs.o $(CURL_OBJS) $(OBJS)
+watcher: watcher.o etcd/watcher.o configfs.o $(CURL_OBJS) $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
 
-%.o: %.c common.h etcd_client.h etcd_backend.h utils.h
+%.o: %.c common.h etcd/client.h etcd/backend.h utils.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 tcp.o: tcp.c common.h utils.h tcp.h tls.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-etcd_client_curl.o: etcd_client.c
+etcd/client_curl.o: etcd/client.c
 	$(CC) $(CFLAGS) -D_USE_CURL -c -o $@ $<
 
-etcd_client_socket.o: etcd_client.c
+etcd/client_socket.o: etcd/client.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-etcd_curl.o: etcd_curl.c
+etcd/curl.o: etcd/curl.c
 	$(CC) $(CFLAGS) -D_USE_CURL -c -o $@ $<
 
 configfs.o: configfs.c configfs.h
 
-etcd_backend.o: etcd_backend.c etcd_client.h common.h etcd_backend.h utils.h firmware.h
+etcd/backend.o: etcd/backend.c etcd/client.h common.h etcd/backend.h utils.h firmware.h
 
 firmware.h: gen_firmware_rev.sh
 	bash ./$< $@

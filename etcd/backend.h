@@ -1,8 +1,6 @@
 #ifndef _ETCD_BACKEND_H
 #define _ETCD_BACKEND_H
 
-#include "etcd_client.h"
-
 #define FUSE_USE_VERSION 31
 #include <fuse.h>
 

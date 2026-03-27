@@ -13,7 +13,7 @@
 #include <pthread.h>
 #include <json-c/json.h>
 
-#include "etcd_client.h"
+#include "etcd/client.h"
 
 static int etcd_kv_transfer(CURL *curl_ctx)
 {

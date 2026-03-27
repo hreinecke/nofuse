@@ -26,8 +26,8 @@
 #include "common.h"
 #include "utils.h"
 #include "configfs.h"
-#include "etcd_client.h"
-#include "etcd_backend.h"
+#include "etcd/client.h"
+#include "etcd/backend.h"
 #include "nvmetd.h"
 
 #define INOTIFY_BUFFER_SIZE 4096

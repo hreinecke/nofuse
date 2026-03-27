@@ -5,8 +5,8 @@
 #include <uuid/uuid.h>
 
 #include "common.h"
-#include "etcd_backend.h"
-#include "etcd_client.h"
+#include "etcd/backend.h"
+#include "etcd/client.h"
 #include "firmware.h"
 
 struct key_value_template {

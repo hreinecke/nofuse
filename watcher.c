@@ -21,7 +21,7 @@
 #include <limits.h>
 
 #include "common.h"
-#include "etcd_client.h"
+#include "etcd/client.h"
 #include "configfs.h"
 
 bool etcd_debug = false;

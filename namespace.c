@@ -2,7 +2,8 @@
 
 #include "common.h"
 #include "ops.h"
-#include "etcd_backend.h"
+#include "etcd/client.h"
+#include "etcd/backend.h"
 
 LINKED_LIST(device_linked_list);
 

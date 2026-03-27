@@ -14,7 +14,7 @@
 #include "common.h"
 #include "tcp.h"
 #include "ops.h"
-#include "etcd_backend.h"
+#include "etcd/backend.h"
 #include "tls.h"
 
 #define NVME_OPCODE_MASK 0x3

@@ -12,7 +12,7 @@
 
 #include "common.h"
 #include "ops.h"
-#include "etcd_backend.h"
+#include "etcd/backend.h"
 
 LINKED_LIST(port_linked_list);
 pthread_mutex_t port_list_mutex = PTHREAD_MUTEX_INITIALIZER;

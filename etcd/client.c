@@ -13,10 +13,10 @@
 #include <pthread.h>
 #include <json-c/json.h>
 
-#include "base64.h"
+#include "etcd/base64.h"
 
 #include "common.h"
-#include "etcd_client.h"
+#include "etcd/client.h"
 
 static char *default_etcd_prefix = "nofuse";
 static char *default_etcd_host = "localhost";

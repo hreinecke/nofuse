@@ -15,7 +15,7 @@
 #include <errno.h>
 
 #include "common.h"
-#include "etcd_client.h"
+#include "etcd/client.h"
 
 bool ep_debug;
 bool cmd_debug;
