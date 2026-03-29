@@ -6,11 +6,12 @@ NVME_OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o tls.o
 ETCD_OBJS := etcd/backend.o etcd/watcher.o configfs.o
 CURL_OBJS := etcd/client_curl.o etcd/curl.o etcd/base64.o
 SOCKET_OBJS := etcd/client_socket.o etcd/socket.o etcd/base64.o etcd/http_parser.o
+NEON_OBJS := etcd/client_neon.o etcd/neon.o etcd/base64.o
 
 NVME_LIBS := -luring -lpthread -lcrypto -lssl -lz -lkeyutils
 ETCD_LIBS := -luuid -ljson-c
 CURL_LIBS := -lcurl
-
+NEON_LIBS := -lneon
 LIBS := $(ETCD_LIBS)
 
 DAEMON_OBJS += fuse_etcd.o
@@ -32,20 +33,20 @@ OBJS := $(ETCD_OBJS)
 
 all: nofuse portd discd nvmetd watcher
 
-nofuse: $(DAEMON_OBJS) $(CURL_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lfuse3 $(CURL_LIBS) $(DAEMON_LIBS)
+nofuse: $(DAEMON_OBJS) $(NEON_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ -lfuse3 $(NEON_LIBS) $(DAEMON_LIBS)
 
-portd: $(PORTD_OBJS) $(CURL_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(PORTD_LIBS) $(CURL_LIBS)
+portd: $(PORTD_OBJS) $(NEON_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(PORTD_LIBS) $(NEON_LIBS)
 
-discd: $(DISCD_OBJS) $(CURL_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(DISCD_LIBS) $(CURL_LIBS)
+discd: $(DISCD_OBJS) $(NEON_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(DISCD_LIBS) $(NEON_LIBS)
 
-nvmetd: nvmetd.o inotify.o $(CURL_OBJS) $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
+nvmetd: nvmetd.o inotify.o $(NEON_OBJS) $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(NEON_LIBS) $(LIBS)
 
-watcher: watcher.o etcd/watcher.o configfs.o $(CURL_OBJS) $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(CURL_LIBS) $(LIBS)
+watcher: watcher.o etcd/watcher.o configfs.o $(NEON_OBJS) $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(NEON_LIBS) $(LIBS)
 
 xdp_drop_port.o: xdp_drop_port.c
 	clang $(CFLAGS) -target bpf -c $< -o $@
@@ -62,8 +63,14 @@ etcd/client_curl.o: etcd/client.c
 etcd/client_socket.o: etcd/client.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+etcd/client_neon.o: etcd/client.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 etcd/curl.o: etcd/curl.c
 	$(CC) $(CFLAGS) -D_USE_CURL -c -o $@ $<
+
+etcd/neon.o: etcd/neon.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 configfs.o: configfs.c configfs.h
 

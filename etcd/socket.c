@@ -21,9 +21,9 @@
 #include <errno.h>
 
 #include <json-c/json.h>
-#include "http_parser.h"
+#include "etcd/http_parser.h"
 
-#include "etcd_client.h"
+#include "etcd/client.h"
 
 bool http_data_debug = false;
 

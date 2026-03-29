@@ -258,7 +258,7 @@ int configfs_validate_port(struct etcd_ctx *ctx, unsigned int portid)
 		       ctx->prefix, portid);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
 	if (ret < 0) {
 		free(key);
 		return ret == -ENOENT ? 0 : ret;
@@ -278,7 +278,7 @@ int configfs_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
 	if (ret < 0) {
 		free(key);
 		return ret;
@@ -374,7 +374,7 @@ store_key:
 	}
 
 	memset(old, 0, sizeof(old));
-	ret = etcd_kv_get(ctx, key, old);
+	ret = etcd_kv_get(ctx, key, old, sizeof(old));
 	if (ret < 0) {
 		if (ret != -ENOENT) {
 			fprintf(stderr, "%s: key %s create error %d\n",
@@ -390,7 +390,7 @@ store_key:
 			printf("%s: upload key %s value '%s'\n", __func__,
 			       key, value);
 
-		ret = etcd_kv_store(ctx, key, value);
+		ret = etcd_kv_store(ctx, key, value, strlen(value));
 		if (ret < 0) {
 			fprintf(stderr, "%s: key %s create error %d\n",
 				__func__, key, ret);
@@ -408,7 +408,7 @@ store_key:
 			printf("%s: update key %s value '%s'\n", __func__,
 			       key, value);
 
-		ret = etcd_kv_update(ctx, key, value);
+		ret = etcd_kv_update(ctx, key, value, strlen(value));
 		if (ret < 0)
 			fprintf(stderr, "%s: key %s update error %d\n",
 				__func__, key, ret);
@@ -1053,7 +1053,7 @@ int configfs_purge_subsystems(struct etcd_ctx *ctx)
 		if (configfs_debug)
 			printf("%s: new range '%s'\n",
 			       __func__, value);
-		ret = etcd_kv_update(ctx, kv->key, value);
+		ret = etcd_kv_update(ctx, kv->key, value, strlen(value));
 		if (ret < 0) {
 			if (configfs_debug)
 				fprintf(stderr, "%s: failed to update key '%s'\n",
@@ -1089,7 +1089,7 @@ int configfs_register(struct etcd_ctx *ctx)
 	sprintf(name_key, "%s/cluster/%s/node_name",
 		ctx->prefix, ctx->node_id);
 	strcpy(value, ctx->node_name);
-	ret = etcd_kv_store(ctx, name_key, value);
+	ret = etcd_kv_store(ctx, name_key, value, strlen(value));
 	if (ret < 0) {
 		fprintf(stderr, "%s: node %s register error %d\n",
 			__func__, ctx->node_id, ret);

@@ -28,7 +28,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	int ret = 0;
 
 	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME)) {
-		ret = etcd_get_discovery_nqn(ep->port->ctx, nqn);
+		ret = etcd_get_discovery_nqn(ep->port->ctx, nqn, sizeof(nqn));
 		if (ret < 0)
 			strcpy(nqn, subsysnqn);
 	} else
@@ -86,7 +86,8 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 		free(ctrl);
 		goto out_unlock;
 	}
-	ret = etcd_get_subsys_attr(ep->port->ctx, nqn, "attr_gid_max", value);
+	ret = etcd_get_subsys_attr(ep->port->ctx, nqn, "attr_gid_max",
+				   value, sizeof(value));
 	if (ret < 0) {
 		ep_err(ep, "error fetching attr_qid_max");
 		ctrl->max_queues = NVMF_NUM_QUEUES;

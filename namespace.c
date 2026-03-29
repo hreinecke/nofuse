@@ -53,7 +53,7 @@ int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	fprintf(stderr, "%s: subsys %s nsid %d\n",
 		__func__, subsysnqn, nsid);
 	ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
-				      "device_path", path);
+				      "device_path", path, sizeof(path));
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d no device path, error %d\n",
 			subsysnqn, nsid, ret);
@@ -98,7 +98,7 @@ int enable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	}
 enable:
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
-				      "device_enable", "1");
+				      "device_enable", "1", 1);
 	if (ret < 0) {
 		fprintf(stderr, "subsys %s nsid %d enable error %d\n",
 			subsysnqn, nsid, ret);
@@ -128,7 +128,7 @@ int disable_namespace(struct etcd_ctx *ctx, const char *subsysnqn, u32 nsid)
 	if (!ns)
 		return -ENOENT;
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
-				      "device_enable", "0");
+				      "device_enable", "0", 1);
 	if (ret < 0)
 		return ret;
 
@@ -195,7 +195,7 @@ int ana_log_entries(struct etcd_ctx *ctx, const char *subsysnqn,
 		memset(grp_desc, 0, sizeof(*grp_desc));
 
 		ret = etcd_get_ana_group(ctx, port, grpid,
-					 state);
+					 state, sizeof(state));
 		if (ret < 0)
 			continue;
 		ana_state = strtoul(state, &eptr, 10);

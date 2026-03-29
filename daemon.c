@@ -61,7 +61,7 @@ static int init_discovery(struct nofuse_context *ctx)
 {
 	int ret;
 
-	ret = etcd_get_discovery_nqn(ctx->etcd, discovery_nqn);
+	ret = etcd_get_discovery_nqn(ctx->etcd, discovery_nqn, MAX_NQN_SIZE);
 	if (!ret) {
 		if (ctx->subsysnqn)
 			free(ctx->subsysnqn);
@@ -70,7 +70,8 @@ static int init_discovery(struct nofuse_context *ctx)
 	} else {
 		if (!ctx->subsysnqn)
 			ctx->subsysnqn = strdup(NVME_DISC_SUBSYS_NAME);
-		ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn);
+		ret = etcd_set_discovery_nqn(ctx->etcd, ctx->subsysnqn,
+					     strlen(ctx->subsysnqn));
 		if (ret < 0) {
 			fprintf(stderr, "failed to set discovery nqn\n");
 			return ret;

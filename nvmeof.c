@@ -443,7 +443,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	memset(desc_list, 0, len);
 	ret = etcd_get_namespace_attr(ep->port->ctx,
 				      ep->ctrl->subsysnqn, nsid,
-				      "device_uuid", uid_str);
+				      "device_uuid", uid_str, sizeof(uid_str));
 	if (ret < 0)
 		return ret;
 	ret = uuid_parse(uid_str, uuid);
@@ -467,7 +467,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 	}
 	ret = etcd_get_namespace_attr(ep->port->ctx,
 				      ep->ctrl->subsysnqn, nsid,
-				      "device_nguid", uid_str);
+				      "device_nguid", uid_str, sizeof(uid_str));
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
 		desc->nidt = NVME_NIDT_NGUID;
@@ -492,7 +492,7 @@ parse_eui64:
 	}
 	ret = etcd_get_namespace_attr(ep->port->ctx,
 				      ep->ctrl->subsysnqn, nsid,
-				      "device_eui64", uid_str);
+				      "device_eui64", uid_str, sizeof(uid_str));
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
 		desc->nidt = NVME_NIDT_EUI64;

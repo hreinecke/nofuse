@@ -70,7 +70,7 @@ static int host_getattr(char *hostnqn, struct stat *stbuf)
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL);
+	ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL, 0);
 	if (ret < 0)
 		return -ENOENT;
 
@@ -102,7 +102,7 @@ static int port_subsystems_getattr(const char *port, const char *subsys,
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	ret = etcd_get_subsys_port(ctx, subsys, port, NULL);
+	ret = etcd_get_subsys_port(ctx, subsys, port, NULL, 0);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFLNK | 0755;
@@ -141,7 +141,7 @@ static int port_ana_groups_getattr(const char *port, const char *ana_grp,
 	if (ana_grp == eptr || ana_grpid == ULONG_MAX)
 		return -EINVAL;
 
-	ret = etcd_get_ana_group(ctx, port, ana_grpid, NULL);
+	ret = etcd_get_ana_group(ctx, port, ana_grpid, NULL, 0);
 	if (ret < 0)
 		return ret;
 	if (!p) {
@@ -193,7 +193,7 @@ static int port_getattr(char *port, struct stat *stbuf)
 	    strncmp(attr, "param_", 6))
 		return -ENOENT;
 
-	ret = etcd_get_port_attr(ctx, port, attr, NULL);
+	ret = etcd_get_port_attr(ctx, port, attr, NULL, 0);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFREG | 0644;
@@ -224,7 +224,7 @@ static int subsys_allowed_hosts_getattr(const char *subsysnqn,
 	if (p)
 		return -ENOENT;
 	fuse_info("%s: subsys %s host %s", __func__, subsysnqn, hostnqn);
-	ret = etcd_get_host_subsys(ctx, hostnqn, subsysnqn, NULL);
+	ret = etcd_get_host_subsys(ctx, hostnqn, subsysnqn, NULL, 0);
 	if (ret < 0)
 		return -ENOENT;
 	stbuf->st_mode = S_IFLNK | 0755;
@@ -271,7 +271,8 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	fuse_info("%s: subsys %s ns %u attr %s", __func__,
 		  subsysnqn, nsid, attr);
 	if (strcmp(attr, "ana_grpid")) {
-		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid, attr, NULL);
+		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
+					      attr, NULL, 0);
 		if (ret < 0)
 			return -ENOENT;
 	}
@@ -301,7 +302,7 @@ static int cluster_getattr(char *node, struct stat *stbuf)
 	p = strtok(NULL, "/");
 	if (p)
 		return -ENOENT;
-	ret = etcd_get_cluster_attr(ctx, node, attr, NULL);
+	ret = etcd_get_cluster_attr(ctx, node, attr, NULL, 0);
 	if (ret < 0)
 		return -ENOENT;
 
@@ -338,7 +339,7 @@ static int subsys_getattr(char *subsysnqn, struct stat *stbuf)
 
 	if (strncmp(attr, "attr_", 5))
 		return -ENOENT;
-	ret = etcd_get_subsys_attr(ctx, subsysnqn, attr, NULL);
+	ret = etcd_get_subsys_attr(ctx, subsysnqn, attr, NULL, 0);
 	if (ret < 0)
 		return -ENOENT;
 
@@ -465,7 +466,8 @@ static int fill_port(const char *port,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (subsys) {
-			if (etcd_get_subsys_port(ctx, subsys, port, NULL) < 0)
+			if (etcd_get_subsys_port(ctx, subsys,
+						 port, NULL, 0) < 0)
 				return -ENOENT;
 			return 0;
 		}
@@ -490,7 +492,7 @@ static int fill_port(const char *port,
 		if (ana_grp == eptr || ana_grpid == ULONG_MAX)
 			return -EINVAL;
 
-		if (etcd_get_ana_group(ctx, port, ana_grpid, NULL) < 0)
+		if (etcd_get_ana_group(ctx, port, ana_grpid, NULL, 0) < 0)
 			return -ENOENT;
 		filler(buf, "ana_state", NULL, 0, FUSE_FILL_DIR_PLUS);
 		return 0;
@@ -559,7 +561,8 @@ static int fill_subsys(const char *subsys,
 		filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
 		filler(buf, "..", NULL, 0, FUSE_FILL_DIR_PLUS);
 		if (host) {
-			if (etcd_get_host_subsys(ctx, host, subsys, NULL) < 0)
+			if (etcd_get_host_subsys(ctx, host, subsys,
+						 NULL, 0) < 0)
 				return -ENOENT;
 			return 0;
 		}
@@ -697,7 +700,7 @@ static int subsys_mkdir(char *s)
 		char nqn[MAX_NQN_SIZE], *type = "nvm";
 		int ret;
 
-		ret = etcd_get_discovery_nqn(ctx, nqn);
+		ret = etcd_get_discovery_nqn(ctx, nqn, MAX_NQN_SIZE);
 		if (!ret && !strcmp(nqn, subsysnqn))
 			type = "cur";
 
@@ -951,7 +954,7 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		ret = parse_port_link(s, &port, &subsys);
 		if (ret < 0)
 			goto out_free;
-		ret = etcd_get_subsys_port(ctx, subsys, port, buf);
+		ret = etcd_get_subsys_port(ctx, subsys, port, buf, len);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -961,7 +964,7 @@ static int nofuse_readlink(const char *path, char *buf, size_t len)
 		ret = parse_subsys_link(s, &subsys, &host);
 		if (ret < 0)
 			goto out_free;
-		ret = etcd_get_host_subsys(ctx, host, subsys, buf);
+		ret = etcd_get_host_subsys(ctx, host, subsys, buf, len);
 		if (ret < 0)
 			goto out_free;
 		ret = 0;
@@ -1137,7 +1140,8 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			}
 			fuse_info("%s: port %s ana_grp %lu attr %s", __func__,
 			       port, ana_grpid, p);
-			ret = etcd_get_ana_group(ctx, port, ana_grpid, NULL);
+			ret = etcd_get_ana_group(ctx, port, ana_grpid,
+						 NULL, 0);
 			if (ret < 0) {
 				fuse_err("%s: port %s ana_grp %s error %d",
 					 __func__, port, ana_grp, ret);
@@ -1146,7 +1150,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 				ret = 0;
 			goto out_free;
 		} else {
-			ret = etcd_get_port_attr(ctx, port, attr, NULL);
+			ret = etcd_get_port_attr(ctx, port, attr, NULL, 0);
 			if (ret < 0)
 				ret = -ENOENT;
 			goto out_free;
@@ -1164,7 +1168,8 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		fuse_info("%s: subsys %s attr %s p %s", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
-			ret = etcd_get_subsys_attr(ctx, subsysnqn, attr, NULL);
+			ret = etcd_get_subsys_attr(ctx, subsysnqn,
+						   attr, NULL, 0);
 			if (ret < 0)
 				ret = -ENOENT;
 			goto out_free;
@@ -1178,7 +1183,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			goto out_free;
 		}
 		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
-					      attr, NULL);
+					      attr, NULL, 0);
 		if (ret < 0)
 			ret = -ENOENT;
 		goto out_free;
@@ -1196,7 +1201,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL);
+		ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL, 0);
 		if (ret < 0)
 			ret = -ENOENT;
 		goto out_free;
@@ -1214,7 +1219,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = etcd_get_cluster_attr(ctx, node, attr, NULL);
+		ret = etcd_get_cluster_attr(ctx, node, attr, NULL, 0);
 		if (ret < 0)
 			ret = -ENOENT;
 		goto out_free;
@@ -1254,7 +1259,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	p = strtok(NULL, "/");
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn")) {
-			ret = etcd_get_discovery_nqn(ctx, value);
+			ret = etcd_get_discovery_nqn(ctx, value,
+						     sizeof(value));
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
@@ -1296,13 +1302,15 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			}
 			fuse_info("%s: port %s ana_grp %lu", __func__,
 			       port, ana_grpid);
-			ret = etcd_get_ana_group(ctx, port, ana_grpid, value);
+			ret = etcd_get_ana_group(ctx, port, ana_grpid,
+						 value, sizeof(value));
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
 			}
 		} else {
-			ret = etcd_get_port_attr(ctx, port, attr, value);
+			ret = etcd_get_port_attr(ctx, port, attr,
+						 value, sizeof(value));
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1321,7 +1329,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		fuse_info("%s: subsys %s attr %s p %s", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
-			ret = etcd_get_subsys_attr(ctx, subsysnqn, attr, value);
+			ret = etcd_get_subsys_attr(ctx, subsysnqn, attr,
+						   value, sizeof(value));
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1346,8 +1355,9 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 				ret = -ENOENT;
 				goto out_free;
 			}
-			ret = etcd_get_namespace_attr(ctx, subsysnqn,
-						      nsid, attr, value);
+			ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
+						      attr, value,
+						      sizeof(value));
 			if (ret < 0) {
 				ret = -ENOENT;
 				goto out_free;
@@ -1367,7 +1377,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = etcd_get_host_attr(ctx, hostnqn, attr, value);
+		ret = etcd_get_host_attr(ctx, hostnqn, attr,
+					 value, sizeof(value));
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
@@ -1386,7 +1397,8 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 			ret = -ENOENT;
 			goto out_free;
 		}
-		ret = etcd_get_cluster_attr(ctx, node, attr, value);
+		ret = etcd_get_cluster_attr(ctx, node, attr, value,
+					    sizeof(value));
 		if (ret < 0) {
 			ret = -ENOENT;
 			goto out_free;
@@ -1423,7 +1435,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 	fuse_info("%s: subsys %s nsid %u attr %s value %s", __func__,
 		  subsysnqn, nsid, attr, buf);
 	ret = etcd_set_namespace_attr(ctx, subsysnqn, nsid,
-				      attr, buf);
+				      attr, buf, len);
 	if (ret < 0)
 		return ret;
 
@@ -1467,7 +1479,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	p = strtok(NULL, "/");
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn")) {
-			ret = etcd_set_discovery_nqn(ctx, value);
+			ret = etcd_set_discovery_nqn(ctx, value, len);
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
@@ -1525,7 +1537,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 			fuse_info("%s: port %s ana_grp %s state %s", __func__,
 			       port, ana_grp, value);
-			ret = etcd_set_ana_group(ctx, port, ana_grp, value);
+			ret = etcd_set_ana_group(ctx, port, ana_grp,
+						 value, len);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
@@ -1540,7 +1553,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				ret = -EPERM;
 				goto out_free;
 			}
-			ret = etcd_set_port_attr(ctx, port, attr, value);
+			ret = etcd_set_port_attr(ctx, port, attr, value, len);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
@@ -1561,7 +1574,8 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 				return -EPERM;
 			if (!strcmp(attr, "attr_cntlid_range"))
 				return -EPERM;
-			ret = etcd_set_subsys_attr(ctx, subsysnqn, attr, value);
+			ret = etcd_set_subsys_attr(ctx, subsysnqn, attr,
+						   value, len);
 			if (ret < 0) {
 				ret = -EINVAL;
 				goto out_free;
@@ -1583,7 +1597,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 		p = strtok(NULL, "/");
 		if (p)
 			goto out_free;
-		ret = etcd_set_host_attr(ctx, hostnqn, attr, value);
+		ret = etcd_set_host_attr(ctx, hostnqn, attr, value, len);
 		if (ret < 0) {
 			ret = -EINVAL;
 			goto out_free;

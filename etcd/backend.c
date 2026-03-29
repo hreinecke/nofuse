@@ -14,7 +14,8 @@ struct key_value_template {
 	const char *value;
 };
 
-int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
+int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf,
+			   size_t buf_len)
 {
 	char *key;
 	int ret;
@@ -22,12 +23,12 @@ int etcd_set_discovery_nqn(struct etcd_ctx *ctx, const char *buf)
 	ret = asprintf(&key, "%s/discovery_nqn", ctx->prefix);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_store(ctx, key, buf);
+	ret = etcd_kv_store(ctx, key, buf, buf_len);
 	free(key);
 	return ret;
 }
 
-int etcd_get_discovery_nqn(struct etcd_ctx *ctx, char *buf)
+int etcd_get_discovery_nqn(struct etcd_ctx *ctx, char *buf, size_t buf_len)
 {
 	char *key;
 	int ret;
@@ -36,7 +37,7 @@ int etcd_get_discovery_nqn(struct etcd_ctx *ctx, char *buf)
 	if (ret < 0)
 		return ret;
 
-	ret = etcd_kv_get(ctx, key, buf);
+	ret = etcd_kv_get(ctx, key, buf, buf_len);
 	free(key);
 	return ret;
 }
@@ -214,7 +215,8 @@ int etcd_add_host(struct etcd_ctx *ctx, const char *nqn)
 			       ctx->prefix, nqn, kv->key);
 		if (ret < 0)
 			return ret;
-		ret = etcd_kv_store(ctx, key, (char *)kv->value);
+		ret = etcd_kv_store(ctx, key, (char *)kv->value,
+				    strlen(kv->value));
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -232,13 +234,13 @@ int etcd_test_host(struct etcd_ctx *ctx, const char *nqn)
 	if (ret < 0)
 		return ret;
 
-	ret = etcd_kv_get(ctx, key, NULL);
+	ret = etcd_kv_get(ctx, key, NULL, 0);
 	free(key);
 	return ret;
 }
 
 int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
-		       const char *attr, char *value)
+		       const char *attr, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -248,13 +250,13 @@ int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
 	if (ret < 0)
 		return ret;
 
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
 
 int etcd_set_host_attr(struct etcd_ctx *ctx, const char *nqn,
-		       const char *attr, char *value)
+		       const char *attr, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -264,7 +266,7 @@ int etcd_set_host_attr(struct etcd_ctx *ctx, const char *nqn,
 	if (ret < 0)
 		return ret;
 
-	ret = etcd_kv_update(ctx, key, value);
+	ret = etcd_kv_update(ctx, key, value, value_len);
 	free(key);
 	return ret < 0 ? -errno : 0;
 }
@@ -337,7 +339,7 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *port,
 			if (trsvcid)
 				value = trsvcid;
 		}
-		ret = etcd_kv_store(ctx, key, value);
+		ret = etcd_kv_store(ctx, key, value, strlen(value));
 		free(key);
 		if (ret < 0)
 			return -errno;
@@ -354,13 +356,13 @@ int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 		       ctx->prefix, port);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, NULL);
+	ret = etcd_kv_get(ctx, key, NULL, 0);
 	free(key);
 	return ret;
 }
 
 int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
-		       const char *attr, const char *value)
+		       const char *attr, const char *value, size_t value_len)
 {
 	char *key;
 	int ret = -ENOENT;
@@ -375,7 +377,7 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		       ctx->prefix, port, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_update(ctx, key, value);
+	ret = etcd_kv_update(ctx, key, value, value_len);
 	free(key);
 	if (ret < 0)
 		return -errno;
@@ -383,7 +385,7 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 }
 
 int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,
-		       const char *attr, char *value)
+		       const char *attr, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -392,7 +394,7 @@ int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,
 		       ctx->prefix, port, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
@@ -493,13 +495,13 @@ int etcd_add_ana_group(struct etcd_ctx *ctx, const char *port,
 	default:
 		return -EINVAL;
 	}
-	ret = etcd_kv_store(ctx, key, value);
+	ret = etcd_kv_store(ctx, key, value, strlen(value));
 	free(key);
 	return ret;
 }
 
 int etcd_get_ana_group(struct etcd_ctx *ctx, const char *port,
-		       int ana_grpid, char *ana_state)
+		       int ana_grpid, char *ana_state, size_t ana_state_len)
 {
 	int ret = -ENOENT;
 	char *key;
@@ -508,13 +510,14 @@ int etcd_get_ana_group(struct etcd_ctx *ctx, const char *port,
 		       ctx->prefix, port, ana_grpid);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, ana_state);
+	ret = etcd_kv_get(ctx, key, ana_state, ana_state_len);
 	free(key);
 	return ret;
 }
 
 int etcd_set_ana_group(struct etcd_ctx *ctx, const char *port,
-		       const char *ana_grp, char *ana_state)
+		       const char *ana_grp, char *ana_state,
+		       size_t ana_state_len)
 {
 	char *key;
 	int ret;
@@ -531,7 +534,7 @@ int etcd_set_ana_group(struct etcd_ctx *ctx, const char *port,
 	    strcmp(ana_state, "change"))
 		return -EINVAL;
 
-	ret = etcd_kv_update(ctx, key, ana_state);
+	ret = etcd_kv_update(ctx, key, ana_state, ana_state_len);
 	free(key);
 	return ret;
 }
@@ -599,11 +602,13 @@ int etcd_add_subsys(struct etcd_ctx *ctx, const char *nqn, const char *type)
 			return ret;
 
 		if (!strcmp(kvt->key, "attr_type")) {
-			ret = etcd_kv_store(ctx, key, type);
+			ret = etcd_kv_store(ctx, key, type, strlen(type));
 		} else if (!strcmp(kvt->key, "attr_firmware")) {
-			ret = etcd_kv_store(ctx, key, firmware_rev);
+			ret = etcd_kv_store(ctx, key, firmware_rev,
+					    strlen(firmware_rev));
 		} else {
-			ret = etcd_kv_store(ctx, key, kvt->value);
+			ret = etcd_kv_store(ctx, key, kvt->value,
+					    strlen(kvt->value));
 		}
 		free(key);
 		if (ret < 0)
@@ -621,13 +626,13 @@ int etcd_test_subsys(struct etcd_ctx *ctx, const char *nqn)
 		       ctx->prefix, nqn);
 	if (ret < 0)
 		return false;
-	ret = etcd_kv_get(ctx, key, NULL);
+	ret = etcd_kv_get(ctx, key, NULL, 0);
 	free(key);
 	return ret;
 }
 
 int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
-			 const char *attr, const char *value)
+			 const char *attr, const char *value, size_t value_len)
 {
 	char *key;
 	int ret = -ENOENT;
@@ -639,7 +644,7 @@ int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_update(ctx, key, value);
+	ret = etcd_kv_update(ctx, key, value, value_len);
 	free(key);
 	if (ret < 0)
 		return -errno;
@@ -647,7 +652,7 @@ int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 }
 
 int etcd_get_subsys_attr(struct etcd_ctx *ctx, const char *nqn,
-			 const char *attr, char *value)
+			 const char *attr, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -656,7 +661,7 @@ int etcd_get_subsys_attr(struct etcd_ctx *ctx, const char *nqn,
 		       ctx->prefix, nqn, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
@@ -718,7 +723,8 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 	int ret;
 
 	/* Only allow to create symlink if 'addr_origin' is set */
-	ret = etcd_get_port_attr(ctx, port, "addr_origin", value);
+	ret = etcd_get_port_attr(ctx, port, "addr_origin",
+				 value, sizeof(value));
 	if (ret >= 0 && !strlen(value))
 		return -EPERM;
 
@@ -726,8 +732,8 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, port, subsysnqn);
 	if (ret < 0)
 		return ret;
-	sprintf(value, "../../../subsystems/%s", subsysnqn);
-	ret = etcd_kv_store(ctx, key, value);
+	ret = sprintf(value, "../../../subsystems/%s", subsysnqn);
+	ret = etcd_kv_store(ctx, key, value, ret);
 	free(key);
 	if (ret < 0)
 		return -errno;
@@ -735,7 +741,7 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 }
 
 int etcd_get_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
-			 const char *port, char *value)
+			 const char *port, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -744,7 +750,7 @@ int etcd_get_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, port, subsysnqn);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
@@ -831,7 +837,7 @@ int etcd_add_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_store(ctx, key, value);
+	ret = etcd_kv_store(ctx, key, value, ret);
 	free(value);
 	free(key);
 	if (ret < 0)
@@ -840,7 +846,7 @@ int etcd_add_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
 }
 
 int etcd_get_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
-			 const char *subsysnqn, char *value)
+			 const char *subsysnqn, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -849,7 +855,7 @@ int etcd_get_host_subsys(struct etcd_ctx *ctx, const char *hostnqn,
 		       ctx->prefix, subsysnqn, hostnqn);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
@@ -984,7 +990,8 @@ int etcd_add_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 		else
 			value = kv->value;
 		if (value)
-			ret = etcd_kv_store(ctx, key, value);
+			ret = etcd_kv_store(ctx, key, value,
+					    strlen(value));
 		free(key);
 	}
 	return ret;
@@ -999,7 +1006,7 @@ int etcd_test_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
 	free(key);
 	if (ret < 0)
 		return ret;
@@ -1013,7 +1020,8 @@ int etcd_test_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 }
 
 int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
-			    int nsid, const char *attr, const char *value)
+			    int nsid, const char *attr,
+			    const char *value, size_t value_len)
 {
 	char *key;
 	int ret = -ENOENT;
@@ -1035,7 +1043,8 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		 * Do not allow to enable it if 'device_origin' is not set
 		 */
 		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
-					      "device_origin", origin);
+					      "device_origin", origin,
+					      sizeof(origin));
 		if (ret < 0 && strlen(origin) == 0) {
 			fprintf(stderr,
 				"%s: subsys %s nsid %d validation error %d\n",
@@ -1056,7 +1065,7 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, nsid, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_update(ctx, key, value);
+	ret = etcd_kv_update(ctx, key, value, value_len);
 	free(key);
 	if (ret < 0) {
 		printf("%s: subsys %s nsid %d attr error %d\n",
@@ -1067,7 +1076,8 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 }
 
 int etcd_get_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
-			    int nsid, const char *attr, char *value)
+			    int nsid, const char *attr,
+			    char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -1076,7 +1086,7 @@ int etcd_get_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       ctx->prefix, subsysnqn, nsid, attr);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
@@ -1096,7 +1106,7 @@ int etcd_set_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 		free(key);
 		return ret;
 	}
-	ret = etcd_kv_update(ctx, key, value);
+	ret = etcd_kv_update(ctx, key, value, ret);
 	free(value);
 	free(key);
 	if (ret < 0)
@@ -1214,13 +1224,13 @@ int etcd_test_cluster(struct etcd_ctx *ctx, const char *node)
 		       ctx->prefix, node);
 	if (ret < 0)
 		return ret;
-	ret = etcd_kv_get(ctx, key, NULL);
+	ret = etcd_kv_get(ctx, key, NULL, 0);
 	free(key);
 	return ret;
 }
 
 int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
-			  const char *attr, char *value)
+			  const char *attr, char *value, size_t value_len)
 {
 	char *key;
 	int ret;
@@ -1230,7 +1240,7 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 	if (ret < 0)
 		return ret;
 
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, value, value_len);
 	free(key);
 	return ret;
 }
@@ -1243,7 +1253,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 
 	for (map_num = 0; map_num < 4; map_num++) {
 		sprintf(key, "%s/cluster/map/%d", ctx->prefix, map_num);
-		ret = etcd_kv_get(ctx, key, value);
+		ret = etcd_kv_get(ctx, key, value, sizeof(value));
 		if (ret < 0) {
 			if (ret != -ENOENT) {
 				fprintf(stderr,
@@ -1273,13 +1283,13 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 		sprintf(value, "%llu" , cur_map);
 		printf("%s: using cluster id %d\n",
 		       __func__, ctx->cluster_id);
-		ret = etcd_kv_store(ctx, key, value);
+		ret = etcd_kv_store(ctx, key, value, strlen(value));
 		if (ret < 0) {
 			fprintf(stderr, "%s: failed to set cluster map to '%s'\n",
 				__func__, value);
 		}
 	} else {
-		char new_value[256];
+		char new_value[256], cur_value[256];
 		int id = -1;
 		u64 tmp_map;
 
@@ -1301,7 +1311,8 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 		sprintf(new_value, "%llu", cur_map);
 		printf("%s: updating map %d from '%s' to '%s'\n",
 		       __func__, map_num, value, new_value);
-		ret = etcd_kv_txn_update(ctx, key, value, new_value);
+		ret = etcd_kv_txn_update(ctx, key, value, new_value,
+					 cur_value, sizeof(cur_value));
 		if (ret < 0) {
 			fprintf(stderr,
 				"%s: failed to set cluster map '%s' to '%s'\n",
@@ -1311,8 +1322,8 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 	}
 	sprintf(key, "%s/cluster/%s/node_id",
 		ctx->prefix, ctx->node_id);
-	sprintf(value, "%d", ctx->cluster_id);
-	ret = etcd_kv_store(ctx, key, value);
+	ret = sprintf(value, "%d", ctx->cluster_id);
+	ret = etcd_kv_store(ctx, key, value, ret);
 	if (ret < 0) {
 		fprintf(stderr, "%s: node %s register error %d\n",
 			__func__, ctx->node_id, ret);
@@ -1322,14 +1333,14 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 
 int etcd_unset_cluster_id(struct etcd_ctx *ctx)
 {
-	char key[256], value[256], new_value[256], *eptr;
+	char key[256], old[256], new[256], cur[256], *eptr;
 	u64 cur_map = ULONG_MAX, id;
 	int ret, map;
 
 	id = ctx->cluster_id % 64;
 	map = ctx->cluster_id / 64;
 	sprintf(key, "%s/cluster/map/%d", ctx->prefix, map);
-	ret = etcd_kv_get(ctx, key, value);
+	ret = etcd_kv_get(ctx, key, old, sizeof(old));
 	if (ret < 0) {
 		fprintf(stderr, "%s: failed to get cluster map '%d'\n",
 			__func__, map);
@@ -1337,19 +1348,20 @@ int etcd_unset_cluster_id(struct etcd_ctx *ctx)
 	}
 
 	errno = 0;
-	cur_map = strtoul(value, &eptr, 10);
-	if (errno || value == eptr) {
+	cur_map = strtoul(old, &eptr, 10);
+	if (errno || old == eptr) {
 		fprintf(stderr,
 			"%s: parsing error on cluster map '%d' value '%s'\n",
-			__func__, map, value);
+			__func__, map, old);
 		return -EINVAL;
 	}
 
 	cur_map &= ~(1 << id);
-	sprintf(new_value, "%llu", cur_map);
+	sprintf(new, "%llu", cur_map);
 	printf("%s: updating map '%d from '%s' to '%s'\n",
-	       __func__, map, value, new_value);
-	ret = etcd_kv_txn_update(ctx, key, value, new_value);
+	       __func__, map, old, new);
+	ret = etcd_kv_txn_update(ctx, key, old, new,
+				 cur, sizeof(cur));
 	if (ret < 0) {
 		fprintf(stderr,
 			"%s: failed to update cluster map '%d', error %d\n",

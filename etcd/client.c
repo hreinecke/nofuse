@@ -7,6 +7,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <getopt.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -19,12 +20,12 @@
 #include "etcd/client.h"
 
 static char *default_etcd_prefix = "nofuse";
-static char *default_etcd_host = "localhost";
-static char *default_etcd_proto = "http";
+static const char *default_etcd_host = "localhost";
+static const char *default_etcd_proto = "http";
 static int default_etcd_port = 2379;
-static int default_etcd_ttl = 60;
+static int default_etcd_ttl = 10;
 
-static char *__b64enc(const char *str, int str_len)
+static char *__b64enc(const char *str, size_t str_len)
 {
 	int encoded_size = (str_len * 2) + 2, len;
 	char *encoded_str = malloc(encoded_size + 1);
@@ -37,17 +38,17 @@ static char *__b64enc(const char *str, int str_len)
 	return encoded_str;
 }
 
-static char *__b64dec(const char *encoded_str)
+static char *__b64dec(const char *encoded_str, size_t *len)
 {
-	int encoded_size = strlen(encoded_str), len;
+	int encoded_size = strlen(encoded_str);
 	char *str = malloc(encoded_size + 1);
 
 	if (!str)
 		return NULL;
 
 	memset(str, 0, encoded_size);
-	len = base64_decode(encoded_str, encoded_size, (unsigned char *)str);
-	str[len] = '\0';
+	*len = base64_decode(encoded_str, encoded_size, (unsigned char *)str);
+	str[*len] = '\0';
 	return str;
 }
 
@@ -136,7 +137,10 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 	encoded_key = __b64enc(kv->key, strlen(kv->key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
-	encoded_value = __b64enc(kv->value, strlen(kv->value));
+	if (!kv->value_len)
+		encoded_value = __b64enc("", 0);
+	else
+		encoded_value = __b64enc(kv->value, kv->value_len);
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
 	if (kv->ignore_lease) {
@@ -147,7 +151,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 				       json_object_new_int64(kv->lease));
 	}
 	ret = etcd_kv_exec(conn, "/v3/kv/put", post_obj,
-			   etcd_parse_set_response, &ev);
+			   etcd_parse_set_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0)
 			ret = ev.error;
@@ -162,45 +166,30 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 }
 
 static void
-etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
+etcd_parse_kvs(struct json_object *resp, struct etcd_kv_event *ev)
 {
-	struct json_object *header_obj, *kvs_obj;
-	struct etcd_kv_event *ev = arg;
+	struct json_object *kvs_obj;
 	int i;
 
-	if (!etcd_resp) {
-		ev->error = -EBADMSG;
-		return;
-	}
-	header_obj = json_object_object_get(etcd_resp, "header");
-	if (!header_obj) {
-		if (etcd_debug)
-			fprintf(stderr,
-				"%s: invalid response, 'header' not found\n",
-			       __func__);
-		ev->error = -EBADMSG;
-	} else {
-		struct json_object *rev_obj;
-
-		rev_obj = json_object_object_get(header_obj, "revision");
-		if (rev_obj) {
-			ev->ev_revision =
-				json_object_get_int64(rev_obj);
-		} else
-			ev->ev_revision = -1;
-	}
-	kvs_obj = json_object_object_get(etcd_resp, "kvs");
+	kvs_obj = json_object_object_get(resp, "kvs");
 	if (!kvs_obj) {
+		if (etcd_debug)
+			fprintf(stderr, "%s: no kv entries\n", __func__);
 		ev->num_kvs = 0;
 		return;
 	}
 
 	ev->num_kvs = json_object_array_length(kvs_obj);
+	if (ev->num_kvs == 0) {
+		if (etcd_debug)
+			fprintf(stderr, "%s: empty kvs array\n", __func__);
+		ev->num_kvs = 0;
+		ev->kvs = NULL;
+		return;
+	}
 	ev->kvs = malloc(sizeof(struct etcd_kv) * ev->num_kvs);
 	if (!ev->kvs) {
-		if (etcd_debug)
-			fprintf(stderr,
-				"%s: failed to allocate kvs\n", __func__);
+		fprintf(stderr, "%s: failed to allocate kvs\n", __func__);
 		ev->error = -ENOMEM;
 		ev->num_kvs = 0;
 		return;
@@ -209,15 +198,18 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 	for (i = 0; i < ev->num_kvs; i++) {
 		struct etcd_kv *kv = &ev->kvs[i];
 		struct json_object *kv_obj, *key_obj, *value_obj, *attr_obj;
+		size_t len;
 
 		kv_obj = json_object_array_get_idx(kvs_obj, i);
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		kv->key = __b64dec(json_object_get_string(key_obj));
+		kv->key = __b64dec(json_object_get_string(key_obj), &len);
 		value_obj = json_object_object_get(kv_obj, "value");
 		if (value_obj) {
-			kv->value = __b64dec(json_object_get_string(value_obj));
+			kv->value = __b64dec(json_object_get_string(value_obj),
+					     &len);
+			kv->value_len = len;
 		}
 		attr_obj = json_object_object_get(kv_obj, "create_revision");
 		if (attr_obj) {
@@ -231,14 +223,39 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 		if (attr_obj) {
 			kv->version = json_object_get_int64(attr_obj);
 		}
-		if (etcd_debug)
-			printf("%s: key '%s', val '%s'\n",
-			       __func__, kv->key,
-			       kv->value ? kv->value : "");
 	}
 }
 
-int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
+static void
+etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
+{
+	struct json_object *header_obj;
+	struct etcd_kv_event *ev = arg;
+
+	if (!etcd_resp) {
+		ev->error = -EBADMSG;
+		return;
+	}
+	header_obj = json_object_object_get(etcd_resp, "header");
+	if (!header_obj) {
+		fprintf(stderr, "%s: invalid response, 'header' not found\n",
+			__func__);
+		ev->error = -EBADMSG;
+	} else {
+		struct json_object *rev_obj;
+
+		rev_obj = json_object_object_get(header_obj, "revision");
+		if (rev_obj) {
+			ev->ev_revision =
+				json_object_get_int64(rev_obj);
+		} else
+			ev->ev_revision = -1;
+	}
+	etcd_parse_kvs(etcd_resp, ev);
+}
+
+int etcd_kv_get(struct etcd_ctx *ctx, const char *key,
+		char *value, size_t value_len)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
@@ -258,7 +275,7 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 			       json_object_new_string(encoded_key));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
-			   etcd_parse_kvs_response, &ev);
+			   etcd_parse_kvs_response, &ev, false);
 	if (ret)
 		goto out_free;
 	if (ev.error < 0) {
@@ -270,15 +287,18 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	if (ev.num_kvs) {
 		for (i = 0; i < ev.num_kvs; i++) {
 			struct etcd_kv *kv = &ev.kvs[i];
+			size_t len = value_len;
 
 			if (!strcmp(kv->key, key)) {
 				if (value) {
-					if (kv->value)
-						strcpy(value, kv->value);
+					if (kv->value_len < len)
+						len = kv->value_len;
+					if (len)
+						memcpy(value, kv->value, len);
 					else
 						*value = '\0';
 				}
-				ret = 0;
+				ret = len;
 				break;
 			}
 		}
@@ -319,21 +339,33 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	encoded_range = __b64enc(range, strlen(range));
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
+	json_object_object_add(post_obj, "sort_order",
+			       json_object_new_string("ASCEND"));
+	json_object_object_add(post_obj, "sort_target",
+			       json_object_new_string("CREATE"));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
-			   etcd_parse_kvs_response, &ev);
+			   etcd_parse_kvs_response, &ev, false);
 	if (!ret) {
 		ret = ev.error;
 	}
-	if (!ret && ev.num_kvs) {
+	if (!ret) {
+		if (ev.num_kvs && !ev.kvs) {
+			if (etcd_debug)
+				fprintf(stderr,
+					"%s: empty kvs returned (should be %d)\n",
+					__func__, ev.num_kvs);
+			ev.num_kvs = 0;
+		}
 		*ret_kvs = ev.kvs;
 		ret = ev.num_kvs;
 	} else
 		*ret_kvs = NULL;
 
+	json_object_put(post_obj);
 	free(encoded_range);
 	free(encoded_key);
-	json_object_put(post_obj);
+	free(range);
 	etcd_conn_delete(conn);
 	return ret;
 }
@@ -372,7 +404,9 @@ etcd_parse_delete_response (struct json_object *etcd_resp, void *arg)
 		kv_obj = json_object_array_get_idx(kvs_obj, i);
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (key_obj) {
-			char *key = __b64dec(json_object_get_string(key_obj));
+			size_t len;
+			char *key = __b64dec(json_object_get_string(key_obj),
+				&len);
 			if (etcd_debug)
 				printf("%s: deleted %s\n", __func__, key);
 			free(key);
@@ -406,7 +440,7 @@ int etcd_kv_delete_range(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/deleterange", post_obj,
-			   etcd_parse_delete_response, &ev);
+			   etcd_parse_delete_response, &ev, false);
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
 	}
@@ -432,10 +466,33 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	return ret;
 }
 
+static void etcd_parse_txn_put_response(struct json_object *obj,
+					struct etcd_kv_event *ev)
+{
+	const char *key;
+	struct json_object *next;
+
+	key = "header";
+	next = json_object_object_get(obj, key);
+	if (!next)
+		goto parse_error;
+	obj = next;
+	key = "revision";
+	next = json_object_object_get(obj, key);
+	if (!next)
+		goto parse_error;
+	ev->ev_revision = json_object_get_int64(next);
+	return;
+parse_error:
+	fprintf(stderr, "%s: invalid response, '%s' not found\n",
+		__func__, key);
+	ev->error = -EBADMSG;
+}
+
 static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 {
 	struct etcd_kv_event *ev = arg;
-	json_object *header_obj, *succ_obj, *next_obj, *obj;
+	json_object *header_obj, *succ_obj, *obj;
 	const char *key;
 	int num_objs, i;
 
@@ -449,11 +506,8 @@ static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 
 	key = "succeeded";
 	succ_obj = json_object_object_get(resp, key);
-	if (!succ_obj)
-		goto parse_error;
-
-	if (!json_object_get_boolean(succ_obj))
-		return;
+	if (!succ_obj || !json_object_get_boolean(succ_obj))
+		ev->error = -EPERM;
 
 	key = "responses";
 	obj = json_object_object_get(resp, key);
@@ -461,43 +515,40 @@ static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 		goto parse_error;
 	num_objs = json_object_array_length(obj);
 	for (i = 0; i < num_objs; i++) {
-		struct json_object *o;
+		struct json_object *o, *e;
 
 		o = json_object_array_get_idx(obj, i);
 		key = "response_put";
-		next_obj = json_object_object_get(o, key);
-		if (!next_obj)
+		e = json_object_object_get(o, key);
+		if (e) {
+			etcd_parse_txn_put_response(e, ev);
 			continue;
-		obj = next_obj;
-		key = "header";
-		next_obj = json_object_object_get(obj, key);
-		if (!next_obj)
-			goto parse_error;
-		obj = next_obj;
-		key = "revision";
-		next_obj = json_object_object_get(obj, key);
-		if (!next_obj)
-			goto parse_error;
-		ev->ev_revision = json_object_get_int64(next_obj);
-		ev->error = 0;
+		}
+		key = "response_range";
+		e = json_object_object_get(o, key);
+		if (e) {
+			etcd_parse_kvs(e, ev);
+			continue;
+		}
 		break;
 	}
 	return;
 parse_error:
-	if (etcd_debug)
-		fprintf(stderr, "%s: invalid response, '%s' not found\n",
-		       __func__, key);
+	fprintf(stderr, "%s: invalid response, '%s' not found\n",
+		__func__, key);
 	ev->error = -EBADMSG;
 }
 
 int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
-		       const char *old_value, const char *new_value)
+		       const char *old_value, const char *new_value,
+		       char *cur_value, size_t cur_value_len)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
 	struct json_object *post_obj = NULL;
 	struct json_object *comp_obj, *comp_op_obj;
 	struct json_object *succ_obj, *succ_op_obj, *put_obj;
+	struct json_object *fail_obj, *fail_op_obj, *range_obj;
 	char *encoded_key, *encoded_old, *encoded_new;
 	int ret;
 
@@ -533,16 +584,44 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_string(encoded_key));
 	json_object_object_add(put_obj, "value",
 			       json_object_new_string(encoded_new));
-	json_object_object_add(succ_op_obj, "requestPut", put_obj);
+	json_object_object_add(succ_op_obj, "request_put", put_obj);
 	json_object_array_add(succ_obj, succ_op_obj);
 	json_object_object_add(post_obj, "success", succ_obj);
 
+	fail_obj = json_object_new_array();
+	fail_op_obj = json_object_new_object();
+	range_obj = json_object_new_object();
+	json_object_object_add(range_obj, "key",
+			       json_object_new_string(encoded_key));
+	json_object_object_add(fail_op_obj, "request_range", range_obj);
+	json_object_array_add(fail_obj, fail_op_obj);
+	json_object_object_add(post_obj, "failure", fail_obj);
 
 	ret = etcd_kv_exec(conn, "/v3/kv/txn", post_obj,
-			   etcd_parse_txn_response, &ev);
+			   etcd_parse_txn_response, &ev, false);
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
 	}
+	if (ev.num_kvs) {
+		int i;
+
+		for (i = 0; i < ev.num_kvs; i++) {
+			struct etcd_kv *kv = &ev.kvs[i];
+			if (!strcmp(kv->key, key)) {
+				if (!cur_value)
+					ret = -EKEYREJECTED;
+				else {
+					strncpy(cur_value, kv->value,
+						cur_value_len);
+					ret = 0;
+				}
+				break;
+			}
+		}
+		etcd_kv_free(ev.kvs, ev.num_kvs);
+	} else if (ret == 0 && cur_value)
+		strcpy(cur_value, new_value);
+
 	free(encoded_key);
 	free(encoded_old);
 	free(encoded_new);
@@ -618,6 +697,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
 		struct json_object *type_obj, *obj;
 		struct etcd_kv kv;
+		size_t len;
 
 		memset(&kv, 0, sizeof(kv));
 		kvs_obj = json_object_array_get_idx(event_obj, i);
@@ -631,10 +711,13 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		kv.key = __b64dec(json_object_get_string(key_obj));
+		kv.key = __b64dec(json_object_get_string(key_obj),
+				  &len);
 		obj = json_object_object_get(kv_obj, "value");
-		if (obj)
-			kv.value = __b64dec(json_object_get_string(obj));
+		if (obj) {
+			kv.value = __b64dec(json_object_get_string(obj), &len);
+			kv.value_len = len;
+		}
 		obj = json_object_object_get(kv_obj, "create_revision");
 		if (obj)
 			kv.create_revision = json_object_get_int64(obj);
@@ -647,7 +730,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		obj = json_object_object_get(kv_obj, "lease");
 		if (obj)
 			kv.lease = json_object_get_int64(obj);
-		if (ev && ev->watch_cb)
+		if (ev->watch_cb)
 			ev->watch_cb(ev->watch_arg, &kv);
 		if (kv.value)
 			free(kv.value);
@@ -684,23 +767,22 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(conn, "/v3/watch", post_obj,
-			   parse_watch_response, ev);
+			   parse_watch_response, ev, true);
 	if (ret < 0) {
 		if (etcd_debug)
-			fprintf(stderr,
-				"%s: error %d executing watch request\n",
+			fprintf(stderr, "%s: error %d executing watch request\n",
 				__func__, ret);
 	} else if (ev->error) {
 		if (etcd_debug)
-			fprintf(stderr,
-				"%s: watch response error %d\n",
+			fprintf(stderr, "%s: watch response error %d\n",
 				__func__, ev->error);
 		ret = ev->error;
 	}
 
+	json_object_put(post_obj);
 	free(encoded_key);
 	free(encoded_end);
-	json_object_put(post_obj);
+	free(end_key);
 	return ret < 0 ? ret : 0;
 }
 
@@ -762,30 +844,31 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 			       json_object_new_int(ctx->ttl));
 
 	ret = etcd_kv_exec(conn, "/v3/lease/grant", post_obj,
-			   etcd_parse_lease_response, &ev);
+			   etcd_parse_lease_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0) {
-			if (etcd_debug)
-				fprintf(stderr, "lease error %d\n", ret);
+			fprintf(stderr, "%s: lease error %d\n",
+				__func__, ret);
 			ret = ev.error;
 		} else if (!ev.kvs->lease) {
-			if (etcd_debug)
-				fprintf(stderr, "no lease has been granted\n");
+			fprintf(stderr, "%s: no lease has been granted",
+				__func__);
 			ret = -ENOKEY;
 		} else if (ev.kvs->ttl < 0) {
-			if (etcd_debug)
-				fprintf(stderr, "invalid time-to-live value\n");
+			fprintf(stderr, "%s: invalid time-to-live value %ld",
+				__func__, ev.kvs->ttl);
 			ret = -EINVAL;
 		} else {
 			ctx->lease = ev.kvs->lease;
 			ctx->ttl = ev.kvs->ttl;
 			if (etcd_debug)
-				printf("Granted lease %ld ttl %d\n",
-				       ctx->lease, ctx->ttl);
+				printf("%s: Granted lease %ld ttl %d",
+				       __func__, ctx->lease, ctx->ttl);
 		}
-	} else if (etcd_debug) {
-		fprintf(stderr, "etcd lease call failed with %d\n", ret);
-	}
+	} else
+		fprintf(stderr, "%s: etcd lease call failed with %d",
+			__func__, ret);
+
 	json_object_put(post_obj);
 	etcd_conn_delete(conn);
 	free(ev.kvs);
@@ -877,12 +960,11 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 			       json_object_new_int(ctx->ttl));
 
 	ret = etcd_kv_exec(conn, "/v3/lease/keepalive", post_obj,
-			   etcd_parse_keepalive_response, &ev);
+			   etcd_parse_keepalive_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0) {
-			if (etcd_debug)
-				fprintf(stderr, "%s: etcd error %d\n",
-				       __func__, ev.error);
+			fprintf(stderr, "%s: etcd error %d\n",
+				__func__, ev.error);
 			ret = ev.error;
 		} else if (ev.kvs->ttl != ctx->ttl) {
 			if (etcd_debug)
@@ -890,7 +972,7 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 				       __func__, ev.kvs->ttl);
 			ctx->ttl = ev.kvs->ttl;
 		}
-	} else if (etcd_debug)
+	} else
 		fprintf(stderr, "%s: etcd_kv_exec error %d\n", __func__, ret);
 
 	json_object_put(post_obj);
@@ -925,7 +1007,7 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 			       json_object_new_int64(ctx->lease));
 
 	ret = etcd_kv_exec(conn, "/v3/lease/timetolive", post_obj,
-			   etcd_parse_keepalive_response, &ev);
+			   etcd_parse_keepalive_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0) {
 			ret = ev.error;
@@ -985,7 +1067,7 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
 	ret = etcd_kv_exec(conn, "/v3/lease/revoke", post_obj,
-			   etcd_parse_revoke_response, &ev);
+			   etcd_parse_revoke_response, &ev, false);
 	if (!ret && ev.error < 0)
 		ret = ev.error;
 
@@ -1071,6 +1153,10 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 					       __func__, node_name, node_id);
 				ctx->node_name = strdup(node_name);
 				ctx->node_id = strdup(node_id);
+			} else {
+				if (etcd_debug)
+					printf("%s: %s skipping url %s (default %s)\n",
+					       __func__, ctx->node_name, url, default_url);
 			}
 		}
 	}
@@ -1093,7 +1179,7 @@ static int etcd_member_id(struct etcd_ctx *ctx, bool validate_id)
 			       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
-			   etcd_parse_member_response, ctx);
+			   etcd_parse_member_response, ctx, false);
 
 	if (!ret && validate_id && !ctx->node_id)
 		ret = -ENOENT;
@@ -1113,14 +1199,14 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 
 	ctx = malloc(sizeof(struct etcd_ctx));
 	if (!ctx) {
-		if (etcd_debug)
-			fprintf(stderr, "cannot allocate context\n");
+		fprintf(stderr, "cannot allocate context\n");
 		return NULL;
 	}
 	memset(ctx, 0, sizeof(struct etcd_ctx));
 	if (url) {
 		char *u, *p, *eptr;
-		char *proto = default_etcd_proto, *host = default_etcd_host;
+		char *proto = (char *)default_etcd_proto;
+		char *host = (char *)default_etcd_host;
 
 		u = strdup(url);
 		if (!strncmp(u, "http://", 7)) {
@@ -1137,8 +1223,9 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 		p = strchr(host, ':');
 		if (p) {
 			*p++ = '\0';
+			errno = 0;
 			port = strtoul(p, &eptr, 10);
-			if (p == eptr || port == ULONG_MAX) {
+			if (errno || p == eptr) {
 				if (etcd_debug)
 					fprintf(stderr, "Invalid URL '%s'\n",
 						url);
@@ -1202,7 +1289,7 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 
-	conn = malloc(sizeof(struct etcd_conn_ctx));
+	conn = malloc(sizeof(*conn));
 	if (!conn)
 		return NULL;
 
