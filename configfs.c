@@ -22,6 +22,7 @@
 #include <fcntl.h>
 
 #include "common.h"
+#include "configfs.h"
 #include "utils.h"
 #include "etcd/client.h"
 #include "etcd/backend.h"

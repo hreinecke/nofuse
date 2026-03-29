@@ -29,7 +29,9 @@ DISCD_LIBS += $(ETCD_LIBS)
 
 OBJS := $(ETCD_OBJS)
 
-all: nofuse portd discd nvmetd watcher
+PRGS := nofuse portd discd nvmetd watcher
+
+all: $(PRGS)
 
 nofuse: $(DAEMON_OBJS) $(NEON_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ -lfuse3 $(NEON_LIBS) $(DAEMON_LIBS)
@@ -52,24 +54,20 @@ xdp_drop_port.o: xdp_drop_port.c
 %.o: %.c common.h etcd/client.h etcd/backend.h utils.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-tcp.o: tcp.c common.h utils.h tcp.h tls.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+tcp.o: tcp.c common.h tcp.h ops.h etcd/backend.h tls.h
 
-etcd/client_socket.o: etcd/client.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+etcd/client_socket.o: etcd/client.c etcd/base64.h common.h etcd/client.h
 
-etcd/client_neon.o: etcd/client.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+etcd/client_neon.o: etcd/client.c etcd/base64.h common.h etcd/client.h
 
-etcd/neon.o: etcd/neon.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+etcd/neon.o: etcd/neon.c etcd/client.h
 
-configfs.o: configfs.c configfs.h
+configfs.o: configfs.c common.h configfs.h utils.h etcd/client.h etcd/backend.h
 
-etcd/backend.o: etcd/backend.c etcd/client.h common.h etcd/backend.h utils.h firmware.h
+etcd/backend.o: etcd/backend.c common.h etcd/backend.h etcd/client.h firmware.h
 
 firmware.h: gen_firmware_rev.sh
 	bash ./$< $@
 
 clean:
-	rm -f firmware.h *.o nofuse
+	rm -f firmware.h *.o $(OBJS) $(PRGS)
