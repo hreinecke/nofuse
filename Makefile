@@ -4,8 +4,7 @@ DAEMON_OBJS := daemon.o
 NVME_OBJS := nvmeof.o port.o queue.o namespace.o tcp.o null.o uring.o tls.o
 
 ETCD_OBJS := etcd/backend.o etcd/watcher.o configfs.o
-SOCKET_OBJS := etcd/client_socket.o etcd/socket.o etcd/base64.o etcd/http_parser.o
-NEON_OBJS := etcd/client_neon.o etcd/neon.o etcd/base64.o
+NEON_OBJS := etcd/client.o etcd/neon.o etcd/base64.o
 
 NVME_LIBS := -luring -lpthread -lcrypto -lssl -lz -lkeyutils
 ETCD_LIBS := -luuid -ljson-c
@@ -56,9 +55,7 @@ xdp_drop_port.o: xdp_drop_port.c
 
 tcp.o: tcp.c common.h tcp.h ops.h etcd/backend.h tls.h
 
-etcd/client_socket.o: etcd/client.c etcd/base64.h common.h etcd/client.h
-
-etcd/client_neon.o: etcd/client.c etcd/base64.h common.h etcd/client.h
+etcd/client.o: etcd/client.c etcd/base64.h common.h etcd/client.h
 
 etcd/neon.o: etcd/neon.c etcd/client.h
 
