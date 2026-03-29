@@ -255,20 +255,20 @@ static int tcp_init_listener(struct nofuse_port *port)
 	sa_family_t adrfam = AF_INET;
 
 	sprintf(portid, "%d", port->portid);
-	ret = etcd_get_port_attr(port->ctx, portid,
-				 "addr_traddr", traddr);
+	ret = etcd_get_port_attr(port->ctx, portid, "addr_traddr",
+				 traddr, sizeof(traddr));
 	if (ret < 0) {
 		port_err(port, "failed to get traddr, error %d", ret);
 		return ret;
 	}
-	ret = etcd_get_port_attr(port->ctx, portid,
-				 "addr_trsvcid", trsvcid);
+	ret = etcd_get_port_attr(port->ctx, portid, "addr_trsvcid",
+				 trsvcid, sizeof(trsvcid));
 	if (ret < 0) {
 		port_err(port, "failed to get trsvcid, errot %d", ret);
 		return ret;
 	}
-	ret = etcd_get_port_attr(port->ctx, portid,
-				 "addr_adrfam", adrfam_str);
+	ret = etcd_get_port_attr(port->ctx, portid, "addr_adrfam",
+				 adrfam_str, sizeof(adrfam_str));
 	if (ret < 0) {
 		port_err(port, "failed to get adrfam, error %d", ret);
 		return ret;
